@@ -10,6 +10,36 @@
 	#include <map>
 	#include <cassert>
 
+	/*
+	#include <malloc/malloc.h>
+	const unsigned max_allocs = 32768;
+	void *debug_allocations[max_allocs];
+	unsigned alloc_count;
+	void* debug_alloc(size_t s) {
+		void *r = malloc(s);
+		debug_allocations[alloc_count++] = r;
+		return r;
+	}
+	void debug_free(void *p) {
+		for (unsigned i=0; i<alloc_count; i++) {
+			if (debug_allocations[i] == p) {
+				free(p);
+				debug_allocations[i] = debug_allocations[--alloc_count];
+				return;
+			}
+		}
+		abort();
+	}
+	void debug_leaks() {
+		printf("%u leaks\n",alloc_count);
+		for (unsigned i=0; i<alloc_count; i++)
+			printf("alloc at %p sized %zu bytes\n",debug_allocations[i],malloc_size(debug_allocations[i]));
+	}
+	void *operator new[](size_t s,const char *f,unsigned l) { return debug_alloc(s,f,l); }
+	void *operator new(size_t s,const char*f,unsigned l) { return debug_alloc(s,f,l); }
+	void operator delete(void *p) { debug_free(p); }
+	void operator delete[](void *p) { debug_free(p); } */
+
 	int yylex();
 	void yyerror(const char*,...);
 	uint16_t encode_string(uint8_t *dest,size_t destSize,const char *src,size_t srcSize,bool forDict = false);
@@ -52,7 +82,7 @@
 		static uint16_t firstFree, firstPlaced, lastPlaced;
 		static uint32_t nextAddress;
 		static relocatableBlob* create(uint16_t totalSize,uint16_t ud = 0,const char *desc = nullptr) {
-			relocatableBlob* result = (relocatableBlob*) new uint8_t[totalSize + sizeof(relocatableBlob)];
+			relocatableBlob* result = new relocatableBlob;
 			result->size = totalSize;
 			result->offset = 0;
 			result->relocations = nullptr;
@@ -60,6 +90,7 @@
 			result->address = ~0U;
 			result->nextPlaced = 0xFFFF;
 			result->desc = desc? desc : "";
+			result->contents = new uint8_t[totalSize];
 			memset(result->contents,0,totalSize);
 			if (firstFree != 0xFFFF) {
 				result->index = firstFree;
@@ -106,22 +137,20 @@
 		void destroy() {
 			uint16_t indexSave = index;
 			delete the_relocations[index]->relocations;
-			delete [] (uint8_t*) the_relocations[index];
+			delete [] the_relocations[index]->contents;
+			delete  the_relocations[index];
 			the_relocations[indexSave] = (relocatableBlob*)(size_t)firstFree;
 			firstFree = indexSave;
 		}
 		void seal() {
 			assert(offset <= size);
+			if (offset != size) {
+				uint8_t *newContents = new uint8_t[offset];
+				memcpy(newContents,contents,offset);
+				delete [] contents;
+				contents = newContents;
+			}
 			size = offset;
-			/* relocatableBlob *newResult = (relocatableBlob*) new uint8_t[offset + sizeof(relocatableBlob)];
-			newResult->size = newResult->offset = offset;
-			newResult->index = index;
-			newResult->address = ~0U;
-			newResult->nextPlaced = 0xFFFF;
-			newResult->relocations = relocations;
-			newResult->userData = userData;
-			delete [] (uint8_t*) the_relocations[index];
-			the_relocations[newResult->index] = newResult; */
 		}
 		void place(uint32_t alignMask = 0) {
 			if (firstPlaced == 0xFFFF)
@@ -204,7 +233,7 @@
 		uint32_t address;
 		relocation_t *relocations;
 		std::string desc;
-		uint8_t contents[0];
+		uint8_t *contents;
 	};
 	uint16_t relocatableBlob::firstFree=0xFFFF, relocatableBlob::firstPlaced=0xFFFF, relocatableBlob::lastPlaced;
 	uint32_t relocatableBlob::nextAddress;
@@ -2788,9 +2817,13 @@ int main(int argc,char **argv) {
 					}
 				}
 			}
+			for (unsigned i=0; i<the_relocations.size(); i++)
+				if ((size_t)the_relocations[i] > 65535)
+					the_relocations[i]->destroy();
 		}
 		fclose(yyinput);
 	}
+	// debug_leaks();
 
 	// typical order
 	// header (64 bytes)
