@@ -1311,7 +1311,7 @@
 			yyerror("missing return at end of routine (or not all if paths return)");
 		body->emit();
 		while (currentRoutine->offset & ((1 << story_shift)-1))
-			emitByte(0);
+			emitByte(0xB4 /*nop*/);
 		currentRoutine->seal(); // arp arp
 		delete body;
 		return currentRoutine->index;
