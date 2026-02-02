@@ -1,0 +1,786 @@
+// the file is parsed in two passes.
+// the first pass processes all the global names (attributes,
+// properties, objects, actions) and also extracts any dictionary
+// words that appear in any property, action definition, or routine.
+
+// token parsing: skip all whitespace. if quote, collect until closing quote.
+// backslash inside string escapes next character. if numeric, collect while numeric.
+// if alpha, collect while alphanumeric.  if one of "(,);:" always a single token. 
+// if any other visible character, collect while visible character. 
+// # is considered alpha at start of string
+
+// basic syntax is
+// stmt: 
+//   directive;
+//   if (branch_test) stmt else stmt
+//   while (branch_test) stmt
+//   repeat stmt while (branch_test);
+//   return expr;
+//   dest = expr;
+//   rtrue;
+//   rfalse;
+//   { stmts }
+// stmts:
+//   stmts stmt
+//   stmt
+// branch_test:
+//   unary_branch(expr)
+//   unary_branch(expr)->dest
+//   binary_branch(expr)
+//   binary_branch(expr)->dest
+// dest:
+//   global_name
+//   local_name
+// integer_literal:
+//   digit+
+//   'dictionary_word'
+//   #attribute
+//   routine_name
+// expr:
+//   dest
+//   integer_literal
+//   unary_op expr
+//   expr binary_op expr
+//   expr == integer_literal,integer_literal[,integer_literal][,integer_literal]
+
+// Each resolves to an index between 1-31 (1-47 on v4+)
+// it's not always strictly necessary but reduces the chance of programming errors
+// attribute zero ($is_object) is special and is used to disambiguate objects (true) and locations (false)
+attribute global lit;
+attribute global general;
+attribute global supporter;
+attribute object clothing;
+attribute object worn;
+attribute object scenery;
+
+// a'name means name should be an attribute index (ao'name for object, al'name for loc)
+// p'name means name should be a property index (po'name for object, pl'name for loc)
+// o'name means name should be an object index
+// l'name means name should be a location index
+// r'name means name should be a routine address
+// s'name means name should be a string addres
+// c'name means name should be a command index
+
+// branch opcodes can only appear inside an if/while/repeat statement.
+
+// trace and trace_obj take a bit mask and either a string or object number
+// they are only kept in debug builds. they test the bit mask against a global
+// trace enable which can be set by other debug commands.
+
+// the global constant $object_count is always the count
+// of objects in the game. for properties that can refer
+// to an object, string, or routine, values less than or
+// equal to $object_count are an object. otherwise it's
+// a routine. a string constant where a routine is allowed
+// generates a dummy routine that calls print_ret and the string.
+// (this costs two bytes, one for the local count and one
+// for the print_ret opcode)
+
+// words can refer to up to four dictionary words. a word is
+// a nonzero index into a sorted list of vocabulary words
+// if more than four words are needed, the property is
+// stored as three bytes; the first byte is the number of
+// words and the next two bytes contain the address of
+// that many word indices.
+
+constant false = 0;
+constant zero = 0; 
+constant true = 1;
+constant adjBit = 1 << 7;
+constant nounBit = 1 << 6;
+constant verbBit = 1 << 5;
+constant prepBit = 1 << 4;
+constant artBit = 1 << 3;
+constant dirBit = 1 << 2;
+// if this word only appears in one adjective or noun list, it's set
+// this allows the parser to skip a lot of disambiguation processing.
+constant uniqueBit = 1 << 0;
+
+// synonyms of a word are identical to it in all contexts. if a word appears
+// here as a synonym it cannot appear anywhere else (because it would never match)
+// internally synonyms are flagged with a payload of 0xFF.
+synonym 'north' 'n';
+synonym 'south' 's';
+synonym 'east' 'e';
+synonym 'west' 'w';
+synonym 'examine' 'x';
+synonym 'wait' 'z';
+synonym 'inventory' 'i';
+synonym 'again' 'g';
+synonym 'look' 'l';
+
+// plain properties can be attached to rooms or objects
+// object properties can only be attached to objects
+// room properties can only be attached to rooms
+// object and room properties cannot be given nonzero default values
+// because they actually overlap
+property global description;
+property global before;
+property global after;
+property object adjective wordbit adjBit;
+property object noun wordbit nounBit;
+property location n_to;
+property location s_to;
+property location e_to;
+property location w_to;
+
+wordbit dirBit 'north' 'south' 'east' 'west';
+wordbit artBit 'a' 'an' 'the';
+
+routine Compass [word] {
+	if (word is 'north')
+		return n_to;
+	else if (word is 'south')
+		return s_to;
+	else if (word is 'east')
+		return e_to;
+	else if (word is 'west')
+		return w_to;
+	else
+		return -1;
+}
+
+// the first three must be in this order for status line (v3) games.
+global room;
+global score;
+global turns;
+global scratch;		// fourth global is used as a dummy storage slot for branches and subroutine calls that ignore result.
+global deadflag;
+
+// player is always first at object 1. this also guarantees that
+// a room a player can be in is always greater than 1, meaning routines
+// that return a location can also rtrue or rfalse as well.
+object Player "Player" (foyer) {
+}
+
+// If a string constant crosses multiple lines, any number of spaces and tabs
+// followed by a line break is consumed. Next, N line breaks is turned into
+// N-1 line breaks (usually zero) and then finally, one or more spaces and/or
+// tabs (if present) becomes a single space. This is a very complicated way
+// of saying you can break up a long string and it will end up looking reasonable.
+// if you need to break up a line in the middle of a word, just start the remainder
+// of the word at the leftmost column of the next line.
+location foyer "Foyer of the Opera House" { 
+	description: 
+		"You are standing in a spacious hall, splendidly decorated in red
+		and gold, with glittering chandeliers overhead. The entrance from
+		the street is to the north, and there are doorways south and west.";
+	s_to: bar;
+	n_to: "You've only just arrived, and besides, the weather outside seems
+	    to be getting worse.";
+	w_to: cloakroom;
+	lit;
+}
+
+object Aardvark "aardvark" (foyer) {
+}
+
+// location_or_object new_name "short description" ['(' parent ')'] '{'
+// [property_or_attribute...] '}'
+// property: property_name ':' value ';'
+// attribute:
+//	attribute_name ';'
+// value: 
+//   global_symbol
+//   [dictionary_word]+
+//   routine_defintion
+// routine_definition: '[' [params..] [';' locals..] ']' '{' stmts '}'
+location cloakroom "Cloakroom" {
+	description: "The walls of this small room were clearly once lined with hooks,
+	 	though now only one remains. The exit is a door to the east.";
+	e_to: foyer;
+	lit;
+}
+
+object hook "small brass hook" (cloakroom) {
+	adjective: 'small' 'brass';
+	noun: 'hook' 'peg';
+	description: [;c] {
+		print "It's just a small brass hook, ";
+		if (self has child -> c) {
+			print "with a ";
+			print_obj c;
+			print_ret " hanging on it.";
+		}
+		else
+			print_ret "screwed to the wall.";
+	}
+	scenery; supporter;
+}
+
+object hat "nondescript hat" (foyer) {
+	adjective: 'boring' 'nondescript';
+	noun: 'hat';
+	description: "It's a really boring hat just meant to test the cloakroom";
+	clothing;
+}
+
+global message_damage;
+
+location bar "Foyer Bar" {
+	description: "The bar, much rougher than you'd have guessed after the opulence
+			of the foyer to the north, is completely empty. There seems to
+			be some sort of message scrawled in the sawdust on the floor.";
+	n_to: foyer;
+	before: [act arg; temp] {
+		if (act in {#look,#inv})
+			rfalse;
+		else if (act is #leave and arg is n_to)
+			rfalse;
+		else if (act is #leave and self hasnt lit and arg isnt n_to) {
+			++message_damage;
+			++message_damage;
+			print_ret "Blundering around in the dark isn't a good idea!";
+		}
+		else if (self hasnt lit) {
+			++message_damage;
+			print_ret "In the dark? You could easily disturb something!";
+		}
+		else
+			rfalse;
+	}
+}
+
+object cloak "velvet cloak" (Player) {
+	adjective: 'handsome' 'velvet' 'black' 'satin';
+	noun: 'cloak';
+	description: "A handsome cloak, of velvet trimmed with satin, and slightly
+			spattered with raindrops. Its blackness is so deep that it
+			almost seems to suck light from the room.";
+	before: [act] {
+		if (act in {#drop,#puton} and room isnt cloakroom)
+			print_ret "This isn't the best place to leave
+				a smart cloak lying around.";
+		rfalse; // not handled, allow action to continue
+	}
+	after: [act] {
+		if (act is #take)
+			bar loses lit;
+		else if (act in {#puton,#drop} and room is cloakroom) {
+			bar gains lit;
+			if (act is #puton and self has general) {
+				self loses general;
+				++score;
+			}
+		}
+		rfalse;
+	}
+	clothing; general; worn;
+}
+
+object message "scrawled message" (bar) {
+	adjective: 'scrawled';
+	noun: 'message' 'sawdust' 'floor';
+	description: []{
+		if (message_damage < 2) {
+			++score;
+			deadflag = 2;
+			print_ret "The message, neatly marked in the sawdust, reads...";
+		}
+		else {
+			deadflag = 3;
+			print_ret "The message has been carelessly trampled, making it
+			  difficult to read. You can just distinguish the words...";
+		}
+	}
+}
+
+// there are several ways to declare dictionary words. the syntax always
+// uses single quotes. the context determines which bits are set on the word
+// to identify default parts of speech
+// dir_bit, adj_bit, noun_bit, verb_bit
+// directions are also adjectives in most cases
+
+
+routine perform [act obj iobj] {
+	act = act;
+	rfalse;
+}
+
+routine Inventory [;i] {
+	if (Player has child -> i) {
+		print "You are carrying:";
+		crlf;
+		repeat {
+			print "  ";
+			print_obj i;
+			crlf;
+		} while (i has sibling -> i);
+		rtrue;
+	}
+	else
+		print_ret "You are empty-handed.";
+}
+
+routine BlockBefore [act obj;r] {
+	if (obj is zero)
+		rfalse;
+	r = obj.before;
+	if (r isnt zero)
+		return call r(act,obj);
+	else
+		rfalse;
+}
+
+routine CheckBefore [act obj arg;r] {
+	if (obj isnt zero) {
+		r = obj.before;
+		if (r isnt zero)
+			return call r(act,arg);
+	}
+	rfalse;
+}
+
+routine CheckAfter [act obj;r] {
+	if (obj isnt zero) {
+		r = obj.after;
+		if (r isnt zero)
+			return call r(act,obj);
+	}
+	rtrue;
+}
+
+routine CallAfter [act obj;r] {
+	if (obj isnt zero) {
+		r = obj.after;
+		if (r isnt zero)
+			return call r(act,obj);	
+	}
+	rtrue;
+}
+
+routine Look [] {
+	if (room hasnt lit)
+		print_ret "It's too dark to see anything.";
+	return call room.description();
+}
+
+routine Travel [dir;r] {
+	if (CheckBefore(#leave,room,dir) is false) {
+		r = room.dir;
+		if (r is zero)
+			print_ret "You can't go in that direction";
+		else if (r < zero or r > $object_count)
+			r = call r();
+		// player is the first object, and cannot be a room.
+		// this leave rfalse and rtrue as valid responses.
+		if (r > 1) {
+			move Player into r;
+			room = r;
+			CallAfter(#enter,r);
+			Look();
+		}
+	}
+	rfalse;
+}
+
+routine Take [obj] {
+	if (obj hasnt scenery) {
+		if (BlockBefore(#take,room) is true or BlockBefore(#take,obj) is true)
+			rtrue;
+		move obj into Player;
+		CallAfter(#take,obj);
+		rfalse;
+	}
+	else
+		print_ret "You can't take that, it's just scenery.";
+}
+
+routine Examine [obj; desc] {
+	desc = obj.description;
+	if (desc isnt zero)
+		call desc();
+	else {
+		print "It's just an ordinary ";
+		print_obj obj;
+	}
+	rtrue;
+}
+
+routine Drop [obj] {
+	if (Player holds obj and CheckBefore(#drop,room) isnt false and
+		CheckBefore(#drop,obj) isnt false) {
+		move obj into Player parent;
+		rtrue;
+	}
+	else
+		rfalse;
+}
+
+routine PutOn [do ido] {
+	if (ido has supporter) {
+		if (ido has child)
+			print_ret "There's no room.";
+		else if (CheckBefore(#puton,room) isnt false and 
+				CheckBefore(#puton,do) isnt false and 
+				CheckBefore(#puton,ido) isnt false) {
+			move do into ido;
+			CallAfter(#puton,ido);
+			CallAfter(#puton,do);
+			CallAfter(#puton,room);
+			rfalse;
+		}
+		else
+			rtrue;
+	}
+	else
+		print_ret "You can't put it on that.";
+}
+
+// each dictionary word has an extra byte associated with it
+// vanpdddd
+// v: word can be a verb (appears first in an action statement)
+// a: word can be an adjective (appears in an adjective list of at least one object)
+// n: word can be a noun (appears in the noun list of at least one object)
+// p: word can be a preposition (appears between direct and indirect object)
+// dddd: if nonzero, word refers to a direction property index
+// if dddd is 15, word is an article (and is therefore ignored except that
+// it starts the beginning of a placeholder)
+
+// each dictionary word has an extra two bytes associated with it
+// adj_bit - set if word is an adjective (appears in adjective list of an object)
+// noun_bit - set if word is a noun (appears in noun list of an object) (payload is first matching object)
+// verb_bit - set if word is a verb (payload is action index)
+// if payload is nonzero, the word is a synonym
+// if payload is nonzero but larger than number of words, it's a biased direction proeprty index
+
+// object is owned by player
+routine Held [obj] {
+	while (obj parent isnt zero) {
+		obj = obj parent;
+		if (obj is Player)
+			rtrue;
+	}
+	rfalse;
+}
+
+// object is in room with player but not held by player
+routine Nearby [obj; pr] {
+	while (obj parent isnt zero) {
+		obj = obj parent;
+		if (obj is room)
+			rtrue;
+		else if (obj is Player)
+			rfalse;
+	}
+	rfalse;
+}
+
+// Object is in player's room and/or held by player
+routine Here [obj] {
+	while (obj parent isnt zero) {
+		obj = obj parent;
+		if (obj is room)
+			rtrue;
+	}
+	rfalse;
+}
+
+
+constant isEnd = 1 << 15;
+constant isRoutine = 1 << 14;
+constant hasSecondWord = 1 << 13;
+constant wordMask = 8191;
+
+/*
+	The first word is the action routine, or zero to terminate the entire action table
+	The upper 3 bits indciate several things: (and leave room for vocabulary of 8191 words)
+	--0 - this is a single word phrase
+	--1 - this is the first word of a two word phrase (next word follows)
+	-1- - the next word is a disambiguation routine (or a word bit mask if < 256)
+	1-- - this is the end of the action list
+	*/
+
+// actions are scanned in-order
+// so specific cases need to be before more general cases
+// some actions are really just messages and aren't part of grammar
+action #inv { Inventory: 'inventory'/'take inventory' }
+action #take { Take: 'get'/'take'/'pick up' Here }
+action #drop { Drop: 'drop'/'put down' Held }
+action #look { Examine: 'look at'/'examine' Nearby }
+action #lookHere { Look: 'look' }
+action #puton { PutOn: 'hang'/'place'/'put' Held 'on'/'upon'/'on to'/'onto' Here }
+// action #go { Travel: 'go' dirBit }
+action #leave;
+action #enter;
+
+global text_buffer = byte_array(64) { 63 };
+global parse_buffer = byte_array(64) { 15 };
+
+routine PrintString [str len] {
+	// for v3/4, string is terminated by zero
+	// for v5, the new length is supplied in second byte of buffer
+	while (len isnt zero and str[0] isnt zero) {
+		print_char str[0];
+		++str;
+		--len;
+	}
+	rfalse;
+}
+
+routine DictAddrToIndex [addr; hdr] {
+	addr = addr - hdr[[4]] - 7;
+	addr = addr / ($dict_entry_size+1);
+	return addr;
+}
+
+// given address of a word that is a synonym, return address of original word
+// TODO: could use scan_table in v4+ but we'd need table length.
+routine FindSynonym [wordAddr; i m hdr] {
+	while ($synonyms[[i]] isnt -1) {
+		if ($synonyms[[i]] < 0)
+			m = $synonyms[[i]] & wordMask;
+		else if ($synonyms[[i]] is wordAddr[[0]]) {
+			wordAddr[[0]] = m;
+			m = m * ($dict_entry_size+1) + 7 + hdr[[4]];
+			wordAddr[[1]] = m[$dict_entry_size];
+			rtrue;
+		}
+		++i;
+	}
+	rfalse;
+}
+
+routine CheckErrors [tb pb; i j] {
+	/* print_num tb[0]; print_char 32;
+	print_num tb[1]; print_char 32;
+	print_num tb[2]; print_char 32;
+	print "[[";
+	if ($zversion<5)
+		PrintString(tb+1,tb[0]);
+	else
+		PrintString(tb+2,tb[1]);
+	print "]]^"; */
+
+	// check number of words parsed
+	if (pb[1] is zero) 
+		print_ret "I beg your pardon?";
+	i = 0;
+
+	// print_num pb[1]; print " words in input.^";
+	// print_num pb; print " base addr.^";
+
+	while (i < pb[1]) {
+		j = pb + 2 + i * 4;
+		// print_num j; crlf;
+		// print_num j[[0]]; print " addr.^";
+		if (j[[0]] is zero) {
+			print "I don't understand the word '";
+			PrintString(tb + j[3], j[2]);
+			print_ret "'.";
+		}
+		else {
+			// Copy the type byte over
+			j[[1]] = j[[0]][$dict_entry_size];
+			// Replace the address with the index
+			j[[0]] = DictAddrToIndex(j[[0]]);
+			// Deal with synonyms (and fix type byte)
+			if (j[[1]]==255)
+				FindSynonym(j);
+		}
+		++i;
+	}
+	rfalse;
+}
+
+routine PrintDict [w; hdr] {
+	w = hdr[[4]] + 7 + w * ($dict_entry_size+1);
+	print_addr w;
+	rfalse;
+}
+
+global CaptureBuffer = byte_array(64);
+
+routine ObjUtil[i] {
+	output_stream2(3, CaptureBuffer);
+	print_obj i;
+	output_stream(-3);
+	if (CaptureBuffer[1] isnt 0) {
+		if (CaptureBuffer[2] in {@a,@e,@i} or CaptureBuffer[2] in {@o,@u})
+			print "An ";
+		else
+			print "A ";
+		print_obj i;
+	}
+	rfalse;
+}
+
+routine ObjLoop[;i j k w] {
+	while (i < $object_count) {
+		++i;
+		ObjUtil(i);
+		if (i has $is_object) {
+			j = addrof(i.adjective);
+			if (j isnt 0) {
+				print " has adjectives:";
+				k = 0;
+				while (k+k < sizeof(j)) {
+					print_char 32;
+					PrintDict(j[[k]]);
+					++k;
+				}
+			}
+			j = addrof(i.noun);
+			if (j isnt 0) {
+				print " and has nouns:";
+				k = 0;
+				while (k+k < sizeof(j)) {
+					print_char 32;
+					PrintDict(j[[k]]);
+					++k;
+				}
+			}
+		}
+		else
+			print " is a location";
+		crlf;
+	}
+	rfalse;
+}
+
+routine SkipRestOfAction [i; n] {
+	repeat {
+		n = $actions[[i]];
+		++i;
+		if (n & isRoutine isn't zero)
+			++i;
+	} while (n >= 0);
+	return i;
+}
+
+routine ScanParseTable [wordCount wordArray; i j r] {
+	while ($actions[[i]] isn't -1) {
+		r = $actions[[i]];
+		print "Checking "; print_num r; crlf;
+		++i;
+		// do we match a word in the pattern?
+		print "Match "; print_num($actions[[i]]); print " vs "; print_num wordArray[[j]]; crlf;
+		if ($actions[[i]] & wordMask is wordArray[[j]]) {
+			print "First part matched.^";
+			// if there is no second word, or it matches our next word
+			if ($actions[[i]] & hasSecondWord isn't zero) {
+				if ($actions[[i+1]] & wordMask is wordArray[[j+2]]) {
+					print "Second word matched!^";
+					++i;
+					j = j + 2;
+				}
+				else {
+					print "Second word didn't match.^";
+					i = SkipRestOfAction(i);
+					print "i now "; print_num i; crlf;
+					continue;
+				}
+			}
+			
+			// Have a match, skip to routine or end, whichever we hit first.
+			while ($actions[[i]] & (isEnd | isRoutine) is zero)
+				++i;
+			// Did we make it to the end already?
+			if ($actions[[i]] < 0)
+				return call r();
+		}
+		// if not a match, and there is a second word, skip it
+		else if ($actions[[i]] & hasSecondWord isn't zero)
+			++i;
+		// else if we got to a disambiguator or end, skip the action
+		else if ($actions[[i]] & (isRoutine | isEnd) isn't zero)
+			i = SkipRestOfAction(i); 
+		// otherwise keep trying for a new match.
+	}
+	print_ret "I don't understand.";
+}
+
+routine DoTurn[; i] {
+	text_buffer[0] = 62;
+	parse_buffer[0] = 15;
+
+	// text_buffer[0] is the size of the input buffer
+	// in v5+, text_buffer[1] is the number of bytes actually read
+	// parse_buffer[0] is the max number of words
+	// parse_buffer[1] is the actual number of words parsed
+	// each word consists of four bytes:
+	// first two bytes is address of the word, or 0 if unknown
+	// next byte is the length of the word, then the position in text_buffer.
+	repeat {
+		if ($zversion>=5)
+			text_buffer[1] = 0;
+		sread(text_buffer, parse_buffer);
+	} while (CheckErrors(text_buffer, parse_buffer) isnt zero);
+
+	// parse_buffer[1] is the actual number of words parsed
+	// parse_buffer[[1]] is the first word parsed (same as parse_buffer[2] and [3])
+	// parse_buffer[[2]] is the type code of the first word
+
+	// Every word address in the parse buffer has been replaced with its index.
+	// The next byte contains the payload byte.
+	if (parse_buffer[[2]] & dirBit isnt zero) {
+		i = Compass(parse_buffer[[1]]);
+		if (i isnt -1)
+			return Travel(i);
+	}
+	if (ScanParseTable(parse_buffer[1],parse_buffer + 2) isn't zero)
+		rtrue;
+
+	rfalse;
+}
+
+routine DebugActions[;a n] {
+	while ($actions[[a]] isnt -1) {
+		print "routine at "; print_num $actions[[a]];
+		print ":";
+		++a;
+		repeat {
+			n = $actions[[a]];
+			++a;
+			PrintDict(n & wordMask);
+			if (n & hasSecondWord isnt 0)
+				print "+";
+			else
+				print " ";
+			if (n & isRoutine isnt 0) {
+				print " (routine ";
+				print_num $actions[[a]];
+				print ")";
+				++a;
+			}
+		} while (n > 0);
+		crlf;
+	}
+	rfalse;
+}
+
+routine Startup[; hdr] {
+   room = Player parent;
+
+   print "Release ";
+   print_num hdr[[1]];
+   print " compiled on ";
+   PrintString(18,6);
+   print " by tinyzc v";
+   PrintString(60,4);
+   crlf;
+
+   print_ret "^Hurrying through the rainswept November night, you're glad to see the
+	bright lights of the Opera House. It's surprising that there aren't more
+	people about but, hey, what do you expect in a cheap demo game...?^";
+}
+
+routine main [] {
+	Startup();
+	Look();
+	ObjLoop();
+	DebugActions();
+	while (deadflag is zero) {
+		turns = turns + DoTurn();
+		if (deadflag is 3)
+			print "*** You have lost! ***";
+		else if (deadflag is 2)
+			print "*** You have won! ***";
+		if (deadflag isnt zero) {
+			crlf;
+			print "Restart or quit?";
+			restart;
+		}
+	}
+	quit;
+}

@@ -1,0 +1,106 @@
+object player "a hapless adventurer" {
+}
+
+property global description;
+
+/* object Hook "a demo hook" {
+	description: [;c] {
+		print "It's just a small brass hook, ";
+		if (self has child -> c) {
+			print "with a ";
+			print_obj c;
+			print_ret " hanging on it.";
+		}
+		else
+			print_ret "screwed to the wall.";
+	}
+} */
+
+/* routine Inventory [;i] {
+	if (player has child -> i) {
+		print "You are carrying:";
+		crlf;
+		repeat {
+			print "  ";
+			print_obj i;
+			crlf;
+		} while (i has sibling -> i);
+		rtrue;
+	}
+	else
+		print_ret "You are empty-handed";
+} */
+
+/* routine Test [act] {
+	if (act in {1,2})
+		rtrue;
+	rfalse;
+} */
+
+global room;
+global score;
+global turns;
+global scratch;
+
+/* routine Startup [a] {
+	a = 1 + 9;
+	return a;
+}
+
+routine main[] {
+	// print "hello, world ";
+	print_num Startup();
+	quit;
+} */
+
+global deadflag;
+
+/* routine Math[a b] {
+	return a + 2 + b * 4;
+} */
+
+/* routine ztest [a] {
+	if (a isnt 0)
+		print_ret "a is not zero";
+	else
+		print_ret "a is zero";
+}
+
+routine andtest [a b] {
+	print "a = "; print_num a; crlf;
+	print "b = "; print_num b; crlf;
+	if (a isnt 0 and b isnt 0)
+		print_ret "a and b are not zero";
+	else
+		print_ret "either a or b is zero";
+}
+
+routine ortest [a b] {
+	print "a = "; print_num a; crlf;
+	print "b = "; print_num b; crlf;
+	if (a isnt 0 or b isnt 0)
+		print_ret "either a or b or both are not zero";
+	else
+		print_ret "both a and b are zero";
+} */
+
+routine andtest2 [a b] {
+	if (a isnt 0 and b isnt 0)
+		rtrue;
+	else
+		rfalse;
+}
+
+routine ortest2 [a b] {
+	if (a isnt 0 or b isnt 0)
+		rtrue;
+	else
+		rfalse;
+}
+
+routine main[] {
+	// andtest(0,0); andtest(1,0); andtest(0,1); andtest(1,1);
+	// ortest(0,0); ortest(1,0); ortest(0,1); ortest(1,1);
+	andtest2(0,0);
+	quit;
+}

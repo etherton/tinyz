@@ -1,0 +1,11 @@
+a.out
+*.z*
+*.txt
+*.save
+tinyz.tab.*
+tinyz.output
+*.o
+zdis
+tinyzterp
+tinyzc
+tinyzc.dSYM/
