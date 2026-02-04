@@ -467,7 +467,7 @@ routine Nearby [obj; pr] {
 }
 
 // Object is in player's room and/or held by player
-routine Here [obj] {
+routine Here_ [obj] {
 	while (obj parent isnt zero) {
 		obj = obj parent;
 		if (obj is room)
@@ -491,6 +491,59 @@ constant wordMask = 8191;
 	1-- - this is the end of the action list
 	*/
 
+/*
+	Number of single verbs (0-3)
+	Number of double verbs (0-3)
+	Direct object type (none, here, held, nearby, up to 15)
+	Number of single preps (0-3)
+	Number of double preps (0-3)
+	Indirect object type (none, here, held, nearby, up to 15)
+*/
+
+// if element 0 is 255, it's all objects in the game
+// otherwise, it's a count of objects in the list
+global ObjList = byte_array(32);
+
+// returns next object in list, or zero if at end
+routine ObjNext [] {
+	if (ObjList[0] is 255) {
+		ObjList[1] = ObjList[1] + 1;
+		if (ObjList[1] > $object_count)
+			return 0;
+		else
+			return ObjList[1];
+	}
+	else {
+		ObjList[1] = ObjList[1] + 1;
+		if (ObjList[1] is ObjList[0])
+			return 0;
+		else
+			return ObjList[2 + ObjList[1]];
+	}
+}
+
+// going into tokenizatio , [0] is number of words we can store, on return [1]
+// is the number of words stored. [[1]], [[3]], etc are the word addresses of
+// the ditionary matches, or 0 if unknown. [4]/[5], [8]/[9] etc are the offset
+// into text_buffer of the word, and its length. after our processing, [[0]]
+// is the number of words, [[1]],[[3]], etc are the word indices (unknown words
+// will have caused an error by now), and [[2]],[[4]] are the dict word flags.
+global parse_buffer = byte_array(64);
+global nw;	// next word being processed (always an odd number)
+global lw;	// last word index (so we know we're at end of input)
+global na;	// next action being processed
+
+// Parse a word that is here but not held
+routine Here [] {
+	if (parse_buffer[[nw+1]] & artBit)
+		nw = nw + 2;
+	if (parse_buffer[[nw+1]] & nounBit) {
+		
+	}
+	else
+		rfalse;
+}
+
 // actions are scanned in-order
 // so specific cases need to be before more general cases
 // some actions are really just messages and aren't part of grammar
@@ -505,7 +558,6 @@ action #leave;
 action #enter;
 
 global text_buffer = byte_array(64) { 63 };
-global parse_buffer = byte_array(64) { 15 };
 
 routine PrintString [str len] {
 	// for v3/4, string is terminated by zero
@@ -638,61 +690,63 @@ routine ObjLoop[;i j k w] {
 	rfalse;
 }
 
-routine SkipRestOfAction [i; n] {
-	repeat {
-		n = $actions[[i]];
-		++i;
-		if (n & isRoutine isn't zero)
-			++i;
-	} while (n >= 0);
-	return i;
-}
+global ActionRoutine;
+global DirectObject;
+global IndirectObject;
 
-routine ScanParseTable [wordCount wordArray; i j r] {
-	while ($actions[[i]] isn't -1) {
-		r = $actions[[i]];
-		print "Checking "; print_num r; crlf;
-		++i;
-		// do we match a word in the pattern?
-		print "Match "; print_num($actions[[i]]); print " vs "; print_num wordArray[[j]]; crlf;
-		if ($actions[[i]] & wordMask is wordArray[[j]]) {
-			print "First part matched.^";
-			// if there is no second word, or it matches our next word
-			if ($actions[[i]] & hasSecondWord isn't zero) {
-				if ($actions[[i+1]] & wordMask is wordArray[[j+2]]) {
-					print "Second word matched!^";
-					++i;
-					j = j + 2;
+routine ScanParseTable [; n matched] {
+	na = 0;
+	DirectObject = 0;
+	IndirectObject = 0;
+	while ($actions[[na]] isn't -1) {
+		ActionRoutine = $actions[[na]];
+		// print "Checking "; print_num ActionRoutine; crlf;
+		++na;
+		nw = 1;
+		matched = 0;
+		repeat {
+			// print "Starting phrase.^";
+			repeat {
+				n = $actions[[na]];
+				++na;
+				print "n = "; print_num(n); crlf;
+				if (n &= hasSecondWord) {
+					if (n & wordMask is parse_buffer[[nw]] and $actions[[na]] & wordMask is parse_buffer[[nw+2]])
+						matched = 2;
+					n = $actions[[na]];
+					++na;
 				}
 				else {
-					print "Second word didn't match.^";
-					i = SkipRestOfAction(i);
-					print "i now "; print_num i; crlf;
-					continue;
+					if (n & wordMask is parse_buffer[[nw]])
+						matched = 1;
 				}
-			}
-			
-			// Have a match, skip to routine or end, whichever we hit first.
-			while ($actions[[i]] & (isEnd | isRoutine) is zero)
-				++i;
-			// Did we make it to the end already?
-			if ($actions[[i]] < 0)
-				return call r();
-		}
-		// if not a match, and there is a second word, skip it
-		else if ($actions[[i]] & hasSecondWord isn't zero)
-			++i;
-		// else if we got to a disambiguator or end, skip the action
-		else if ($actions[[i]] & (isRoutine | isEnd) isn't zero)
-			i = SkipRestOfAction(i); 
-		// otherwise keep trying for a new match.
+				// print "matched = "; print_num matched; crlf;
+				if (n &= isRoutine) {
+					//print "found routine^";
+					if (matched isn't 0) {
+						nw = nw + matched + matched;
+						matched = $actions[[na]];
+						if (n &= isEnd)
+							IndirectObject = call matched();
+						else
+							DirectObject = call matched();
+					}
+					++na;
+				}
+			} while (n & (isRoutine | isEnd) is 0);
+			// If we got to the end of the rule already leave now.
+			if (n &= isEnd and matched isn't 0)
+				rtrue;
+			matched = 0;
+		} while (n >= 0);
 	}
-	print_ret "I don't understand.";
+	print "I didn't understand that.^";
+	rfalse;
 }
 
 routine DoTurn[; i] {
 	text_buffer[0] = 62;
-	parse_buffer[0] = 15;
+	parse_buffer[0] = 14; // includes room for "zero" terminator
 
 	// text_buffer[0] is the size of the input buffer
 	// in v5+, text_buffer[1] is the number of bytes actually read
@@ -713,13 +767,19 @@ routine DoTurn[; i] {
 
 	// Every word address in the parse buffer has been replaced with its index.
 	// The next byte contains the payload byte.
-	if (parse_buffer[[2]] & dirBit isnt zero) {
+	if (parse_buffer[[2]] &= dirBit) {
 		i = Compass(parse_buffer[[1]]);
 		if (i isnt -1)
 			return Travel(i);
 	}
-	if (ScanParseTable(parse_buffer[1],parse_buffer + 2) isn't zero)
+	// compute final word index, terminate list with zero
+	lw = parse_buffer[1] * 2 + 1;
+	parse_buffer[[lw]] = 0;		// set word index to zero
+	parse_buffer[[lw+1]] = 0;	// no type bits set
+	if (ScanParseTable(parse_buffer[1],parse_buffer + 2) isn't zero) {
+		call ActionRoutine();
 		rtrue;
+	}
 
 	rfalse;
 }
@@ -733,11 +793,11 @@ routine DebugActions[;a n] {
 			n = $actions[[a]];
 			++a;
 			PrintDict(n & wordMask);
-			if (n & hasSecondWord isnt 0)
+			if (n &= hasSecondWord)
 				print "+";
 			else
 				print " ";
-			if (n & isRoutine isnt 0) {
+			if (n &= isRoutine) {
 				print " (routine ";
 				print_num $actions[[a]];
 				print ")";
