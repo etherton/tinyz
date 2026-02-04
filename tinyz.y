@@ -1835,6 +1835,7 @@ bool_expr
 	| expr NE expr		{ $$ = $3->isZero()? 
 			static_cast<expr_branch*>(new expr_unary_branch(_1op::jz,true,$1)) : 
 			static_cast<expr_branch*>(new expr_binary_branch($1,_2op::je,true,$3,[](int16_t a,int16_t b)->int16_t{return a!=b;})); }
+	| expr '&' '=' expr { $$ = new expr_binary_branch($1,_2op::test,false,$4,nullptr); }
 	| expr IN '{' expr '}'	{ $$ = new expr_in($1,$4); }
 	| expr IN '{' expr ',' expr '}' { $$ = new expr_in($1,$4,$6); }
 	| expr IN '{' expr ',' expr ',' expr '}' { $$ = new expr_in($1,$4,$6,$8); }
@@ -2383,14 +2384,35 @@ int yylex_() {
 			}
 			[[fallthrough]];
 		case '0': case '1': case '2': case '3': case '4':
-		case '5': case '6': case '7': case '8': case '9':
+		case '5': case '6': case '7': case '8': case '9': {
+			int base = 10;
+			int value = 0;
 			do {
+				if (yylen==1 && yych=='b')
+					base=2;
+				else if (yylen==1 && yych=='x')
+					base=16;
+				else {
+					int digit = yych;
+					if (digit>='A' && digit<='F')
+						digit -= 'A' - 10;
+					else if (digit>='a' && digit<='f')
+						digit -= 'a' - 10;
+					else if (digit>='0' && digit<='9')
+						digit -= '0';
+					if (digit < 0 || digit >= base)
+						break;
+					value = value * base + digit;
+				}
 				yytoken[yylen++] = yych;
 				yynext();
-			} while (yych>='0'&&yych<='9');
+			} while (yylen<sizeof(yytoken)-1);
 			yytoken[yylen] = 0;
-			yylval.ival = atoi(yytoken);
+			if (yytoken[0]=='-')
+				value = -value;
+			yylval.ival = value;
 			return INTLIT;
+		}
 		case '+': 
 			if (yynext()=='+') {
 				yynext();
