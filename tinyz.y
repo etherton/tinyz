@@ -1855,7 +1855,7 @@ bool_expr
 	| objref has_or_hasnt aname	{ $$ = new expr_binary_branch($1,_2op::test_attr,$2,$3); }
 	| objref has_or_hasnt CHILD opt_arrow { $$ = new expr_unary_branch_store(_1op::get_child,$2,$1,$4); }
 	| objref has_or_hasnt SIBLING opt_arrow { $$ = new expr_unary_branch_store(_1op::get_sibling,$2,$1,$4); }
-	| objref HOLDS objref 	{ $$ = new expr_binary_branch($1,_2op::jin,false,$3); }
+	| objref HOLDS objref 	{ $$ = new expr_binary_branch($3,_2op::jin,false,$1); }
 	| SAVE				{ $$ = new expr_saveRestore(_0op::save); }
 	| RESTORE			{ $$ = new expr_saveRestore(_0op::restore); }
 	| '(' bool_expr ')' { $$ = $2; }
