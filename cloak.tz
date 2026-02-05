@@ -153,6 +153,9 @@ global deadflag;
 object Player "Player" (foyer) {
 }
 
+location Locations "The World" {
+}
+
 // If a string constant crosses multiple lines, any number of spaces and tabs
 // followed by a line break is consumed. Next, N line breaks is turned into
 // N-1 line breaks (usually zero) and then finally, one or more spaces and/or
@@ -160,7 +163,7 @@ object Player "Player" (foyer) {
 // of saying you can break up a long string and it will end up looking reasonable.
 // if you need to break up a line in the middle of a word, just start the remainder
 // of the word at the leftmost column of the next line.
-location foyer "Foyer of the Opera House" { 
+location foyer "Foyer of the Opera House" (Locations) { 
 	description: 
 		"You are standing in a spacious hall, splendidly decorated in red
 		and gold, with glittering chandeliers overhead. The entrance from
@@ -185,7 +188,7 @@ object Aardvark "aardvark" (foyer) {
 //   [dictionary_word]+
 //   routine_defintion
 // routine_definition: '[' [params..] [';' locals..] ']' '{' stmts '}'
-location cloakroom "Cloakroom" {
+location cloakroom "Cloakroom" (Locations) {
 	description: "The walls of this small room were clearly once lined with hooks,
 	 	though now only one remains. The exit is a door to the east.";
 	e_to: foyer;
@@ -217,7 +220,7 @@ object hat "nondescript hat" (foyer) {
 
 global message_damage;
 
-location bar "Foyer Bar" {
+location bar "Foyer Bar" (Locations) {
 	description: "The bar, much rougher than you'd have guessed after the opulence
 			of the foyer to the north, is completely empty. There seems to
 			be some sort of message scrawled in the sawdust on the floor.";
@@ -284,6 +287,8 @@ object message "scrawled message" (bar) {
 		}
 	}
 }
+
+//////////////////// LIBRARY CODE /////////////////////
 
 // there are several ways to declare dictionary words. the syntax always
 // uses single quotes. the context determines which bits are set on the word
@@ -378,6 +383,7 @@ routine Take [obj] {
 	if (obj hasnt scenery) {
 		if (BlockBefore(#take,room) is true or BlockBefore(#take,obj) is true)
 			rtrue;
+		print "You pick up the "; print_obj obj; print ".^";
 		move obj into Player;
 		CallAfter(#take,obj);
 		rfalse;
@@ -533,27 +539,43 @@ global nw;	// next word being processed (always an odd number)
 global lw;	// last word index (so we know we're at end of input)
 global na;	// next action being processed
 
-routine RecurseMatchNoPlayer [obj prop word; j k] {
+constant MaxObjectList = 32;
+global ObjectList = word_array(MaxObjectList);
+global ObjectListCount;
+global ExcludeObject;
+global MatchProp;
+global MatchWord;
+
+routine RecurseMatch [obj; j k] {
 	if (obj has child -> obj) {
 		repeat {
-			if (obj isn't Player and obj has $is_object) {
-				k = addrof(obj.prop);
+			// print_num obj; print_char @ ; print_obj obj; crlf;
+			if (obj isn't ExcludeObject and obj has $is_object) {
+				k = addrof(obj.MatchProp);
 				if (k isn't 0) {
+					// print "...has "; print_num sizeof(k)/2; print " elements.^";
 					j = 0;
 					while (j+j < sizeof(k)) {
-						if (word is k[[j]])
-							return obj;
+						if (MatchWord is k[[j]]) {
+							// print "adding "; print_num obj; crlf;
+							if (ObjectListCount < MaxObjectList)
+								ObjectList[[ObjectListCount]] = obj;
+							++ObjectListCount;
+						}
 						++j;
 					}
 				}
 			}
-			if (obj has child -> k) {
-				k = RecurseMatchNoPlayer(k,prop,word);
-				if (k isn't zero)
-					return k;
-			}		
+			if (obj has child -> k)
+				RecurseMatch(k);
 		} while (obj has sibling -> obj);
 	}
+	rfalse;
+}
+
+routine PrintDict [w; hdr] {
+	w = hdr[[4]] + 7 + w * ($dict_entry_size+1);
+	print_addr w;
 	rfalse;
 }
 
@@ -561,8 +583,17 @@ routine RecurseMatchNoPlayer [obj prop word; j k] {
 routine Here [] {
 	if (parse_buffer[[nw+1]] &= artBit)
 		nw = nw + 2;
-	if (parse_buffer[[nw+1]] &= nounBit)
-		return RecurseMatchNoPlayer(Player parent,noun,parse_buffer[[nw]]);
+	if (parse_buffer[[nw+1]] &= nounBit) {
+		ObjectListCount = 0;
+		ExcludeObject = Player;
+		MatchProp = noun;
+		MatchWord = parse_buffer[[nw]];
+		RecurseMatch(Player parent);
+		if (ObjectListCount is 1)
+			return ObjectList[[0]];
+		else
+			rfalse;
+	}
 	else
 		rfalse;
 }
@@ -658,12 +689,6 @@ routine CheckErrors [tb pb; i j] {
 	rfalse;
 }
 
-routine PrintDict [w; hdr] {
-	w = hdr[[4]] + 7 + w * ($dict_entry_size+1);
-	print_addr w;
-	rfalse;
-}
-
 global CaptureBuffer = byte_array(64);
 
 routine ObjUtil[i] {
@@ -732,7 +757,7 @@ routine ScanParseTable [; n matched] {
 			repeat {
 				n = $actions[[na]];
 				++na;
-				print "n = "; print_num(n); crlf;
+				// print "n = "; print_num(n); crlf;
 				if (n &= hasSecondWord) {
 					if (n & wordMask is parse_buffer[[nw]] and $actions[[na]] & wordMask is parse_buffer[[nw+2]])
 						matched = 2;
@@ -749,10 +774,14 @@ routine ScanParseTable [; n matched] {
 					if (matched isn't 0) {
 						nw = nw + matched + matched;
 						matched = $actions[[na]];
-						if (n &= isEnd)
+						if (DirectObject isn't zero) {
 							IndirectObject = call matched();
-						else
+							// print "IndirectObject now "; print_num IndirectObject; crlf;
+						}
+						else {
 							DirectObject = call matched();
+							// print "DirectObject now "; print_num DirectObject; crlf;
+						}
 					}
 					++na;
 				}
@@ -800,7 +829,9 @@ routine DoTurn[; i] {
 	parse_buffer[[lw]] = 0;		// set word index to zero
 	parse_buffer[[lw+1]] = 0;	// no type bits set
 	if (ScanParseTable(parse_buffer[1],parse_buffer + 2) isn't zero) {
-		call ActionRoutine();
+		// print_num DirectObject; crlf;
+		// print_obj DirectObject; crlf;
+		call ActionRoutine(DirectObject, IndirectObject);
 		rtrue;
 	}
 
