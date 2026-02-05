@@ -418,20 +418,22 @@ routine Drop [obj] {
 }
 
 routine PutOn [do ido] {
+	// print "PutOn!^"; print_num do; crlf; print_num ido; crlf;
 	if (ido has supporter) {
 		if (ido has child)
 			print_ret "There's no room.";
-		else if (CheckBefore(#puton,room) isnt false and 
+		/* else if (CheckBefore(#puton,room) isnt false and 
 				CheckBefore(#puton,do) isnt false and 
-				CheckBefore(#puton,ido) isnt false) {
+				CheckBefore(#puton,ido) isnt false) { */
+			print "You place the "; print_obj do; print " on the "; print_obj ido; print ".^";
 			move do into ido;
 			CallAfter(#puton,ido);
 			CallAfter(#puton,do);
 			CallAfter(#puton,room);
 			rfalse;
-		}
+		/* }
 		else
-			rtrue;
+			rtrue; */
 	}
 	else
 		print_ret "You can't put it on that.";
@@ -558,8 +560,10 @@ routine Common [root] {
 		MatchProp = noun;
 		MatchWord = parse_buffer[[nw]];
 		RecurseMatch(root);
-		if (ObjectListCount is 1)
+		if (ObjectListCount is 1) {
+			nw = nw + 2;
 			return ObjectList[[0]];
+		}
 		else
 			rfalse;
 	}
@@ -743,6 +747,7 @@ routine ScanParseTable [; n matched] {
 				n = $actions[[na]];
 				++na;
 				// print "n = "; print_num(n); crlf;
+				// PrintDict(n & wordMask); crlf;
 				if (n &= hasSecondWord) {
 					if (n & wordMask is parse_buffer[[nw]] and $actions[[na]] & wordMask is parse_buffer[[nw+2]])
 						matched = 2;
@@ -755,7 +760,7 @@ routine ScanParseTable [; n matched] {
 				}
 				// print "matched = "; print_num matched; crlf;
 				if (n &= isRoutine) {
-					//print "found routine^";
+					// print "found routine^";
 					if (matched isn't 0) {
 						nw = nw + matched + matched;
 						matched = $actions[[na]];
@@ -814,8 +819,8 @@ routine DoTurn[; i] {
 	parse_buffer[[lw]] = 0;		// set word index to zero
 	parse_buffer[[lw+1]] = 0;	// no type bits set
 	if (ScanParseTable(parse_buffer[1],parse_buffer + 2) isn't zero) {
-		print "DirectObject = "; print_num DirectObject; crlf;
-		print "IndirectObject = "; print_num IndirectObject; crlf;
+		// print "DirectObject = "; print_num DirectObject; crlf;
+		// print "IndirectObject = "; print_num IndirectObject; crlf;
 		call ActionRoutine(DirectObject, IndirectObject);
 		rtrue;
 	}
@@ -867,8 +872,8 @@ routine Startup[; hdr] {
 routine main [] {
 	Startup();
 	Look();
-	ObjLoop();
-	DebugActions();
+	// ObjLoop();
+	// DebugActions();
 	while (deadflag is zero) {
 		turns = turns + DoTurn();
 		if (deadflag is 3)
