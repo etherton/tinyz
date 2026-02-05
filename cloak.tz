@@ -533,13 +533,36 @@ global nw;	// next word being processed (always an odd number)
 global lw;	// last word index (so we know we're at end of input)
 global na;	// next action being processed
 
+routine RecurseMatchNoPlayer [obj prop word; j k] {
+	if (obj has child -> obj) {
+		repeat {
+			if (obj isn't Player and obj has $is_object) {
+				k = addrof(obj.prop);
+				if (k isn't 0) {
+					j = 0;
+					while (j+j < sizeof(k)) {
+						if (word is k[[j]])
+							return obj;
+						++j;
+					}
+				}
+			}
+			if (obj has child -> k) {
+				k = RecurseMatchNoPlayer(k,prop,word);
+				if (k isn't zero)
+					return k;
+			}		
+		} while (obj has sibling -> obj);
+	}
+	rfalse;
+}
+
 // Parse a word that is here but not held
 routine Here [] {
-	if (parse_buffer[[nw+1]] & artBit)
+	if (parse_buffer[[nw+1]] &= artBit)
 		nw = nw + 2;
-	if (parse_buffer[[nw+1]] & nounBit) {
-		
-	}
+	if (parse_buffer[[nw+1]] &= nounBit)
+		return RecurseMatchNoPlayer(Player parent,noun,parse_buffer[[nw]]);
 	else
 		rfalse;
 }
