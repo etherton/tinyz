@@ -1297,7 +1297,8 @@
 		}
 	};
 	uint16_t emit_routine(int numLocals,stmt *body) {
-		currentRoutine = relocatableBlob::create(1024,UD_HIGH);
+		if (!currentRoutine)
+			currentRoutine = relocatableBlob::create(1024,UD_HIGH);
 		// printf("%d locals\n",numLocals);
 		emitByte(numLocals);
 		if (the_header.version < 5) {
@@ -1642,22 +1643,31 @@ pvalue
 	;
 
 routine_def
-	: ROUTINE NEWSYM routine_body 
+	: ROUTINE NEWSYM '[' 
 		{
-			the_relocations[$3]->desc = $2->first;
+			open_scope(); 
+			currentRoutine = relocatableBlob::create(1024,UD_HIGH); 
+			next_local=0; 
+			$2->second.token = RNAME;
+			$2->second.ival = currentRoutine->index;
+		} 
+		opt_params_list opt_locals_list ']' stmt
+		{
+			int cr = currentRoutine->index;
+			the_relocations[cr]->desc = $2->first;
 			if ($2->first == "main") {
 				if (entry_point_index == -1) {
-					if (the_relocations[$3]->contents[0])
+					if (the_relocations[cr]->contents[0])
 						yyerror("main cannot declare any parameters or locals");
-					entry_point_index = $3;
+					entry_point_index = cr;
 					// Make sure we get its real address, not packed address
-					the_relocations[$3]->userData = UD_STATIC;
+					the_relocations[cr]->userData = UD_STATIC;
 				}
 				else
 					yyerror("cannot have two routines named main");
 			}
-			$2->second.token = RNAME; 
-			$2->second.ival = $3;
+			emit_routine(next_local,$8);
+			close_scope();
 		}
 	;
 
