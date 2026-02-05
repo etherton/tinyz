@@ -380,7 +380,9 @@ routine Travel [dir;r] {
 }
 
 routine Take [obj] {
-	if (obj hasnt scenery) {
+	if (obj is zero)
+		print_ret "I don't see that here.";
+	else if (obj hasnt scenery) {
 		if (BlockBefore(#take,room) is true or BlockBefore(#take,obj) is true)
 			rtrue;
 		print "You pick up the "; print_obj obj; print ".^";
@@ -404,8 +406,10 @@ routine Examine [obj; desc] {
 }
 
 routine Drop [obj] {
-	if (Player holds obj and CheckBefore(#drop,room) isnt false and
-		CheckBefore(#drop,obj) isnt false) {
+	// print "Dropping "; print_num obj; crlf;
+	print_num obj parent; crlf;
+	if (Player holds obj and CheckBefore(#drop,room) isnt false and CheckBefore(#drop,obj) isnt false) {
+		print "You drop the "; print_obj obj; print ".^";
 		move obj into Player parent;
 		rtrue;
 	}
@@ -449,39 +453,6 @@ routine PutOn [do ido] {
 // verb_bit - set if word is a verb (payload is action index)
 // if payload is nonzero, the word is a synonym
 // if payload is nonzero but larger than number of words, it's a biased direction proeprty index
-
-// object is owned by player
-routine Held [obj] {
-	while (obj parent isnt zero) {
-		obj = obj parent;
-		if (obj is Player)
-			rtrue;
-	}
-	rfalse;
-}
-
-// object is in room with player but not held by player
-routine Nearby [obj; pr] {
-	while (obj parent isnt zero) {
-		obj = obj parent;
-		if (obj is room)
-			rtrue;
-		else if (obj is Player)
-			rfalse;
-	}
-	rfalse;
-}
-
-// Object is in player's room and/or held by player
-routine Here_ [obj] {
-	while (obj parent isnt zero) {
-		obj = obj parent;
-		if (obj is room)
-			rtrue;
-	}
-	rfalse;
-}
-
 
 constant isEnd = 1 << 15;
 constant isRoutine = 1 << 14;
@@ -579,16 +550,14 @@ routine PrintDict [w; hdr] {
 	rfalse;
 }
 
-// Parse a word that is here but not held
-routine Here [] {
+routine Common [root] {
 	if (parse_buffer[[nw+1]] &= artBit)
 		nw = nw + 2;
 	if (parse_buffer[[nw+1]] &= nounBit) {
 		ObjectListCount = 0;
-		ExcludeObject = Player;
 		MatchProp = noun;
 		MatchWord = parse_buffer[[nw]];
-		RecurseMatch(Player parent);
+		RecurseMatch(root);
 		if (ObjectListCount is 1)
 			return ObjectList[[0]];
 		else
@@ -596,6 +565,22 @@ routine Here [] {
 	}
 	else
 		rfalse;
+}
+
+// Parse a word that is here but not held
+routine Here [] {
+	ExcludeObject = Player;
+	return Common(Player parent);
+}
+
+routine Held [] {
+	ExcludeObject = 0;
+	return Common(Player);
+}
+
+routine Nearby [] {
+	ExcludeObject = 0;
+	return Common(Player parent);
 }
 
 // actions are scanned in-order
@@ -829,8 +814,8 @@ routine DoTurn[; i] {
 	parse_buffer[[lw]] = 0;		// set word index to zero
 	parse_buffer[[lw+1]] = 0;	// no type bits set
 	if (ScanParseTable(parse_buffer[1],parse_buffer + 2) isn't zero) {
-		// print_num DirectObject; crlf;
-		// print_obj DirectObject; crlf;
+		print "DirectObject = "; print_num DirectObject; crlf;
+		print "IndirectObject = "; print_num IndirectObject; crlf;
 		call ActionRoutine(DirectObject, IndirectObject);
 		rtrue;
 	}
@@ -852,9 +837,9 @@ routine DebugActions[;a n] {
 			else
 				print " ";
 			if (n &= isRoutine) {
-				print " (routine ";
+				print "(routine ";
 				print_num $actions[[a]];
-				print ")";
+				print ") ";
 				++a;
 			}
 		} while (n > 0);
