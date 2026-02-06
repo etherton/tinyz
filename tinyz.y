@@ -1341,7 +1341,7 @@
 }
 
 %token ATTRIBUTE PROPERTY GLOBAL OBJECT LOCATION ROUTINE WORDBIT ACTION HAS HASNT IN HOLDS SYNONYM CONTINUE BREAK
-%token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET SELF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF
+%token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET SELF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF ONCE
 %token <ival> DICT ANAME PNAME LNAME GNAME INTLIT ONAME
 %token <sval> STRLIT
 %token <rval> RNAME
@@ -1856,6 +1856,7 @@ bool_expr
 	| objref has_or_hasnt CHILD opt_arrow { $$ = new expr_unary_branch_store(_1op::get_child,$2,$1,$4); }
 	| objref has_or_hasnt SIBLING opt_arrow { $$ = new expr_unary_branch_store(_1op::get_sibling,$2,$1,$4); }
 	| objref HOLDS objref 	{ $$ = new expr_binary_branch($3,_2op::jin,false,$1); }
+	| ONCE vname		{ $$ = new expr_binary_branch(new expr_literal($2),_2op::inc_chk,true,new expr_literal(1)); }
 	| SAVE				{ $$ = new expr_saveRestore(_0op::save); }
 	| RESTORE			{ $$ = new expr_saveRestore(_0op::restore); }
 	| '(' bool_expr ')' { $$ = $2; }
@@ -2060,6 +2061,7 @@ void init(int version) {
 	rw["addrof"] = ADDROF;
 	rw["continue"] = CONTINUE;
 	rw["break"] = BREAK;
+	rw["once"] = ONCE;
 
 	f_0op["restart"] = _0op::restart;
 	f_0op["quit"] = _0op::quit;
