@@ -91,6 +91,7 @@
 			result->nextPlaced = 0xFFFF;
 			result->desc = desc? desc : "";
 			result->contents = new uint8_t[totalSize];
+			result->referenceCount = 0;
 			memset(result->contents,0,totalSize);
 			if (firstFree != 0xFFFF) {
 				result->index = firstFree;
@@ -163,9 +164,33 @@
 			address = nextAddress;
 			nextAddress += size;
 		}
+		static void deadStrip() {
+			bool did_something;
+			do {
+				for (uint16_t i=0; i<the_relocations.size(); i++) {
+					if ((size_t)the_relocations[i] > 0xFFFF && 
+						the_relocations[i]->address == ~0U &&
+						the_relocations[i]->referenceCount==0 && 
+						the_relocations[i]->relocations &&
+						the_relocations[i]->userData == UD_HIGH) {
+							auto j = the_relocations[i]->relocations;
+							while (j) {
+								assert(the_relocations[j->car.first]->referenceCount);
+								the_relocations[j->car.first]->referenceCount--;
+								j = j->cdr;
+							}
+							delete the_relocations[i]->relocations;
+							the_relocations[i]->relocations = nullptr;
+							did_something = true;
+					}
+				}
+				did_something = false;
+			} while (did_something);
+		}
 		static void placeAll(uint16_t type) {
 			for (uint16_t i=0; i<the_relocations.size(); i++) {
 				if ((size_t)the_relocations[i] > 0xFFFF && the_relocations[i]->address == ~0U &&
+					the_relocations[i]->referenceCount && 
 					the_relocations[i]->userData == type)
 					the_relocations[i]->place(type==UD_HIGH?(1U << story_shift)-1:0U);
 			}
@@ -207,6 +232,7 @@
 		}
 		void addRelocation(uint16_t ri,int16_t bias = 0) {
 			relocations = new relocation_t(std::pair<uint16_t,uint16_t>(ri,offset),relocations);
+			the_relocations[ri]->referenceCount++;
 			storeWord(bias);
 		}
 		void applyRelocations() {
@@ -229,7 +255,7 @@
 			copy(other->contents,other->size);
 			other->destroy();
 		}
-		uint16_t size, offset, index, userData, nextPlaced;
+		uint16_t size, offset, index, userData, nextPlaced, referenceCount;
 		uint32_t address;
 		relocation_t *relocations;
 		std::string desc;
@@ -1667,6 +1693,8 @@ routine_def
 					yyerror("cannot have two routines named main");
 			}
 			emit_routine(next_local,$8);
+			// make sure recursive references don't count for deadstripping.
+			the_relocations[cr]->referenceCount = 0;
 			close_scope();
 		}
 	;
@@ -2776,6 +2804,7 @@ int main(int argc,char **argv) {
 			object_blob->place();
 			relocatableBlob::placeAll(UD_DYNAMIC);
 			relocatableBlob::placeAll(UD_STATIC);
+			relocatableBlob::deadStrip();
 			relocatableBlob::placeAll(UD_HIGH);
 
 			header_blob->storeWord(0); // +24 abbreviations
@@ -2795,7 +2824,8 @@ int main(int argc,char **argv) {
 			if (report & R_ROUTINES) {
 				disassemble(entry_point_index);
 				for (int i=0; i<the_relocations.size(); i++) {
-					if ((size_t)the_relocations[i] > 65535 && the_relocations[i]->userData == UD_HIGH)
+					if ((size_t)the_relocations[i] > 65535 && the_relocations[i]->userData == UD_HIGH &&
+						the_relocations[i]->referenceCount)
 						disassemble(i);
 				}
 			}
