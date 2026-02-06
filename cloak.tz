@@ -137,7 +137,7 @@ routine Compass [word] {
 	else if (word is 'west')
 		return w_to;
 	else
-		return -1;
+		rfalse;
 }
 
 // the first three must be in this order for status line (v3) games.
@@ -630,6 +630,12 @@ routine Anywhere [] {
 	return ParseCommon(Locations);
 }
 
+routine Direction [] {
+	if (parse_buffer[[nw+1]] &= artBit)
+		nw = nw + 2;
+	return Compass(parse_buffer[[nw]]);
+}
+
 // actions are scanned in-order
 // so specific cases need to be before more general cases
 // some actions are really just messages and aren't part of grammar
@@ -639,7 +645,7 @@ action #drop { Drop: 'drop'/'put down' Held }
 action #look { Examine: 'look at'/'examine' Nearby }
 action #lookHere { Look: 'look' }
 action #puton { PutOn: 'hang'/'place'/'put' Held 'on'/'upon'/'on to'/'onto' Here }
-// action #go { Travel: 'go' dirBit }
+action #go { Travel: 'go'/'go to' Direction }
 action #leave;
 action #enter;
 
