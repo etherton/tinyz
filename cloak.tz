@@ -176,6 +176,8 @@ location foyer "Foyer of the Opera House" (Locations) {
 }
 
 object Aardvark "aardvark" (foyer) {
+	noun: 'aardvark';
+	description: "It's here to test printing an object starting with a vowel.";
 }
 
 // location_or_object new_name "short description" ['(' parent ')'] '{'
@@ -354,10 +356,36 @@ routine CallAfter [act obj;r] {
 	rtrue;
 }
 
-routine Look [] {
+global CaptureBuffer = byte_array(64);
+
+routine PrintAObj [i] {
+	output_stream2(3, CaptureBuffer);
+	print_obj i;
+	output_stream(-3);
+	if (CaptureBuffer[1] isnt 0) {
+		if (CaptureBuffer[2] in {@a,@e,@i} or CaptureBuffer[2] in {@o,@u})
+			print "An ";
+		else
+			print "A ";
+		print_obj i;
+	}
+	rfalse;
+}
+
+routine Look [; i r f] {
 	if (room hasnt lit)
 		print_ret "It's too dark to see anything.";
-	return call room.description();
+	r = call room.description();
+	if (room has child -> i) {
+		repeat {
+			if (i isn't Player and i has $is_object and i hasn't scenery) {
+				if (once f)
+					print "You can also see:^";
+				PrintAObj(i); crlf;
+			}
+		} while (i has sibling -> i);
+	}
+	return r;
 }
 
 routine Travel [dir;r] {
@@ -382,6 +410,9 @@ routine Travel [dir;r] {
 routine Take [obj] {
 	if (obj is zero)
 		print_ret "I don't see that here.";
+	else if (obj parent is Player) {
+		print "You're already carrying the "; print_obj obj; print_ret ".";
+	}
 	else if (obj hasnt scenery) {
 		if (BlockBefore(#take,room) is true or BlockBefore(#take,obj) is true)
 			rtrue;
@@ -407,7 +438,7 @@ routine Examine [obj; desc] {
 
 routine Drop [obj] {
 	// print "Dropping "; print_num obj; crlf;
-	print_num obj parent; crlf;
+	// print_num obj parent; crlf;
 	if (Player holds obj and CheckBefore(#drop,room) isnt false and CheckBefore(#drop,obj) isnt false) {
 		print "You drop the "; print_obj obj; print ".^";
 		move obj into Player parent;
@@ -518,6 +549,7 @@ global ObjectListCount;
 global ExcludeObject;
 global MatchProp;
 global MatchWord;
+global it;			// the last direct object
 
 routine RecurseMatch [obj; j k] {
 	if (obj has child -> obj) {
@@ -552,9 +584,13 @@ routine PrintDict [w; hdr] {
 	rfalse;
 }
 
-routine Common [root] {
+routine ParseCommon [root] {
 	if (parse_buffer[[nw+1]] &= artBit)
 		nw = nw + 2;
+	if (parse_buffer[[nw]] is 'it' and it isn't zero) {
+		nw = nw + 2;
+		return it;
+	}
 	if (parse_buffer[[nw+1]] &= nounBit) {
 		ObjectListCount = 0;
 		MatchProp = noun;
@@ -574,17 +610,24 @@ routine Common [root] {
 // Parse a word that is here but not held
 routine Here [] {
 	ExcludeObject = Player;
-	return Common(Player parent);
+	return ParseCommon(Player parent);
 }
 
+// Parse a word that is held
 routine Held [] {
 	ExcludeObject = 0;
-	return Common(Player);
+	return ParseCommon(Player);
 }
 
+// Parse a word here or held
 routine Nearby [] {
 	ExcludeObject = 0;
-	return Common(Player parent);
+	return ParseCommon(Player parent);
+}
+
+routine Anywhere [] {
+	ExcludeObject = 0;
+	return ParseCommon(Locations);
 }
 
 // actions are scanned in-order
@@ -678,26 +721,12 @@ routine CheckErrors [tb pb; i j] {
 	rfalse;
 }
 
-global CaptureBuffer = byte_array(64);
 
-routine ObjUtil[i] {
-	output_stream2(3, CaptureBuffer);
-	print_obj i;
-	output_stream(-3);
-	if (CaptureBuffer[1] isnt 0) {
-		if (CaptureBuffer[2] in {@a,@e,@i} or CaptureBuffer[2] in {@o,@u})
-			print "An ";
-		else
-			print "A ";
-		print_obj i;
-	}
-	rfalse;
-}
 
 routine ObjLoop[;i j k w] {
 	while (i < $object_count) {
 		++i;
-		ObjUtil(i);
+		PrintAObj(i);
 		if (i has $is_object) {
 			j = addrof(i.adjective);
 			if (j isnt 0) {
@@ -821,6 +850,8 @@ routine DoTurn[; i] {
 	if (ScanParseTable(parse_buffer[1],parse_buffer + 2) isn't zero) {
 		// print "DirectObject = "; print_num DirectObject; crlf;
 		// print "IndirectObject = "; print_num IndirectObject; crlf;
+		if (DirectObject isn't zero)
+			it = DirectObject;
 		call ActionRoutine(DirectObject, IndirectObject);
 		rtrue;
 	}
