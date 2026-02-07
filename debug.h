@@ -23,7 +23,7 @@ enum rectype: uint8_t {
 	HEADER_DBR,	// the_header: 64 bytes
 	LINEREF_DBR,	// routine_number: word, num_seq_points: word (one line/word for each)
 	ROUTINE_DBR,	// routine_number: word, defn_start: line, pc_start: address, name: string
-			// then one string for each local
+					// then one string for each local, terminated by a zero byte
 	ARRAY_DBR,	// byte_address: word, name: string
 	MAP_DBR,	// string/address pairs, terminated by a zero byte
 	ROUTINE_END_DBR,// routine_number: word, defn_end: line, next_pc_value: address

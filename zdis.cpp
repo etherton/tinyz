@@ -2,12 +2,15 @@
 
 #define ENABLE_DEBUG 1
 #include "header.h"
+#include "debug.h"
 #include <stdio.h>
 #include <assert.h>
 
 #include "opcodes.h"
 
 const uint8_t storyScales[] = { 0,0,0,2,4,4,0,8,8 };
+
+debug::debug_info di;
 
 storyHeader *getStory(const char *storyName) {
 	FILE *f = fopen(storyName,"rb");
@@ -295,6 +298,17 @@ void dump_dictionary(const storyHeader *h) {
 
 int main(int argc,char **argv) {
 	storyHeader *story = getStory(argv[1]);
+	if (argc > 2) {
+		if (!di.read(argv[2])) {
+			printf("unable to read debug info. only read:\n");
+			di.dump();
+			return 1;
+		}
+		else {
+			printf("read debug info.\n");
+			di.dump();
+		}
+	}
 	printf("version %d serial[%c%c%c%c%c%c]\n",story->version,
 		story->serial[0],story->serial[1],story->serial[2],story->serial[3],story->serial[4],story->serial[5]);
 	abbreviations = (word*)((char*)story + story->abbreviationsAddr.getU());
@@ -335,4 +349,5 @@ int main(int argc,char **argv) {
 			start = roundUp(routine(story,start));
 		printf("\n");
 	}
+	return 0;
 }

@@ -8,7 +8,7 @@ inline void fputz(std::string &s,FILE *f) {
     fwrite(s.c_str(),1,s.length()+1,f);
 }
 
-inline void fputw(word w,FILE *f) {
+inline void fputword(word w,FILE *f) {
     fputc(w.hi,f);
     fputc(w.lo,f);
 }
@@ -26,7 +26,7 @@ inline std::string fgetz(FILE *f) {
     return r;
 }
 
-word fgetw(FILE *f) {
+word fgetword(FILE *f) {
     word w;
     w.hi = fgetc(f);
     w.lo = fgetc(f);
@@ -53,6 +53,8 @@ bool debug_info::write(const char *filename) {
         return false;
     fputc(0xDE,f);
     fputc(0xBF,f);
+    fputword(byte2word(0),f);
+    fputword(byte2word(0),f);
     for (auto &i: files) {
         fputc(FILE_DBR,f);
         fputc(i.first,f);
@@ -61,12 +63,12 @@ bool debug_info::write(const char *filename) {
     }
     for (auto &i: attributes) {
         fputc(ATTR_DBR,f);
-        fputw(byte2word(i.first),f);
+        fputword(byte2word(i.first),f);
         fputz(i.second,f);
     }
     for (auto &i: properties) {
         fputc(PROP_DBR,f);
-        fputw(byte2word(i.first),f);
+        fputword(byte2word(i.first),f);
         fputz(i.second,f);
     }
     for (auto &i: globals) {
@@ -77,7 +79,7 @@ bool debug_info::write(const char *filename) {
     line dummy[2] = {};
     for (auto &i: objects) {
         fputc(OBJECT_DBR,f);
-        fputw(word2word(i.first),f);
+        fputword(word2word(i.first),f);
         fputz(i.second,f);
         fwrite(dummy,sizeof(line),2,f);
     }
@@ -94,6 +96,8 @@ bool debug_info::read(const char *filename) {
         fclose(f);
         return false;
     }
+    fgetword(f);
+    fgetword(f);
     clear();
     uint8_t rectype;
     while (!feof(f) && (rectype=fgetc(f))!=EOF_DBR) {
@@ -103,33 +107,38 @@ bool debug_info::read(const char *filename) {
         switch(rectype) {
             case FILE_DBR: b=fgetc(f); fskipz(f); s=fgetz(f); files[b] = s; break;
             case CLASS_DBR: fskipz(f); fgetline(f); fgetline(f); break;
-            case OBJECT_DBR: w=fgetw(f); s=fgetz(f); fgetline(f); fgetline(f); objects[w.getU()] = s; break;
+            case OBJECT_DBR: w=fgetword(f); s=fgetz(f); fgetline(f); fgetline(f); objects[w.getU()] = s; break;
             case GLOBAL_DBR: b=fgetc(f); s=fgetz(f); globals[b] = s; break;
-            case ATTR_DBR: w=fgetw(f); s=fgetz(f); attributes[w.getU()] = s; break;
-            case PROP_DBR: w=fgetw(f); s=fgetz(f); properties[w.getU()] = s; break;
-            case FAKE_ACTION_DBR: fgetw(f); fskipz(f); break;
-            case ACTION_DBR: fgetw(f); fskipz(f); break;
+            case ATTR_DBR: w=fgetword(f); s=fgetz(f); attributes[w.getU()] = s; break;
+            case PROP_DBR: w=fgetword(f); s=fgetz(f); properties[w.getU()] = s; break;
+            case FAKE_ACTION_DBR: fgetword(f); fskipz(f); break;
+            case ACTION_DBR: fgetword(f); fskipz(f); break;
             case HEADER_DBR: fread(header,1,64,f); break;
-            case LINEREF_DBR: 
-            case ROUTINE_DBR:
-            case ARRAY_DBR: fgetw(f); fskipz(f); break;
+            case LINEREF_DBR: fgetword(f); w=fgetword(f); while (w.getU()) { fgetline(f); fgetword(f); w.dec(); } break;
+            case ROUTINE_DBR: fgetword(f); fgetline(f); fgetaddress(f); fskipz(f); while (!((s=fgetz(f)).empty())) {} break;
+            case ARRAY_DBR: fgetword(f); fskipz(f); break;
             case MAP_DBR: while (!((s=fgetz(f)).empty())) fgetaddress(f); break;
-            case ROUTINE_END_DBR: fgetw(f); fgetline(f); fgetaddress(f); break;
+            case ROUTINE_END_DBR: fgetword(f); fgetline(f); fgetaddress(f); break;
             default: printf("unknown record type %d\n",rectype); fclose(f); return false;
         }
     }
     fclose(f);
+    printf("found %zu files, %zu objects, %zu globals, %zu attributes, %zu properties\n",
+        files.size(),objects.size(),globals.size(),attributes.size(),properties.size());
     return true;
 }
 
 void debug_info::dump() {
+    for (auto &i: files)
+        printf("file %u named %s\n",i.first,i.second.c_str());
     for (auto &i: attributes)
         printf("attribute %u named %s\n",i.first,i.second.c_str());
     for (auto &i: properties)
         printf("property %u named %s\n",i.first,i.second.c_str());
     for (auto &i: globals)
         printf("global %u named %s\n",i.first,i.second.c_str());
-}
+    for (auto &i: objects)
+        printf("object %u named %s\n",i.first,i.second.c_str());}
 
 
 } // namespace debug
