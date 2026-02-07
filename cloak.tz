@@ -273,12 +273,12 @@ routine Inventory [;i] {
 // The before routine should return true if the action is blocked (and explain why).
 // Otherwise it should return false to allow the action. Other side effects should not
 // happen because the action isn't guaranteed to succeed yet. CallAfter should handle that.
-routine BlockBefore [act obj;r] {
+routine BlockBefore [act obj arg;r] {
 	if (isz obj)
 		rfalse;
 	r = obj.before;
 	if (isnz r)
-		return call r(act,obj);
+		return call r(act,arg);
 	else
 		rfalse;
 }
@@ -349,21 +349,17 @@ routine Travel [dir;r] {
 routine Take [obj] {
 	if (iszero obj)
 		print_retf "I don't see that here.";
-	else if (obj parent is Player) {
-		print "You're already carrying the "; print_obj obj; print_retf ".";
-	}
-	else if (obj hasnt scenery) {
-		if (isfalse BlockBefore(#take,room) and isfalse BlockBefore(#take,obj)) {
-			print "You pick up the "; print_obj obj; print ".^";
-			move obj into Player;
-			CallAfter(#take,obj);
-			rtrue;
-		}
-		else
-			rfalse;
-	}
-	else
+	else if (obj parent is Player)
+		print_ret "You're already carrying it.";
+	else if (obj has scenery)
 		print_retf "You can't take that, it's just scenery.";
+	if (istruth BlockBefore(#take,room))
+		rfalse;
+	if (istruth BlockBefore(#take,obj))
+		rfalse;
+	move obj into Player;
+	CallAfter(#take,obj);
+	print "You pick up the "; print_obj obj; print_ret ".";
 }
 
 routine Examine [obj; desc] {
@@ -382,7 +378,11 @@ routine Examine [obj; desc] {
 routine Drop [obj] {
 	// print "Dropping "; print_num obj; crlf;
 	// print_num obj parent; crlf;
-	if (Player holds obj and isfalse BlockBefore(#drop,room) and isfalse BlockBefore(#drop,obj)) {
+	if (Player holds obj) {
+		if (istruth BlockBefore(#drop,room))
+			rfalse;
+		if (istruth BlockBefore(#drop,obj))
+			rfalse;
 		move obj into Player parent;
 		print "You drop the "; print_obj obj; print_ret ".";
 	}
@@ -394,7 +394,9 @@ routine PutOn [do ido] {
 	// print "PutOn!^"; print_num do; crlf; print_num ido; crlf;
 	if (ido has supporter) {
 		if (ido has child)
-			print_ret "There's no room.";
+			print_retf "There's no room.";
+		if (do hasn't clothing)
+			print_retf "It's only meant to hold clothing.";
 		if (istruth BlockBefore(#puton,room))
 			rfalse;
 		if (istruth BlockBefore(#puton,do))
@@ -475,23 +477,25 @@ routine RecurseMatch [obj; j k] {
 	if (obj has child -> obj) {
 		repeat {
 			// print_num obj; print_char @ ; print_obj obj; crlf;
-			if (obj isn't ExcludeObject and obj has $is_object) {
-				k = addrof(obj.MatchProp);
-				if (k isn't 0) {
-					// print "...has "; print_num sizeof(k)/2; print " elements.^";
-					j = 0;
-					while (j+j < sizeof(k)) {
-						if (MatchWord is k[[j]]) {
-							// print "adding "; print_num obj; crlf;
-							if (ObjectListCount < MaxObjectList)
-								ObjectList[[ObjectListCount]] = obj;
-							++ObjectListCount;
+			if (obj isn't ExcludeObject) {
+				if (obj has $is_object) {
+					k = addrof(obj.MatchProp);
+					if (isnonzero k) {
+						// print "...has "; print_num sizeof(k)/2; print " elements.^";
+						j = 0;
+						while (j+j < sizeof(k)) {
+							if (MatchWord is k[[j]]) {
+								// print "adding "; print_num obj; crlf;
+								// if (ObjectListCount < MaxObjectList)
+									ObjectList[[ObjectListCount]] = obj;
+								++ObjectListCount;
+							}
+							++j;
 						}
-						++j;
 					}
+					RecurseMatch(obj);
 				}
 			}
-			RecurseMatch(obj);
 		} while (obj has sibling -> obj);
 	}
 	rfalse;
