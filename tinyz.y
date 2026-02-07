@@ -2655,6 +2655,7 @@ NEWLINE:
 
 int yylex() {
 	int token = yylex_();
+#if YYDEBUG
 	if (yydebug) {
 		printf("(%d)",yyscope);
 		if (token==EOF)
@@ -2664,6 +2665,7 @@ int yylex() {
 		else
 			printf("%u:[%s][%s][%d]\n",yyline,yytoken,yytname[token - 255],token);
 	}
+#endif
 	return token;
 }
 
@@ -2693,7 +2695,9 @@ int main(int argc,char **argv) {
 	while (--argc && **++argv=='-') {
 		const char *arg = *argv + 1;
 		switch(*arg++) {
-			case 'd': yydebug = 1; break;
+#if YYDEBUG
+			case 'y': yydebug = 1; break;
+#endif
 			case 'r':  if (*arg) while (*arg) switch (*arg++) {
 				case 'S': report |= R_SUMMARY; break;
 				case 'O': report |= R_OBJECTS; break;
@@ -2780,11 +2784,13 @@ int main(int argc,char **argv) {
 			dictionary_blob->storeWord(the_dictionary.size());
 			uint16_t idx = 0;
 			for (auto &d: the_dictionary) {
+#if YYDEBUG
 				if (yydebug) {
 					printf("word %u: [",idx);
 					print_encoded_string(d.first.encoded,[](char ch){putchar(ch);});
 					printf("]\n");
 				}
+#endif
 				d.second = idx++;
 				dictionary_blob->copy(d.first.encoded,dict_entry_size);
 				dictionary_blob->storeByte(0);

@@ -8,6 +8,9 @@ tinyz.output
 *.o
 zdis
 tinyzterp
+tinyzterpd
+tinyzterpd.dSYM/
 tinyzc
-tinyzc.dSYM/
+tinyzcd
+tinyzcd.dSYM/
 .DS_Store
