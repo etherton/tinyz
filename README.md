@@ -143,7 +143,7 @@ Statements
 ----------
 @print			`print`\
 @print_ret		`print_ret` (which has an implicit rtrue)\
-@print_ret		`print_retf` This expands to `print` with a newline in the string, and an rfalse.\
+@print_ret		`print_retf` This expands to `print`, new_line, and an rfalse.\
 @inc			++var\
 @dec			--var\
 @set_attr		obj `gains` attribute (or `set_attr`)\
