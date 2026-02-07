@@ -556,6 +556,9 @@ routine Direction [] {
 	return Compass(parse_buffer[[nw]]);
 }
 
+routine Restart[] { restart; }
+routine Quit[] { quit; }
+
 // actions are scanned in-order
 // so specific cases need to be before more general cases
 // some actions are really just messages and aren't part of grammar
@@ -566,6 +569,8 @@ action #look { Examine: 'look at'/'examine' Nearby }
 action #lookHere { Look: 'look' }
 action #puton { PutOn: 'hang'/'place'/'put' Held 'on'/'upon'/'on to'/'onto' Here }
 action #go { Travel: 'go'/'go to' Direction }
+action #restart { Restart: 'restart'/'restart game' }
+action #quit { Quit: 'quit'/'quit game' }
 action #leave;
 action #enter;
 

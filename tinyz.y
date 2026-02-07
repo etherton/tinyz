@@ -2000,13 +2000,19 @@ const uint8_t* print_encoded_string(const uint8_t *src,void (*pr)(char ch)) {
 				pr(ch);
 			}
 			else if (ch == 7 && shift == 52)
-				pr(10);
+				pr(13);
 			else
 				pr(alphabet[(ch-6)+shift]);
 			shift = 0;
 		}
 	}
 	return src;
+}
+
+static char captured_string[256];
+static uint8_t captured_string_length;
+static void capture_string(char ch) {
+	captured_string[captured_string_length++] = ch;
 }
 
 uint16_t encode_string(uint8_t *dest,size_t destSize,const char *src,size_t srcSize,bool forDict) {
@@ -2033,6 +2039,7 @@ uint16_t encode_string(uint8_t *dest,size_t destSize,const char *src,size_t srcS
 			offset += 2;
 		}
 	};
+	const char *baseSrc = src;
 	while (srcSize-- && (!destSize || offset < destSize)) {
 		uint8_t code = s_EncodedCharacters[*src++];
 		if (code == 255) {
@@ -2060,6 +2067,19 @@ uint16_t encode_string(uint8_t *dest,size_t destSize,const char *src,size_t srcS
 	}
 	if (dest)
 		dest[offset-2] |= 0x80; // mark end of string
+
+	// test that it worked perfectly
+	if (dest && !forDict) {
+		captured_string_length = 0;
+		print_encoded_string(dest,capture_string);
+		captured_string[captured_string_length] = 0;
+		if (strcmp(captured_string,baseSrc)) {
+			printf("encode_string failed.\n");
+			printf("input [%s]\n",baseSrc);
+			printf("output [%s]\n",captured_string);
+		}
+	}
+
 	return offset;
 }
 
@@ -2167,6 +2187,7 @@ void init(int version) {
 	for (uint32_t i=2; i<26; i++)
 		s_EncodedCharacters[alphabet[i+52]] = (5<<5) | (i + 6);
 	s_EncodedCharacters[32] = 0;
+	// s_EncodedCharacters[10] = (5 << 5) | 7;
 	s_EncodedCharacters[13] = (5 << 5) | 7;
 	// 1,2,3=abbreviations, 4=shift1, 5=shift2
 

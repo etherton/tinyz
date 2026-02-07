@@ -79,7 +79,7 @@ void machine::printObjTree() {
 #endif
 
 void machine::finishChar(uint8_t c) {
-	if (c == 10) {
+	if (c == 13) {
 		m_cursorX = 1;
 		if (m_currentWindow==1 && m_cursorY < m_windowSplit)
 			m_cursorY++;
@@ -110,10 +110,10 @@ void machine::print_char(uint8_t c) {
 	else if (m_outputEnables & (1 << 1)) {
 		// are we buffering?
 		if (m_currentWindow==0 && (m_outputEnables&1)) {
-			if (c==10 || c==32) {
+			if (c==13 || c==32) {
 				if (m_stored && m_cursorX + m_stored > m_dynamic[WIDTH]) {
-					interface::putchar(10);
-					finishChar(10);
+					interface::putchar(13);
+					finishChar(13);
 				}
 				flushMainWindow();
 				if (m_cursorX != m_dynamic[WIDTH] + 1) {
@@ -121,7 +121,7 @@ void machine::print_char(uint8_t c) {
 					finishChar(c);
 				}
 				else
-					finishChar(10);
+					finishChar(13);
 			}
 			else
 				m_lineBuffer[m_stored++] = c;
@@ -496,7 +496,7 @@ void machine::printTable(uint16_t zsciiAddr,uint16_t width,uint16_t height,uint1
 		for (uint16_t i=0; i<width; i++)
 			print_char(read_mem8(zsciiAddr++));
 		zsciiAddr += skip;
-		print_char(10);
+		print_char(13);
 	}
 }
 
@@ -812,7 +812,7 @@ void machine::run(uint32_t pc) {
 				case _0op::rtrue: pc = r_return(1); break;
 				case _0op::rfalse: pc = r_return(0); break;
 				case _0op::print: pc = print_zscii(pc); break;
-				case _0op::print_ret: pc = print_zscii(pc); print_char(10); pc = r_return(1); break;
+				case _0op::print_ret: pc = print_zscii(pc); print_char(13); pc = r_return(1); break;
 				case _0op::nop: break; // nop
 				case _0op::save: if (m_header->version<4) { if (saveGame(pc,dest)) branch(true); }
 							else ref(dest,true) = byte2word(saveGame(pc,dest)); break;
@@ -825,7 +825,7 @@ void machine::run(uint32_t pc) {
 				case _0op::ret_popped: if (!m_sp) fault("stack underflow in ret_popped"); pc = r_return(m_stack[--m_sp].getU()); break;
 				case _0op::pop: if (!m_sp) fault("stack underflow in pop"); --m_sp; break;
 				case _0op::quit: exit(0); break;
-				case _0op::new_line: print_char(10); break;
+				case _0op::new_line: print_char(13); break;
 				case _0op::show_status: showStatus(); break;
 				case _0op::verify: branch(true); break; // fake verify?
 				case _0op::piracy: branch(true); break; // fake piracy
