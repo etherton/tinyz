@@ -5,6 +5,8 @@ a.out
 *.save
 tinyz.tab.*
 tinyz.output
+tinyz.debug.tab.*
+tinyz.debug.output
 *.o
 zdis
 tinyzterp
