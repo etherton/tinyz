@@ -783,8 +783,7 @@ routine DoTurn[; i] {
 
 routine DebugActions[;a n] {
 	while ($actions[[a]] isnt -1) {
-		print "routine at "; print_num $actions[[a]];
-		print ":";
+		print "routine at ",$actions[[a]],":";
 		++a;
 		repeat {
 			n = $actions[[a]];
@@ -795,9 +794,7 @@ routine DebugActions[;a n] {
 			else
 				print " ";
 			if (n &= isRoutine) {
-				print "(routine ";
-				print_num $actions[[a]];
-				print ") ";
+				print "(routine ",$actions[[a]],") ";
 				++a;
 			}
 		} while (n > 0);
