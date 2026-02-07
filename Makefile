@@ -10,7 +10,7 @@ zdis: opcodes.h header.h zdis.cpp debug.h debug.cpp
 	clang++ -std=c++17 zdis.cpp debug.cpp -o zdis
 
 cloak.z3: cloak.tz tinyzc
-	./tinyzc -z3 cloak.tz
+	./tinyzc -z3 -g cloak.tz
 
 run: cloak.z3
 	./tinyzterp cloak.z3

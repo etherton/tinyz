@@ -1,6 +1,7 @@
 a.out
 *.z*
 *.txt
+*.dbg
 *.save
 tinyz.tab.*
 tinyz.output

@@ -6,6 +6,7 @@
 	#define ENABLE_DEBUG 1
 	#include "opcodes.h"
 	#include "header.h"
+	#include "debug.h"
 	#include <set>
 	#include <map>
 	#include <cassert>
@@ -47,6 +48,8 @@
 	const uint8_t* print_encoded_string(const uint8_t *src,void (*pr)(char ch));
 	uint8_t next_global, next_local, story_shift = 1, dict_entry_size = 4;
 	storyHeader the_header = { 3 };
+	debug::debug_info di;
+	bool write_debug_info;
 
 	template <typename T> struct list_node {
 		list_node<T>(T a,list_node<T> *b) : car(a), cdr(b) { }
@@ -161,6 +164,12 @@
 			lastPlaced = index;
 			nextPlaced = 0xFFFF;
 			nextAddress = (nextAddress + alignMask) & ~alignMask;
+			if (write_debug_info) {
+				auto &r = di.routines[index];
+				r.start = nextAddress;
+				r.end = nextAddress + size;
+				di.addressMappings[nextAddress] = index;
+			}
 			address = nextAddress;
 			nextAddress += size;
 		}
@@ -1333,6 +1342,12 @@
 				emitByte(0); 
 			}
 		}
+		if (write_debug_info) {
+			auto &r = di.routines[currentRoutine->index];
+			r.name = currentRoutine->desc;
+			for (auto &l: *the_locals.back())
+				r.locals.push_back(l.first);
+		}
 		// body->dump();
 		if (!body->isReturn())
 			yyerror("missing return at end of routine (or not all if paths return)");
@@ -1672,7 +1687,7 @@ routine_def
 	: ROUTINE NEWSYM '[' 
 		{
 			open_scope(); 
-			currentRoutine = relocatableBlob::create(1024,UD_HIGH); 
+			currentRoutine = relocatableBlob::create(1024,UD_HIGH,$2->first.c_str()); 
 			next_local=0; 
 			$2->second.token = RNAME;
 			$2->second.ival = currentRoutine->index;
@@ -2653,6 +2668,7 @@ int main(int argc,char **argv) {
 				break;
 			case 'R': release_number = atoi(arg); break;
 			case 'z': zversion = (argv[0][2]-'0'); break;
+			case 'g': write_debug_info = true; break;
 		}
 	}
 	if (!argc)
@@ -2668,6 +2684,13 @@ int main(int argc,char **argv) {
 	*ext++ = 'z';
 	*ext++ = the_header.version + '0';
 	*ext = 0;
+	char dbgname[64];
+	strlcpy(dbgname,argv[0],sizeof(dbgname)-5);
+	ext = strrchr(dbgname,'.');
+	if (!ext)
+		ext = dbgname + strlen(dbgname);
+	strcpy(ext,".dbg");
+
 	// printf("compiling release %d\n",release_number);
 
 	for (yypass=1; yypass<=2; yypass++) {
@@ -2744,6 +2767,20 @@ int main(int argc,char **argv) {
 		}
 		else {
 			yyparse();
+
+			if (write_debug_info) {
+				for (auto &g: the_globals) {
+					if (g.second.token == GNAME)
+						di.globals[g.second.ival] = g.first;
+					else if (g.second.token == ANAME)
+						di.attributes[g.second.ival] = g.first;
+					else if (g.second.token == PNAME)
+						di.properties[g.second.ival] = g.first;
+					else if (g.second.token == ONAME)
+						di.objects[g.second.ival] = g.first;
+				}
+				// di.dump();
+			}
 			actions_blob->storeWord(-1); // terminate the action list
 			synonyms_blob->storeWord(-1); // terminate the synonym list
 			globals_blob->addRelocation(actions_blob->index);
@@ -2820,6 +2857,9 @@ int main(int argc,char **argv) {
 			FILE *output = fopen(outname,"w");
 			relocatableBlob::writeAll(output);
 			fclose(output);
+
+			if (write_debug_info)
+				di.write(dbgname);
 
 			if (report & R_ROUTINES) {
 				disassemble(entry_point_index);

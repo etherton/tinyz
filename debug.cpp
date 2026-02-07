@@ -13,6 +13,16 @@ inline void fputword(word w,FILE *f) {
     fputc(w.lo,f);
 }
 
+inline void fputline(line l,FILE *f) {
+    fwrite(&l,sizeof(line),1,f);
+}
+
+inline void fputaddress(uint32_t a,FILE *f) {
+    fputc(a >> 16,f);
+    fputc(a >> 8,f);
+    fputc(a,f);
+}
+
 inline void fskipz(FILE *f) {
     while (!feof(f) && fgetc(f))
         ;
@@ -76,12 +86,27 @@ bool debug_info::write(const char *filename) {
         fputc(i.first,f);
         fputz(i.second,f);
     }
-    line dummy[2] = {};
+    line dummy = {};
     for (auto &i: objects) {
         fputc(OBJECT_DBR,f);
         fputword(word2word(i.first),f);
         fputz(i.second,f);
-        fwrite(dummy,sizeof(line),2,f);
+        fputline(dummy,f);
+        fputline(dummy,f);
+    }
+    for (auto &i: routines) {
+        fputc(ROUTINE_DBR,f);
+        fputword(word2word(i.first),f);
+        fputline(dummy,f);
+        fputaddress(i.second.start,f);
+        fputz(i.second.name,f);
+        for (auto &l: i.second.locals)
+            fputz(l,f);
+        fputc(0,f);
+        fputc(ROUTINE_END_DBR,f);
+        fputword(word2word(i.first),f);
+        fputline(dummy,f);
+        fputaddress(i.second.end,f);
     }
     fputc(EOF_DBR,f);
     fclose(f);
