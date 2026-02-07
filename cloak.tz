@@ -347,7 +347,7 @@ routine Travel [dir;r] {
 }
 
 routine Take [obj] {
-	if (obj is zero)
+	if (iszero obj)
 		print_retf "I don't see that here.";
 	else if (obj parent is Player) {
 		print "You're already carrying the "; print_obj obj; print_retf ".";
@@ -367,6 +367,8 @@ routine Take [obj] {
 }
 
 routine Examine [obj; desc] {
+	if (iszero obj)
+		print_retf "I don't see that here.";
 	desc = obj.description;
 	if (isnz desc)
 		call desc();
@@ -385,7 +387,7 @@ routine Drop [obj] {
 		print "You drop the "; print_obj obj; print_ret ".";
 	}
 	else
-		rfalse;
+		print_retf "You're not carrying that.";
 }
 
 routine PutOn [do ido] {
@@ -472,7 +474,7 @@ global it;			// the last direct object
 routine RecurseMatch [obj; j k] {
 	if (obj has child -> obj) {
 		repeat {
-			// print_num obj; print_char @ ; print_obj obj; crlf;
+			print_num obj; print_char @ ; print_obj obj; crlf;
 			if (obj isn't ExcludeObject and obj has $is_object) {
 				k = addrof(obj.MatchProp);
 				if (k isn't 0) {
@@ -527,18 +529,21 @@ routine ParseCommon [root] {
 
 // Parse a word that is here but not held
 routine Here [] {
+	print "Testing Here.^";
 	ExcludeObject = Player;
 	return ParseCommon(Player parent);
 }
 
 // Parse a word that is held
 routine Held [] {
+	print "Testing Held.^";
 	ExcludeObject = 0;
 	return ParseCommon(Player);
 }
 
 // Parse a word here or held
 routine Nearby [] {
+	print "Testing Nearby.^";
 	ExcludeObject = 0;
 	return ParseCommon(Player parent);
 }
@@ -556,8 +561,24 @@ routine Direction [] {
 	return Compass(parse_buffer[[nw]]);
 }
 
-routine Restart[] { restart; }
-routine Quit[] { quit; }
+routine Yes [] {
+	print "Are you sure? [y/N]^";
+	if ($zversion>=5)
+		text_buffer[1] = 0;
+	sread(text_buffer, parse_buffer);
+	if ($zversion>=5) {
+		if (text_buffer[2] in {@Y,@y})
+			rtrue;
+	}
+	else {
+		if (text_buffer[1] in {@Y,@y})
+			rtrue;
+	}
+	print_retf "Canceled.";
+}
+
+routine Restart[] { if (istruth Yes()) restart; rfalse; }
+routine Quit[] { if (istruth Yes()) quit; rfalse; }
 
 // actions are scanned in-order
 // so specific cases need to be before more general cases

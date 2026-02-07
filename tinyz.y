@@ -1320,11 +1320,13 @@
 			emit0op(opcode);
 			currentRoutine->offset += encode_string(currentRoutine->contents + currentRoutine->offset,
 				(currentRoutine->size - currentRoutine->offset) & ~1,string,strlen(string));
-			if (isRetFalse)
+			if (isRetFalse) {
+				emit0op(_0op::new_line);
 				emit0op(_0op::rfalse);
+			}
 		}
 		unsigned size() const {
-			return 1 + encode_string(nullptr,0,string,strlen(string)) + isRetFalse;
+			return 1 + encode_string(nullptr,0,string,strlen(string)) + isRetFalse*2;
 		}
 		void dump() const {
 			spaces();
@@ -1830,7 +1832,7 @@ stmt
 	| STMT_VAROP2 '(' expr ',' expr ')'  ';'	{ $$ = new stmt_varop2($1,$3,$5); }
 	| PRINT STRLIT ';'				{ $$ = new stmt_print(_0op::print,false,$2); }
 	| PRINT_RET STRLIT ';'			{ $$ = new stmt_print(_0op::print_ret,true,$2); }
-	| PRINT_RETF STRLIT ';'			{ strcat(const_cast<char*>($2),"\r"); $$ = new stmt_print(_0op::print,true,$2); }
+	| PRINT_RETF STRLIT ';'			{ $$ = new stmt_print(_0op::print,true,$2); }
 	| INCR vname ';'				{ $$ = new stmt_1op(_1op::inc,new expr_literal($2)); }
 	| DECR vname ';'				{ $$ = new stmt_1op(_1op::dec,new expr_literal($2)); }
 	| objref GAINS aname ';' 		{ $$ = new stmt_2op(_2op::set_attr,$1,$3); }
@@ -2612,9 +2614,8 @@ int yylex_() {
 			return DICT;
 		}
 		case '"': {
-			const unsigned maxString = 511;
-			// Allocate one extra character so there's always room for a newline from print_retf
-			char *sval = new char[maxString+1];
+			const unsigned maxString = 512;
+			char *sval = new char[maxString];
 			unsigned offset = 0;
 			char term = yych;
 			while (yynext()!=EOF && yych!=term) {
