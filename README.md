@@ -53,6 +53,7 @@ or apostrophe.
 
 Here's a basic routine that demonstrates several things:
 
+```
 routine Look [; i r f] {
 	if (room hasn't lit)
 		print_ret "It's too dark to see anything.";
@@ -68,6 +69,7 @@ routine Look [; i r f] {
 	}
 	return r;
 }
+```
 
 It accepts no parameters, and declares three locals, all initialized to zero. 'room' is
 a global that contains the player's current location and is reflected in the v3 status line.
@@ -89,6 +91,7 @@ Then we check for a sibling, store the result, and branch all in one instruction
 
 Here's the resulting assembly:
 
+```
 000ae9 test_attr global0 31 ?b04 [ 4a 10 1f d9 ]
 000aed print_ret "It's too dark to see anything." [ b3 11 d9 17 18 03 34 50 09 1a f0 03 34 03 0a 28 06 4f d9 35 d3 b0 b2 ]
 000b04 get_prop global0 31 -> TOS [ 51 10 1f 00 ]
@@ -105,6 +108,7 @@ Here's the resulting assembly:
 000b36 get_sibling $o local0 -> local0 ?b10 [ a1 01 01 bf d7 ]
 000b3b ret local1 [ ab 02 ]
 000b3d nop [ b4 ]
+```
 
 The trailing nop is to align the routine to the story alignment boundary (2 for V3)
 
