@@ -134,50 +134,50 @@ Z-Machine Instructions to Code
 
 Statements
 ----------
-@print			`print`
-@print_ret		`print_ret`
-@inc			++var
-@dec			--var
-@set_attr		obj `gains` attribute (or `set_attr`)
-@clear_attr		obj `loses` attribute (or `clear_attr`)
-@insert_obj		`move` obj `into` obj (or `insert_obj`)
-@restart		`restart`
-@quit			`quit`
-@new_line		`crlf`
-@show_status	`show_status`
-@print_addr		`print_addr`
-@print_paddr	`print_paddr`
-@remove_obj		`remove_obj`
-@print_obj		`print_obj`
-@print_num		`print_num`
-@output_stream	`output_stream` or `output_stream2` depending on parameter count
+@print			`print`\
+@print_ret		`print_ret`\
+@inc			++var\
+@dec			--var\
+@set_attr		obj `gains` attribute (or `set_attr`)\
+@clear_attr		obj `loses` attribute (or `clear_attr`)\
+@insert_obj		`move` obj `into` obj (or `insert_obj`)\
+@restart		`restart`\
+@quit			`quit`\
+@new_line		`crlf`\
+@show_status	`show_status`\
+@print_addr		`print_addr`\
+@print_paddr	`print_paddr`\
+@remove_obj		`remove_obj`\
+@print_obj		`print_obj`\
+@print_num		`print_num`\
+@output_stream	`output_stream` or `output_stream2` depending on parameter count\
 @read_char		`read_char`
 
 Expressions
 -----------
-@add			`+`
-@sub			`-`
-@mul			`*`
-@div			`/`
-@mod			`%`
-@not			`~`
-@and			`&`
-@or				`|`
-@get_prop		obj `.` property
-@get_prop_addr	`addrof` `(` obj `.` property_name `)`
-@get_prop_len	`sizeof` `(` expr `)`
+@add			`+`\
+@sub			`-`\
+@mul			`*`\
+@div			`/`\
+@mod			`%`\
+@not			`~`\
+@and			`&`\
+@or				`|`\
+@get_prop		obj `.` property\
+@get_prop_addr	`addrof` `(` obj `.` property_name `)`\
+@get_prop_len	`sizeof` `(` expr `)`\
 
 Boolean Expressions
 -------------------
-@jl				`<` (or `>=` negated)
-@jg				`>` (or `<=` negated)
-@je				'is' or `==` (or `isn't` or `<>` negated)
-@test			`&=` (this one is great to replace & and isn't zero)
-@je				expr `in` {a,b,c} (can test up to three values at once)
-@test_attr		obj `has` (or `hasn't`) attribute
-@get_child		obj `has` (or `hasn't`) `child` `->` dest (store is optional and goes to scratch otherwise)
-@get_sibling	obj `has` (or `hasn't`) `child` `->` dest (store is optional and goes to scratch otherwise)
-@jin			obj `holds` obj
+@jl				`<` (or `>=` negated)\
+@jg				`>` (or `<=` negated)\
+@je				'is' or `==` (or `isn't` or `<>` negated)\
+@test			`&=` (this one is great to replace & and isn't zero)\
+@je				expr `in` {a,b,c} (can test up to three values at once)\
+@test_attr		obj `has` (or `hasn't`) attribute\
+@get_child		obj `has` (or `hasn't`) `child` `->` dest (store is optional and goes to scratch otherwise)\
+@get_sibling	obj `has` (or `hasn't`) `child` `->` dest (store is optional and goes to scratch otherwise)\
+@jin			obj `holds` obj\
 @inc_chk		`once` var
 
 
