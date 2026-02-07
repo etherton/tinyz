@@ -980,7 +980,7 @@
 		return s + (s > 61? 2 : 1);
 	}
 	size_t includingJumpPast(size_t s) {
-		return s > 61? 3 : 2;
+		return s + (s > 61? 3 : 2);
 	}
 	struct stmt_if: public stmt_flow {
 		stmt_if(expr_branch *e,stmt *t,stmt *f): cond(e), ifTrue(t), ifFalse(f) { }

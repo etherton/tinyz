@@ -486,7 +486,7 @@ routine RecurseMatch [obj; j k] {
 						while (j+j < sizeof(k)) {
 							if (MatchWord is k[[j]]) {
 								// print "adding "; print_num obj; crlf;
-								// if (ObjectListCount < MaxObjectList)
+								if (ObjectListCount < MaxObjectList)
 									ObjectList[[ObjectListCount]] = obj;
 								++ObjectListCount;
 							}
