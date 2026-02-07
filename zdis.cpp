@@ -82,7 +82,7 @@ static int no_printf(const char*,...) {
 
 typedef int (*pf)(const char*,...);
 
-int dis(const storyHeader *h,int pc,pf xprintf = printf) {
+int dis(const storyHeader *h,int pc,pf xprintf = printf,debug::routine_info *ri = nullptr) {
 	// keep track of the furthest forward branch we've seen.
 	// if we encounter an unconditional return and we're at or beyond, we're done.
 	// 0b00 - large constant (2 bytes)
@@ -93,14 +93,22 @@ int dis(const storyHeader *h,int pc,pf xprintf = printf) {
 	int end = h->storyLength.getU() * storyScales[h->version];
 	const uint8_t *b = (uint8_t*) h;
 
-	auto varTypes = [](uint8_t t) {
-		static char buf[8];
+	auto varTypes = [&](uint8_t t) {
+		static char buf[32];
 		if (!t)
 			snprintf(buf,sizeof(buf),"(sp)");
-		else if (t < 16)
-			snprintf(buf,sizeof(buf),"L%d",t-1);
-		else
-			snprintf(buf,sizeof(buf),"G%d",t-16);
+		else if (t < 16) {
+			if (ri && t <= ri->locals.size())
+				strlcpy(buf,ri->locals[t-1].c_str(),sizeof(buf));
+			else
+				snprintf(buf,sizeof(buf),"L%d",t-1);
+		}
+		else {
+			if (const char *s = di.globals[t-16].c_str())
+				strlcpy(buf,s,sizeof(buf));
+			else
+				snprintf(buf,sizeof(buf),"G%d",t-16);
+		}
 		return buf;
 	};
 
@@ -122,6 +130,15 @@ int dis(const storyHeader *h,int pc,pf xprintf = printf) {
 			types |= b[pc++];
 		else
 			types |= 255;
+		if (opcode == 224) {
+			uint32_t target = (b[pc] << 8) | b[pc+1];
+			auto it = di.addressMappings.find(target * storyScales[h->version]);
+			if (it != di.addressMappings.end()) {
+				(*xprintf)("%s ",di.routines[it->second].name.c_str());
+				pc += 2;
+				types = (types << 2) | 0x3;
+			}
+		}
 		// remember the last op (used for jumps)
 		int16_t op = 0;
 		while (types != 0xFFFF) {
@@ -184,7 +201,16 @@ int dis(const storyHeader *h,int pc,pf xprintf = printf) {
 
 int routine(const storyHeader *h,int pc,pf xprintf = printf) {
 	const uint8_t *b = (const uint8_t*) h;
-	(*xprintf)("routine at %x, %d locals\n",pc,b[pc]);
+
+	auto routine = di.addressMappings.find(pc);
+	debug::routine_info *ri = routine != di.addressMappings.end()? &di.routines[routine->second] : nullptr;
+
+	(*xprintf)("routine [%s] at %x, %d locals",ri?ri->name.c_str():"???",pc,b[pc]);
+	if (ri && ri->locals.size()) {
+		for (auto &i: ri->locals)
+			(*xprintf)(" %s",i.c_str());
+	}
+	(*xprintf)("\n");
 	if (h->version < 5 && b[pc]) {
 		const word *locals = (const word*)(b + pc + 1);
 		(*xprintf)("initial values: ");
@@ -193,7 +219,7 @@ int routine(const storyHeader *h,int pc,pf xprintf = printf) {
 		(*xprintf)("\n");
 		pc += 2 * b[pc];
 	}
-	return dis(h,pc+1,xprintf);
+	return dis(h,pc+1,xprintf,ri);
 }
 
 struct object_small {
@@ -220,7 +246,7 @@ void dump_properties(const storyHeader *h,int addr) {
 			uint8_t sb = b[addr];
 			if (!sb)
 				break;
-			printf("\tproperty %d is %d bytes\n",sb & 31,(sb >> 5)+1);
+			printf("\tproperty %d (%s) is %d bytes\n",sb & 31,di.properties[sb & 31].c_str(),(sb >> 5)+1);
 			addr = addr + 1 + (sb >> 5) + 1;
 		}
 	}
@@ -232,7 +258,7 @@ void dump_properties(const storyHeader *h,int addr) {
 			uint8_t ps = pn&128? b[addr++] & 63 : (pn>>6)+1;
 			pn &= 63;
 			if (ps==0) ps=64; // why wasn't size-1 stored here?
-			printf("\tproperty %d is %d bytes\n",pn,ps);
+			printf("\tproperty %d (%s) is %d bytes\n",pn,di.properties[pn].c_str(),ps);
 			addr = addr + ps;
 		}
 	}
@@ -251,8 +277,8 @@ void dump_objects(const storyHeader *h) {
 		int oEnd = o->properties.getU();
 		int i = 1;
 		while ((char*)o < (char*)h + oEnd) {
-			printf("object %d parent %d, sibling %d, child %d named [",
-				i,o->parent,o->sibling,o->child);
+			printf("object %d parent %d, sibling %d, child %d %s named [",
+				i,o->parent,o->sibling,o->child,di.objects[i].c_str());
 			dump_properties(h,o->properties.getU());
 			++o,++i;
 		}
@@ -265,8 +291,8 @@ void dump_objects(const storyHeader *h) {
 		int oEnd = o->properties.getU();
 		int i = 1;
 		while ((char*)o < (char*)h + oEnd) {
-			printf("object %d parent %d, sibling %d, child %d named [",i,
-				o->parent.getU(),o->sibling.getU(),o->child.getU());
+			printf("object %d parent %d, sibling %d, child %d %s named [",i,
+				o->parent.getU(),o->sibling.getU(),o->child.getU(),di.objects[i].c_str());
 			dump_properties(h,o->properties.getU());
 			++o,++i;
 		}
@@ -300,13 +326,14 @@ int main(int argc,char **argv) {
 	storyHeader *story = getStory(argv[1]);
 	if (argc > 2) {
 		if (!di.read(argv[2])) {
-			printf("unable to read debug info. only read:\n");
-			di.dump();
+			printf("unable to read debug info.\n");
 			return 1;
 		}
 		else {
 			printf("read debug info.\n");
 			di.dump();
+			/* di.write("test.dbg");
+			di.read("test.dbg"); */
 		}
 	}
 	printf("version %d serial[%c%c%c%c%c%c]\n",story->version,

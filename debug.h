@@ -39,22 +39,33 @@ struct address {
 	uint8_t h,m,l;
 };
 
+struct routine_info {
+	std::string name;
+	uint32_t start, end;
+	std::vector<std::string> locals;
+};
+	
 struct debug_info {
 	std::map<uint8_t,std::string> files;
 	std::map<uint8_t,std::string> attributes;
 	std::map<uint8_t,std::string> properties;
 	std::map<uint8_t,std::string> globals;
 	std::map<uint16_t,std::string> objects;
+	std::map<uint16_t,routine_info> routines;
+	std::map<uint32_t,uint16_t> addressMappings;	// maps an address to a routine number
 	uint8_t header[64];
 
 	bool read(const char*);
 	bool write(const char*);
 	void dump();
 	void clear() {
+		files.clear();
 		attributes.clear();
 		properties.clear();
 		globals.clear();
 		objects.clear();
+		routines.clear();
+		addressMappings.clear();
 		memset(header,0,sizeof(header));
 	}
 };

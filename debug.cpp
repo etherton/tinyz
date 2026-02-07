@@ -39,12 +39,12 @@ line fgetline(FILE *f) {
     return r;
 }
 
-address fgetaddress(FILE *f) {
+uint32_t fgetaddress(FILE *f) {
     address a;
     a.h = fgetc(f);
     a.m = fgetc(f);
     a.l = fgetc(f);
-    return a;
+    return (a.h << 16) | (a.m << 8) | a.l;
 }
 
 bool debug_info::write(const char *filename) {
@@ -103,6 +103,7 @@ bool debug_info::read(const char *filename) {
     while (!feof(f) && (rectype=fgetc(f))!=EOF_DBR) {
         uint8_t b;
         word w;
+        address a;
         std::string s;
         switch(rectype) {
             case FILE_DBR: b=fgetc(f); fskipz(f); s=fgetz(f); files[b] = s; break;
@@ -114,11 +115,31 @@ bool debug_info::read(const char *filename) {
             case FAKE_ACTION_DBR: fgetword(f); fskipz(f); break;
             case ACTION_DBR: fgetword(f); fskipz(f); break;
             case HEADER_DBR: fread(header,1,64,f); break;
-            case LINEREF_DBR: fgetword(f); w=fgetword(f); while (w.getU()) { fgetline(f); fgetword(f); w.dec(); } break;
-            case ROUTINE_DBR: fgetword(f); fgetline(f); fgetaddress(f); fskipz(f); while (!((s=fgetz(f)).empty())) {} break;
+            case LINEREF_DBR: 
+                fgetword(f); 
+                w=fgetword(f); 
+                while (w.getU()) { 
+                    fgetline(f); 
+                    fgetword(f); 
+                    w.dec(); 
+                } 
+                break;
+            case ROUTINE_DBR:  {
+                w=fgetword(f); 
+                auto &it = routines[w.getU()]; 
+                fgetline(f); 
+                it.start = fgetaddress(f); 
+                it.end = ~0U;
+                it.name = fgetz(f);
+                addressMappings[it.start] = w.getU();
+                while (!((s=fgetz(f)).empty())) 
+                     it.locals.push_back(s); 
+                break;
+            }
             case ARRAY_DBR: fgetword(f); fskipz(f); break;
             case MAP_DBR: while (!((s=fgetz(f)).empty())) fgetaddress(f); break;
-            case ROUTINE_END_DBR: fgetword(f); fgetline(f); fgetaddress(f); break;
+            case ROUTINE_END_DBR: 
+                w = fgetword(f); fgetline(f); routines[w.getU()].end = fgetaddress(f); break;
             default: printf("unknown record type %d\n",rectype); fclose(f); return false;
         }
     }
@@ -138,7 +159,11 @@ void debug_info::dump() {
     for (auto &i: globals)
         printf("global %u named %s\n",i.first,i.second.c_str());
     for (auto &i: objects)
-        printf("object %u named %s\n",i.first,i.second.c_str());}
+        printf("object %u named %s\n",i.first,i.second.c_str());
+    for (auto &i: routines)
+        printf("routine %u named %s at %06x-%06x with %zu locals\n",
+            i.first,i.second.name.c_str(),i.second.start,i.second.end,i.second.locals.size());
+}
 
 
 } // namespace debug
