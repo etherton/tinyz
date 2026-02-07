@@ -3,69 +3,17 @@
 // properties, objects, actions) and also extracts any dictionary
 // words that appear in any property, action definition, or routine.
 
-// token parsing: skip all whitespace. if quote, collect until closing quote.
-// backslash inside string escapes next character. if numeric, collect while numeric.
-// if alpha, collect while alphanumeric.  if one of "(,);:" always a single token. 
-// if any other visible character, collect while visible character. 
-// # is considered alpha at start of string
-
-// basic syntax is
-// stmt: 
-//   directive;
-//   if (branch_test) stmt else stmt
-//   while (branch_test) stmt
-//   repeat stmt while (branch_test);
-//   return expr;
-//   dest = expr;
-//   rtrue;
-//   rfalse;
-//   { stmts }
-// stmts:
-//   stmts stmt
-//   stmt
-// branch_test:
-//   unary_branch(expr)
-//   unary_branch(expr)->dest
-//   binary_branch(expr)
-//   binary_branch(expr)->dest
-// dest:
-//   global_name
-//   local_name
-// integer_literal:
-//   digit+
-//   'dictionary_word'
-//   #attribute
-//   routine_name
-// expr:
-//   dest
-//   integer_literal
-//   unary_op expr
-//   expr binary_op expr
-//   expr == integer_literal,integer_literal[,integer_literal][,integer_literal]
-
 // Each resolves to an index between 1-31 (1-47 on v4+)
-// it's not always strictly necessary but reduces the chance of programming errors
+// attributes and properties can either be global (valid on both objects and locations)
+// or specific to either objects or locations. It's not always strictly necessary but 
+// reduces the chance of programming errors.
 // attribute zero ($is_object) is special and is used to disambiguate objects (true) and locations (false)
 attribute global lit;
 attribute global general;
-attribute global supporter;
+attribute object supporter;
 attribute object clothing;
 attribute object worn;
 attribute object scenery;
-
-// a'name means name should be an attribute index (ao'name for object, al'name for loc)
-// p'name means name should be a property index (po'name for object, pl'name for loc)
-// o'name means name should be an object index
-// l'name means name should be a location index
-// r'name means name should be a routine address
-// s'name means name should be a string addres
-// c'name means name should be a command index
-
-// branch opcodes can only appear inside an if/while/repeat statement.
-
-// trace and trace_obj take a bit mask and either a string or object number
-// they are only kept in debug builds. they test the bit mask against a global
-// trace enable which can be set by other debug commands.
 
 // the global constant $object_count is always the count
 // of objects in the game. for properties that can refer
@@ -77,24 +25,20 @@ attribute object scenery;
 // for the print_ret opcode)
 
 // words can refer to up to four dictionary words. a word is
-// a nonzero index into a sorted list of vocabulary words
-// if more than four words are needed, the property is
-// stored as three bytes; the first byte is the number of
-// words and the next two bytes contain the address of
-// that many word indices.
+// an index into a sorted list of vocabulary words. at most
+// four words can be included on V3 games, which is why
+// adjectives and nouns are kept separate.
 
 constant false = 0;
 constant zero = 0; 
 constant true = 1;
 constant adjBit = 1 << 7;
 constant nounBit = 1 << 6;
-constant verbBit = 1 << 5;
-constant prepBit = 1 << 4;
+constant verbBit = 1 << 5;	// the compiler hard-codes this for actions
+constant prepBit = 1 << 4;	// the compiler hard-codes this for actions
 constant artBit = 1 << 3;
 constant dirBit = 1 << 2;
-// if this word only appears in one adjective or noun list, it's set
-// this allows the parser to skip a lot of disambiguation processing.
-constant uniqueBit = 1 << 0;
+
 
 // synonyms of a word are identical to it in all contexts. if a word appears
 // here as a synonym it cannot appear anywhere else (because it would never match)
@@ -124,9 +68,12 @@ property location s_to;
 property location e_to;
 property location w_to;
 
+// set the specified bit in these words.
 wordbit dirBit 'north' 'south' 'east' 'west';
 wordbit artBit 'a' 'an' 'the';
 
+// Map a word to a direction property or zero if no match.
+// (property indices cannot be zero)
 routine Compass [word] {
 	if (word is 'north')
 		return n_to;
@@ -153,6 +100,8 @@ global deadflag;
 object Player "Player" (foyer) {
 }
 
+// This isn't strictly necessary but allows the Anywhere classifier
+// to be implemented efficiently.
 location Locations "The World" {
 }
 
@@ -373,7 +322,7 @@ routine PrintAObj [i] {
 }
 
 routine Look [; i r f] {
-	if (room hasnt lit)
+	if (room hasn't lit)
 		print_ret "It's too dark to see anything.";
 	r = call room.description();
 	if (room has child -> i) {
