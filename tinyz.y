@@ -1317,6 +1317,7 @@
 			call.dump();
 		}
 	};
+	int print_type;
 	struct stmt_print: public stmt {
 		stmt_print(_0op o,bool rf,const char *s) : opcode(o), isRetFalse(rf), string(s), 
 			encodedLength(encode_string(nullptr,0,string,strlen(string))) { }
@@ -1437,8 +1438,8 @@
 %type <scopeval> scope
 %type <dlist> dict_list;
 %type <elist> opt_call_args arg_list
-%type <stval> stmt
-%type <stlist> stmts
+%type <stval> stmt print_item
+%type <stlist> stmts print_sequence
 
 %%
 
@@ -1840,9 +1841,9 @@ stmt
 	| STMT_2OP '(' expr ',' expr ')' ';' { $$ = new stmt_2op($1,$3,$5); } 
 	| STMT_VAROP1 expr  ';'			{ $$ = new stmt_varop1($1,$2); }
 	| STMT_VAROP2 '(' expr ',' expr ')'  ';'	{ $$ = new stmt_varop2($1,$3,$5); }
-	| PRINT STRLIT ';'				{ $$ = new stmt_print(_0op::print,false,$2); }
-	| PRINT_RET STRLIT ';'			{ $$ = new stmt_print(_0op::print_ret,true,$2); }
-	| PRINT_RETF STRLIT ';'			{ $$ = new stmt_print(_0op::print,true,$2); }
+	| PRINT { print_type = PRINT; } print_sequence ';'				{ $$ = new stmts($3); }
+	| PRINT_RET { print_type = PRINT_RET; } print_sequence ';'		{ $$ = new stmts($3); }
+	| PRINT_RETF { print_type = PRINT_RETF; } print_sequence ';'	{ $$ = new stmts($3); }
 	| INCR vname ';'				{ $$ = new stmt_1op(_1op::inc,new expr_literal($2)); }
 	| DECR vname ';'				{ $$ = new stmt_1op(_1op::dec,new expr_literal($2)); }
 	| objref GAINS aname ';' 		{ $$ = new stmt_2op(_2op::set_attr,$1,$3); }
@@ -1851,6 +1852,23 @@ stmt
 	| CONTINUE ';'					{ $$ = new stmt_continue(); }
 	| BREAK ';'						{ $$ = new stmt_break(); }
 	; 
+
+print_sequence
+	: STRLIT ',' print_item ',' print_sequence
+		{ 
+			$$ = new list_node<stmt*>(new stmt_print(_0op::print,false,$1),new list_node<stmt*>($3,$5)); 
+		}
+	| STRLIT	
+		{ 
+			$$ = new list_node<stmt*>(new stmt_print(print_type==PRINT_RET? _0op::print_ret : _0op::print,
+					print_type==PRINT_RETF,$1),nullptr); 
+		}
+	;
+
+print_item
+	: expr			{ $$ = new stmt_varop1(_var::print_num,$1); }
+	| OBJECT expr	{ $$ = new stmt_1op(_1op::print_obj,$2); }
+	;
 	
 cond_expr
 	: '(' bool_expr ')' { $$ = $2; }

@@ -300,7 +300,7 @@ routine PrintAObj [i] {
 	output_stream2(3, CaptureBuffer);
 	print_obj i;
 	output_stream(-3);
-	if (CaptureBuffer[1] isnt 0) {
+	if (CaptureBuffer[[0]] isnt 0) {
 		if (CaptureBuffer[2] in {@a,@e,@i} or CaptureBuffer[2] in {@o,@u})
 			print "An ";
 		else
@@ -359,7 +359,7 @@ routine Take [obj] {
 		rfalse;
 	move obj into Player;
 	CallAfter(#take,obj);
-	print "You pick up the "; print_obj obj; print_ret ".";
+	print_ret "You pick up the ",object obj,".";
 }
 
 routine Examine [obj; desc] {
@@ -367,12 +367,9 @@ routine Examine [obj; desc] {
 		print_retf "I don't see that here.";
 	desc = obj.description;
 	if (isnz desc)
-		call desc();
-	else {
-		print "It's just an ordinary ";
-		print_obj obj;
-	}
-	rtrue;
+		return call desc();
+	else
+		print_ret "It's just an ordinary ",object obj,".";
 }
 
 routine Drop [obj] {
@@ -384,7 +381,7 @@ routine Drop [obj] {
 		if (istruth BlockBefore(#drop,obj))
 			rfalse;
 		move obj into Player parent;
-		print "You drop the "; print_obj obj; print_ret ".";
+		print_ret "You drop the ",object obj,".";
 	}
 	else
 		print_retf "You're not carrying that.";
@@ -408,7 +405,7 @@ routine PutOn [do ido] {
 		CallAfter(#puton,ido);
 		CallAfter(#puton,do);
 		CallAfter(#puton,room);
-		print "You place the "; print_obj do; print " on the "; print_obj ido; print_ret ".";
+		print_ret "You place the ",object do," on the ",object ido,".";
 	}
 	else
 		print_retf "You can't put it on that.";
@@ -837,6 +834,6 @@ routine main [] {
 		else if (deadflag is 2)
 			print "*** You have won! ***^";
 	}
-	print "Your final score was "; print_num score; print " in "; print_num turns; print " turns.^";
+	print "Your final score was ",score," in ",turns," turns.^";
 	quit;
 }
