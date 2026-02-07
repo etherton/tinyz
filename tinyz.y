@@ -146,15 +146,21 @@
 			the_relocations[indexSave] = (relocatableBlob*)(size_t)firstFree;
 			firstFree = indexSave;
 		}
-		void seal() {
-			assert(offset <= size);
-			if (offset != size) {
-				uint8_t *newContents = new uint8_t[offset];
+		void resize(unsigned newSize) {
+			if (newSize != size) {
+				uint8_t *newContents = new uint8_t[newSize];
 				memcpy(newContents,contents,offset);
 				delete [] contents;
 				contents = newContents;
+				size = newSize;
 			}
-			size = offset;
+		}
+		void reserve(unsigned atLeast) {
+			if (offset + atLeast > size)
+				resize(offset + atLeast + 64);
+		}
+		void seal() {
+			resize(offset);
 		}
 		void place(uint32_t alignMask = 0) {
 			if (firstPlaced == 0xFFFF)
@@ -215,7 +221,8 @@
 			}
 		}
 		void storeByte(uint8_t b) {
-			assert(offset < size);
+			if (offset == size)
+				resize(offset + 256);
 			contents[offset++] = b;
 		}
 		void copy(const uint8_t *src,size_t srcLen) {
@@ -1311,22 +1318,25 @@
 		}
 	};
 	struct stmt_print: public stmt {
-		stmt_print(_0op o,bool rf,const char *s) : opcode(o), isRetFalse(rf), string(s) { }
+		stmt_print(_0op o,bool rf,const char *s) : opcode(o), isRetFalse(rf), string(s), 
+			encodedLength(encode_string(nullptr,0,string,strlen(string))) { }
 		~stmt_print() { delete [] string; }
 		const char *string;
+		uint16_t encodedLength;
 		_0op opcode;
 		bool isRetFalse;
 		void emit() const {
 			emit0op(opcode);
-			currentRoutine->offset += encode_string(currentRoutine->contents + currentRoutine->offset,
-				(currentRoutine->size - currentRoutine->offset) & ~1,string,strlen(string));
+			currentRoutine->reserve(encodedLength);
+			encode_string(currentRoutine->contents + currentRoutine->offset,encodedLength,string,strlen(string));
+			currentRoutine->offset += encodedLength;
 			if (isRetFalse) {
 				emit0op(_0op::new_line);
 				emit0op(_0op::rfalse);
 			}
 		}
 		unsigned size() const {
-			return 1 + encode_string(nullptr,0,string,strlen(string)) + isRetFalse*2;
+			return 1 + encodedLength + isRetFalse*2;
 		}
 		void dump() const {
 			spaces();
