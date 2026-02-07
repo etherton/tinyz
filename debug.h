@@ -1,7 +1,11 @@
-#include <stdint.h>
+#include "header.h"
+
+#include <map>
+#include <string>
 
 namespace debug {
 
+// file header is 0xDE, 0xBF
 // string is nul-terminated string
 // word is 16 bit unsigned, high byte first
 // line is four bytes: file number, word line number, character number
@@ -21,8 +25,38 @@ enum rectype: uint8_t {
 	ROUTINE_DBR,	// routine_number: word, defn_start: line, pc_start: address, name: string
 			// then one string for each local
 	ARRAY_DBR,	// byte_address: word, name: string
-	MAP_DBR,	// string/location pairs, terminated by a zero byte
+	MAP_DBR,	// string/address pairs, terminated by a zero byte
 	ROUTINE_END_DBR,// routine_number: word, defn_end: line, next_pc_value: address
+};
+
+struct line {
+	uint8_t file_number;	// 1-based
+	word line_number;
+	uint8_t column;
+};
+
+struct address {
+	uint8_t h,m,l;
+};
+
+struct debug_info {
+	std::map<uint8_t,std::string> files;
+	std::map<uint8_t,std::string> attributes;
+	std::map<uint8_t,std::string> properties;
+	std::map<uint8_t,std::string> globals;
+	std::map<uint16_t,std::string> objects;
+	uint8_t header[64];
+
+	bool read(const char*);
+	bool write(const char*);
+	void dump();
+	void clear() {
+		attributes.clear();
+		properties.clear();
+		globals.clear();
+		objects.clear();
+		memset(header,0,sizeof(header));
+	}
 };
 
 /* known structures
@@ -45,3 +79,5 @@ enum rectype: uint8_t {
 	"code area"
 	"strings area"
 */
+
+} // namespace debug
