@@ -179,10 +179,10 @@ Boolean Expressions
 -------------------
 @jl				`<` (or `>=` negated)\
 @jg				`>` (or `<=` negated)\
-@je				'is' or `==` (or `isn't` or `<>` negated)\
+@je				`is` or `==` (or `isn't` or `<>` negated)\
 @test			`&=` (this one is great to replace & and isn't zero)\
 @je				expr `in` {a,b,c} (can test up to three values at once)\
-@jz				`isfalse` expr (or `iszero` or `isz`; or `istruth`, `isnonzero`, or `isnz` negated)
+@jz				`isfalse` expr (or `iszero` or `isz`; or `istruth`, `isnonzero`, or `isnz` negated)\
 @test_attr		obj `has` (or `hasn't`) attribute\
 @get_child		obj `has` (or `hasn't`) `child` `->` dest (store is optional and goes to scratch otherwise)\
 @get_sibling	obj `has` (or `hasn't`) `child` `->` dest (store is optional and goes to scratch otherwise)\
