@@ -837,5 +837,6 @@ routine main [] {
 		else if (deadflag is 2)
 			print "*** You have won! ***^";
 	}
+	print "Your final score was "; print_num score; print " in "; print_num turns; print " turns.^";
 	quit;
 }
