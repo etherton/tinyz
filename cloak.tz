@@ -408,7 +408,7 @@ routine PutOn [do ido] {
 		print_ret "You place the ",object do," on the ",object ido,".";
 	}
 	else
-		print_retf "You can't put it on that.";
+		print_retf "You can't put the ",object do," on the ",object ido,".";
 }
 
 // The action table starts with the action routine, or -1 to terminate the entire list.
@@ -806,13 +806,7 @@ routine DebugActions[;a n] {
 routine Startup[; hdr] {
    room = Player parent;
 
-   print "Release ";
-   print_num hdr[[1]];
-   print " compiled on ";
-   PrintString(18,6);
-   print " by tinyzc v";
-   PrintString(60,4);
-   crlf;
+   print "Release ",hdr[[1]]," compiled on ",PrintString(18,6)," by tinyzc v",PrintString(60,4),"^";
 
    print_ret "^Hurrying through the rainswept November night, you're glad to see the
 	bright lights of the Opera House. It's surprising that there aren't more

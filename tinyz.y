@@ -1866,8 +1866,13 @@ print_sequence
 	;
 
 print_item
-	: expr			{ $$ = new stmt_varop1(_var::print_num,$1); }
-	| OBJECT expr	{ $$ = new stmt_1op(_1op::print_obj,$2); }
+	: primary { $$ = new stmt_varop1(_var::print_num,$1); }
+	| '(' expr ')' { $$ = new stmt_varop1(_var::print_num,$2); }
+	| RNAME '(' arg_list ')'
+		{
+			$$ = new stmt_call(new list_node<expr*>(new expr_reloc($1),$3))
+		}
+	| OBJECT expr { $$ = new stmt_1op(_1op::print_obj,$2); }
 	;
 	
 cond_expr
