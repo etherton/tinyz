@@ -1311,24 +1311,27 @@
 		}
 	};
 	struct stmt_print: public stmt {
-		stmt_print(_0op o,const char *s) : opcode(o), string(s) { }
+		stmt_print(_0op o,bool rf,const char *s) : opcode(o), isRetFalse(rf), string(s) { }
 		~stmt_print() { delete [] string; }
 		const char *string;
 		_0op opcode;
+		bool isRetFalse;
 		void emit() const {
 			emit0op(opcode);
 			currentRoutine->offset += encode_string(currentRoutine->contents + currentRoutine->offset,
 				(currentRoutine->size - currentRoutine->offset) & ~1,string,strlen(string));
+			if (isRetFalse)
+				emit0op(_0op::rfalse);
 		}
 		unsigned size() const {
-			return 1 + encode_string(nullptr,0,string,strlen(string));
+			return 1 + encode_string(nullptr,0,string,strlen(string)) + isRetFalse;
 		}
 		void dump() const {
 			spaces();
 			printf("%s \"%s\"\n",opcode_names[(uint8_t)opcode | 0xB0],string);
 		}
 		bool isReturn() const {
-			return opcode == _0op::print_ret;
+			return opcode == _0op::print_ret || isRetFalse;
 		}
 	};
 	uint16_t emit_routine(int numLocals,stmt *body) {
@@ -1382,7 +1385,8 @@
 }
 
 %token ATTRIBUTE PROPERTY GLOBAL OBJECT LOCATION ROUTINE WORDBIT ACTION HAS HASNT IN HOLDS SYNONYM CONTINUE BREAK
-%token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET SELF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF ONCE
+%token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET PRINT_RETF SELF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF ONCE
+%token ISZERO ISNONZERO
 %token <ival> DICT ANAME PNAME LNAME GNAME INTLIT ONAME
 %token <sval> STRLIT
 %token <rval> RNAME
@@ -1660,7 +1664,7 @@ pvalue
 			// string literal is just a shorthand for the address of a routine that calls print_ret with that string
 			open_scope();
 			auto p = relocatableBlob::createProperty(2,currentProperty);
-			p->addRelocation(emit_routine(0,new stmt_print(_0op::print_ret,$1)));
+			p->addRelocation(emit_routine(0,new stmt_print(_0op::print_ret,false,$1)));
 			close_scope();
 			$$ = p->index;
 		}
@@ -1824,8 +1828,9 @@ stmt
 	| STMT_2OP '(' expr ',' expr ')' ';' { $$ = new stmt_2op($1,$3,$5); } 
 	| STMT_VAROP1 expr  ';'			{ $$ = new stmt_varop1($1,$2); }
 	| STMT_VAROP2 '(' expr ',' expr ')'  ';'	{ $$ = new stmt_varop2($1,$3,$5); }
-	| PRINT STRLIT ';'				{ $$ = new stmt_print(_0op::print,$2); }
-	| PRINT_RET STRLIT ';'			{ $$ = new stmt_print(_0op::print_ret,$2); }
+	| PRINT STRLIT ';'				{ $$ = new stmt_print(_0op::print,false,$2); }
+	| PRINT_RET STRLIT ';'			{ $$ = new stmt_print(_0op::print_ret,true,$2); }
+	| PRINT_RETF STRLIT ';'			{ strcat(const_cast<char*>($2),"\r"); $$ = new stmt_print(_0op::print,true,$2); }
 	| INCR vname ';'				{ $$ = new stmt_1op(_1op::inc,new expr_literal($2)); }
 	| DECR vname ';'				{ $$ = new stmt_1op(_1op::dec,new expr_literal($2)); }
 	| objref GAINS aname ';' 		{ $$ = new stmt_2op(_2op::set_attr,$1,$3); }
@@ -1888,6 +1893,8 @@ bool_expr
 	| expr NE expr		{ $$ = $3->isZero()? 
 			static_cast<expr_branch*>(new expr_unary_branch(_1op::jz,true,$1)) : 
 			static_cast<expr_branch*>(new expr_binary_branch($1,_2op::je,true,$3,[](int16_t a,int16_t b)->int16_t{return a!=b;})); }
+	| ISZERO expr		{ $$ = new expr_unary_branch(_1op::jz,false,$2); }
+	| ISNONZERO expr	{ $$ = new expr_unary_branch(_1op::jz,true,$2); }
 	| expr '&' '=' expr { $$ = new expr_binary_branch($1,_2op::test,false,$4,nullptr); }
 	| expr IN '{' expr '}'	{ $$ = new expr_in($1,$4); }
 	| expr IN '{' expr ',' expr '}' { $$ = new expr_in($1,$4,$6); }
@@ -2097,6 +2104,7 @@ void init(int version) {
 	rw["child"] = CHILD;
 	rw["print"] = PRINT;
 	rw["print_ret"] = PRINT_RET;
+	rw["print_retf"] = PRINT_RETF;
 	rw["self"] = SELF;
 	rw["move"] = MOVE;
 	rw["into"] = INTO;
@@ -2105,6 +2113,12 @@ void init(int version) {
 	rw["continue"] = CONTINUE;
 	rw["break"] = BREAK;
 	rw["once"] = ONCE;
+	rw["isz"] = ISZERO;
+	rw["iszero"] = ISZERO;
+	rw["isfalse"] = ISZERO;
+	rw["isnz"] = ISNONZERO;
+	rw["isnonzero"] = ISNONZERO;
+	rw["istruth"] = ISNONZERO;
 
 	f_0op["restart"] = _0op::restart;
 	f_0op["quit"] = _0op::quit;
@@ -2577,8 +2591,9 @@ int yylex_() {
 			return DICT;
 		}
 		case '"': {
-			const unsigned maxString = 512;
-			char *sval = new char[maxString];
+			const unsigned maxString = 511;
+			// Allocate one extra character so there's always room for a newline from print_retf
+			char *sval = new char[maxString+1];
 			unsigned offset = 0;
 			char term = yych;
 			while (yynext()!=EOF && yych!=term) {

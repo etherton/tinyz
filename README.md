@@ -142,7 +142,8 @@ Z-Machine Instructions to Code
 Statements
 ----------
 @print			`print`\
-@print_ret		`print_ret`\
+@print_ret		`print_ret` (which has an implicit rtrue)\
+@print_ret		`print_retf` This expands to `print` with a newline in the string, and an rfalse.\
 @inc			++var\
 @dec			--var\
 @set_attr		obj `gains` attribute (or `set_attr`)\
@@ -181,12 +182,15 @@ Boolean Expressions
 @je				'is' or `==` (or `isn't` or `<>` negated)\
 @test			`&=` (this one is great to replace & and isn't zero)\
 @je				expr `in` {a,b,c} (can test up to three values at once)\
+@jz				`isfalse` expr (or `iszero` or `isz`; or `istruth`, `isnonzero`, or `isnz` negated)
 @test_attr		obj `has` (or `hasn't`) attribute\
 @get_child		obj `has` (or `hasn't`) `child` `->` dest (store is optional and goes to scratch otherwise)\
 @get_sibling	obj `has` (or `hasn't`) `child` `->` dest (store is optional and goes to scratch otherwise)\
 @jin			obj `holds` obj\
 @inc_chk		`once` var
 
-
+Note that expr `is` 0 and expr `isn't` 0 (where the right hand size is a constant zero) are already
+turned into @jz instead of @je, so `isfalse` etc is just syntactic sugar. Also not that `istruth`
+specifically means 'is non zero' and not any particular true value (which is exactly 1).
 
 

@@ -47,7 +47,7 @@ synonym 'north' 'n';
 synonym 'south' 's';
 synonym 'east' 'e';
 synonym 'west' 'w';
-synonym 'examine' 'x';
+synonym 'examine' 'x' 'read';
 synonym 'wait' 'z';
 synonym 'inventory' 'i';
 synonym 'again' 'g';
@@ -253,6 +253,8 @@ routine perform [act obj iobj] {
 	rfalse;
 }
 
+// General actions should return true if they worked, and false if they failed.
+// Failed actions don't cost a game turn.
 routine Inventory [;i] {
 	if (Player has child -> i) {
 		print "You are carrying:";
@@ -268,38 +270,25 @@ routine Inventory [;i] {
 		print_ret "You are empty-handed.";
 }
 
+// The before routine should return true if the action is blocked (and explain why).
+// Otherwise it should return false to allow the action. Other side effects should not
+// happen because the action isn't guaranteed to succeed yet. CallAfter should handle that.
 routine BlockBefore [act obj;r] {
-	if (obj is zero)
+	if (isz obj)
 		rfalse;
 	r = obj.before;
-	if (r isnt zero)
+	if (isnz r)
 		return call r(act,obj);
 	else
 		rfalse;
 }
 
-routine CheckBefore [act obj arg;r] {
-	if (obj isnt zero) {
-		r = obj.before;
-		if (r isnt zero)
-			return call r(act,arg);
-	}
-	rfalse;
-}
-
-routine CheckAfter [act obj;r] {
-	if (obj isnt zero) {
-		r = obj.after;
-		if (r isnt zero)
-			return call r(act,obj);
-	}
-	rtrue;
-}
-
+// This calls the after function, after an action has already succeeded. The return
+// value is currently unimportant.
 routine CallAfter [act obj;r] {
-	if (obj isnt zero) {
+	if (isnz obj) {
 		r = obj.after;
-		if (r isnt zero)
+		if (isnz r)
 			return call r(act,obj);	
 	}
 	rtrue;
@@ -338,10 +327,10 @@ routine Look [; i r f] {
 }
 
 routine Travel [dir;r] {
-	if (CheckBefore(#leave,room,dir) is false) {
+	if (isfalse BlockBefore(#leave,room,dir)) {
 		r = room.dir;
-		if (r is zero)
-			print_ret "You can't go in that direction";
+		if (isz r)
+			print_retf "You can't go in that direction.";
 		else if (r < zero or r > $object_count)
 			r = call r();
 		// player is the first object, and cannot be a room.
@@ -351,6 +340,7 @@ routine Travel [dir;r] {
 			room = r;
 			CallAfter(#enter,r);
 			Look();
+			rtrue;
 		}
 	}
 	rfalse;
@@ -358,25 +348,27 @@ routine Travel [dir;r] {
 
 routine Take [obj] {
 	if (obj is zero)
-		print_ret "I don't see that here.";
+		print_retf "I don't see that here.";
 	else if (obj parent is Player) {
-		print "You're already carrying the "; print_obj obj; print_ret ".";
+		print "You're already carrying the "; print_obj obj; print_retf ".";
 	}
 	else if (obj hasnt scenery) {
-		if (BlockBefore(#take,room) is true or BlockBefore(#take,obj) is true)
+		if (isfalse BlockBefore(#take,room) and isfalse BlockBefore(#take,obj)) {
+			print "You pick up the "; print_obj obj; print ".^";
+			move obj into Player;
+			CallAfter(#take,obj);
 			rtrue;
-		print "You pick up the "; print_obj obj; print ".^";
-		move obj into Player;
-		CallAfter(#take,obj);
-		rfalse;
+		}
+		else
+			rfalse;
 	}
 	else
-		print_ret "You can't take that, it's just scenery.";
+		print_retf "You can't take that, it's just scenery.";
 }
 
 routine Examine [obj; desc] {
 	desc = obj.description;
-	if (desc isnt zero)
+	if (isnz desc)
 		call desc();
 	else {
 		print "It's just an ordinary ";
@@ -388,10 +380,9 @@ routine Examine [obj; desc] {
 routine Drop [obj] {
 	// print "Dropping "; print_num obj; crlf;
 	// print_num obj parent; crlf;
-	if (Player holds obj and CheckBefore(#drop,room) isnt false and CheckBefore(#drop,obj) isnt false) {
-		print "You drop the "; print_obj obj; print ".^";
+	if (Player holds obj and isfalse BlockBefore(#drop,room) and isfalse BlockBefore(#drop,obj)) {
 		move obj into Player parent;
-		rtrue;
+		print "You drop the "; print_obj obj; print_ret ".";
 	}
 	else
 		rfalse;
@@ -402,21 +393,21 @@ routine PutOn [do ido] {
 	if (ido has supporter) {
 		if (ido has child)
 			print_ret "There's no room.";
-		/* else if (CheckBefore(#puton,room) isnt false and 
-				CheckBefore(#puton,do) isnt false and 
-				CheckBefore(#puton,ido) isnt false) { */
-			print "You place the "; print_obj do; print " on the "; print_obj ido; print ".^";
-			move do into ido;
-			CallAfter(#puton,ido);
-			CallAfter(#puton,do);
-			CallAfter(#puton,room);
+		if (istruth BlockBefore(#puton,room))
 			rfalse;
-		/* }
-		else
-			rtrue; */
+		if (istruth BlockBefore(#puton,do))
+			rfalse;
+		if (istruth BlockBefore(#puton,ido))
+			rfalse;
+
+		move do into ido;
+		CallAfter(#puton,ido);
+		CallAfter(#puton,do);
+		CallAfter(#puton,room);
+		print "You place the "; print_obj do; print " on the "; print_obj ido; print_ret ".";
 	}
 	else
-		print_ret "You can't put it on that.";
+		print_retf "You can't put it on that.";
 }
 
 // each dictionary word has an extra byte associated with it
@@ -459,29 +450,7 @@ constant wordMask = 8191;
 	Indirect object type (none, here, held, nearby, up to 15)
 */
 
-// if element 0 is 255, it's all objects in the game
-// otherwise, it's a count of objects in the list
-global ObjList = byte_array(32);
-
-// returns next object in list, or zero if at end
-routine ObjNext [] {
-	if (ObjList[0] is 255) {
-		ObjList[1] = ObjList[1] + 1;
-		if (ObjList[1] > $object_count)
-			return 0;
-		else
-			return ObjList[1];
-	}
-	else {
-		ObjList[1] = ObjList[1] + 1;
-		if (ObjList[1] is ObjList[0])
-			return 0;
-		else
-			return ObjList[2 + ObjList[1]];
-	}
-}
-
-// going into tokenizatio , [0] is number of words we can store, on return [1]
+// going into tokenization, [0] is number of words we can store, on return [1]
 // is the number of words stored. [[1]], [[3]], etc are the word addresses of
 // the ditionary matches, or 0 if unknown. [4]/[5], [8]/[9] etc are the offset
 // into text_buffer of the word, and its length. after our processing, [[0]]
@@ -574,11 +543,13 @@ routine Nearby [] {
 	return ParseCommon(Player parent);
 }
 
+// Parse a word anywhere in the world
 routine Anywhere [] {
 	ExcludeObject = 0;
 	return ParseCommon(Locations);
 }
 
+// Parse a word that is a compass direction
 routine Direction [] {
 	if (parse_buffer[[nw+1]] &= artBit)
 		nw = nw + 2;
@@ -807,8 +778,7 @@ routine DoTurn[; i] {
 		// print "IndirectObject = "; print_num IndirectObject; crlf;
 		if (DirectObject isn't zero)
 			it = DirectObject;
-		call ActionRoutine(DirectObject, IndirectObject);
-		rtrue;
+		return call ActionRoutine(DirectObject, IndirectObject);
 	}
 
 	rfalse;
@@ -863,14 +833,9 @@ routine main [] {
 	while (deadflag is zero) {
 		turns = turns + DoTurn();
 		if (deadflag is 3)
-			print "*** You have lost! ***";
+			print "*** You have lost! ***^";
 		else if (deadflag is 2)
-			print "*** You have won! ***";
-		if (deadflag isnt zero) {
-			crlf;
-			print "Restart or quit?";
-			restart;
-		}
+			print "*** You have won! ***^";
 	}
 	quit;
 }
