@@ -474,7 +474,7 @@ global it;			// the last direct object
 routine RecurseMatch [obj; j k] {
 	if (obj has child -> obj) {
 		repeat {
-			print_num obj; print_char @ ; print_obj obj; crlf;
+			// print_num obj; print_char @ ; print_obj obj; crlf;
 			if (obj isn't ExcludeObject and obj has $is_object) {
 				k = addrof(obj.MatchProp);
 				if (k isn't 0) {
@@ -491,8 +491,7 @@ routine RecurseMatch [obj; j k] {
 					}
 				}
 			}
-			if (obj has child -> k)
-				RecurseMatch(k);
+			RecurseMatch(obj);
 		} while (obj has sibling -> obj);
 	}
 	rfalse;
@@ -529,21 +528,21 @@ routine ParseCommon [root] {
 
 // Parse a word that is here but not held
 routine Here [] {
-	print "Testing Here.^";
+	// print "Testing Here.^";
 	ExcludeObject = Player;
 	return ParseCommon(Player parent);
 }
 
 // Parse a word that is held
 routine Held [] {
-	print "Testing Held.^";
+	// print "Testing Held.^";
 	ExcludeObject = 0;
 	return ParseCommon(Player);
 }
 
 // Parse a word here or held
 routine Nearby [] {
-	print "Testing Nearby.^";
+	// print "Testing Nearby.^";
 	ExcludeObject = 0;
 	return ParseCommon(Player parent);
 }

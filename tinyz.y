@@ -1583,15 +1583,15 @@ object_or_location_def
 	: ONAME STRLIT opt_parent '{' {
 		self_value = $1;
 		cdef = the_object_table[$1];
-		cdef->child = 0;
+		// don't overwrite child here, it was already zeroed on
+		// creation and might already have children by now.
 		cdef->parent = $3;
 
 		if ($3) {
 			cdef->sibling = the_object_table[$3]->child;
 			the_object_table[$3]->child = $1;
 		}
-		else
-			cdef->sibling = 0;
+
 		cdef->descrLen = encode_string(nullptr,0,$2,strlen($2));
 		cdef->descr = new uint8_t[cdef->descrLen];
 		encode_string(cdef->descr,cdef->descrLen,$2,strlen($2));
