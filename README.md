@@ -21,7 +21,8 @@ it generate a lot of diagnostic output including full disassembly. There is also
 story file disassembler, and a reasonably feature complete story interpreter as well. The only
 supported platform for the latter is MacOS, but adding Linux support should be trivial, just
 creating a new interface file with Linux-specific terminal access. Something similar could
-probably also be done for the Windows console.
+probably also be done for the Windows console. The tools produce and can use Inform DEBF
+binary debug information files.
 
 The Language
 ============
@@ -34,21 +35,23 @@ us to use a smaller instruction format and avoid many extra relocations.
 
 On the second pass we perform parsing and code generation. Each routine generates a tree of
 statements and expressions and generates code directly. We estimate block sizes so that
-forward jumps can be small whenever possible. Also, we dead strip code so simple version
+forward jumps can be small whenever possible. Also, we dead strip code from branches so simple version
 checks can elide code here (for example, to hide differences in the text parsing between versions).
 
 After the second pass is done, we assign final addresses to everything and build the Z machine
-header. We do some basic code dead stripping here (although dictionary words in dead code will
-still exist in the dictionary).
+header. We do some basic routine-level dead stripping here (although dictionary words in dead code will
+still exist in the dictionary). A routine with no references is removed, and any functions it called
+have their reference counts lowered, which may in turn make them dead code as well. The process
+repeats until no new dead code is uncovered.
 
 The language looks a lot like C, mostly because while I admire languges like FORTH and Lisp,
-I simply cannot read or write in anything except standard imperative languages.
+I simply cannot read or write code in anything except standard imperative languages.
 
 Perhaps the most unusual thing about TinyZ is the hard distinction between boolean tests and
 expressions. A boolean test can only appear in if or while statements, and always maps directly
 to a Z machine branch instruction. I also got tired of spelling hasn't without the apostrophe
-so the lexer allows apostrophes in any symbol. Go crazy. (A symbol can start with # or $ or
-an alphabetic character or underscope, and can contain any alphanumeric character, underscore,
+so the lexer allows apostrophes in any symbol. Go crazy. A symbol can start with # or $ or
+an alphabetic character or underscore, and can contain any alphanumeric character, underscore,
 or apostrophe.
 
 Here's a basic routine that demonstrates several things:
@@ -77,12 +80,12 @@ If the room doesn't have the lit attribute, we print a generic message and retur
 we query the room's description (which is always a routine, but simple strings resolve to
 a print_ret). 
 
-Next, we see if the room has any children (since the get_child instruction can both do a
+Next, we see if the room has any children; since the get_child instruction can both do a
 branch and a store, we leverage that to put the entire test in a single instruction.
 For each child, we verify it is not the player, and it's an object and not a location (that
-attribute is set by the compiler so that some attributes and properties can overlap)
+attribute is set by the compiler so that some attributes and properties can overlap).
 
-The once construct maps to the inc_chk instruction internally and efficiently tests and
+The `once` construct maps to the inc_chk instruction internally and efficiently tests and
 sets a flag in one instruction (relying on the fact that all locals are zero). PrintAObj
 uses stream 3 to capture object output to identify whether the object name starts with
 a vowel or not.
@@ -105,7 +108,7 @@ Here's the resulting assembly:
 " [ b2 13 d4 68 08 1a 60 1a 38 50 18 29 45 f4 a7 ]
 000b2f call_vs 0xaac local0 -> global3 [ e0 2f 05 56 01 13 ]
 000b35 new_line [ bb ]
-000b36 get_sibling $o local0 -> local0 ?b10 [ a1 01 01 bf d7 ]
+000b36 get_sibling local0 -> local0 ?b10 [ a1 01 01 bf d7 ]
 000b3b ret local1 [ ab 02 ]
 000b3d nop [ b4 ]
 ```
@@ -127,7 +130,7 @@ To treat any variable as the base address of a word array, use double square bra
 I'm considering adding ways to mark up a variable as being intended as a byte or word
 array since getting this wrong is a common source of bugs.
 
-For equality tests you can use == or <>, or is or isn't.
+For equality tests you can use == or <>, or `is` or `isnt` or `isn't`.
 
 Builtins that take a zero/one parameter don't require parentheses. Builtins that take
 more than one parameter do require parentheses. All routine calls require parentheses.
