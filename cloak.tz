@@ -414,45 +414,14 @@ routine PutOn [do ido] {
 		print_retf "You can't put it on that.";
 }
 
-// each dictionary word has an extra byte associated with it
-// vanpdddd
-// v: word can be a verb (appears first in an action statement)
-// a: word can be an adjective (appears in an adjective list of at least one object)
-// n: word can be a noun (appears in the noun list of at least one object)
-// p: word can be a preposition (appears between direct and indirect object)
-// dddd: if nonzero, word refers to a direction property index
-// if dddd is 15, word is an article (and is therefore ignored except that
-// it starts the beginning of a placeholder)
-
-// each dictionary word has an extra two bytes associated with it
-// adj_bit - set if word is an adjective (appears in adjective list of an object)
-// noun_bit - set if word is a noun (appears in noun list of an object) (payload is first matching object)
-// verb_bit - set if word is a verb (payload is action index)
-// if payload is nonzero, the word is a synonym
-// if payload is nonzero but larger than number of words, it's a biased direction proeprty index
-
-constant isEnd = 1 << 15;
-constant isRoutine = 1 << 14;
-constant hasSecondWord = 1 << 13;
+// The action table starts with the action routine, or -1 to terminate the entire list.
+// After that, one or more words follow with the bits below set:
+// isEnd, isRoutine, and hasSecondWord are hard-coded into the compiler.
+// Some code tests < 0 instead of checking isEnd explicitly.
+constant isEnd = 1 << 15;			// This is the last part of the action
+constant isRoutine = 1 << 14;		// Routine (possibly after second word) marks end of phrase
+constant hasSecondWord = 1 << 13;	// This is a two word phrase, not a one word phrase.
 constant wordMask = 8191;
-
-/*
-	The first word is the action routine, or zero to terminate the entire action table
-	The upper 3 bits indciate several things: (and leave room for vocabulary of 8191 words)
-	--0 - this is a single word phrase
-	--1 - this is the first word of a two word phrase (next word follows)
-	-1- - the next word is a disambiguation routine (or a word bit mask if < 256)
-	1-- - this is the end of the action list
-	*/
-
-/*
-	Number of single verbs (0-3)
-	Number of double verbs (0-3)
-	Direct object type (none, here, held, nearby, up to 15)
-	Number of single preps (0-3)
-	Number of double preps (0-3)
-	Indirect object type (none, here, held, nearby, up to 15)
-*/
 
 // going into tokenization, [0] is number of words we can store, on return [1]
 // is the number of words stored. [[1]], [[3]], etc are the word addresses of
@@ -465,6 +434,8 @@ global nw;	// next word being processed (always an odd number)
 global lw;	// last word index (so we know we're at end of input)
 global na;	// next action being processed
 
+// These all control RecurseMatch functionality.
+// They're globals to get around v3 parameter count limitations and to save stack space.
 constant MaxObjectList = 32;
 global ObjectList = word_array(MaxObjectList);
 global ObjectListCount;
