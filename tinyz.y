@@ -2775,9 +2775,9 @@ int main(int argc,char **argv) {
 					if (g.second.token == GNAME)
 						di.globals[g.second.ival] = g.first;
 					else if (g.second.token == ANAME)
-						di.attributes[g.second.ival] = g.first;
+						di.attributes[g.second.ival & 63] = g.first;
 					else if (g.second.token == PNAME)
-						di.properties[g.second.ival] = g.first;
+						di.properties[g.second.ival & 63] = g.first;
 					else if (g.second.token == ONAME)
 						di.objects[g.second.ival] = g.first;
 				}
