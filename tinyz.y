@@ -2673,6 +2673,8 @@ int main(int argc,char **argv) {
 	}
 	if (!argc)
 		yyerror("missing input tz name");
+	if (write_debug_info)
+		di.files[1] = argv[0];
 	init(zversion);
 
 	char outname[64];
