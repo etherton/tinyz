@@ -32,7 +32,7 @@ attribute object scenery;
 constant false = 0;
 constant zero = 0; 
 constant true = 1;
-constant adjBit = 1 << 7;
+constant adjectiveBit = 1 << 7;
 constant nounBit = 1 << 6;
 constant verbBit = 1 << 5;	// the compiler hard-codes this for actions
 constant prepBit = 1 << 4;	// the compiler hard-codes this for actions
@@ -62,7 +62,7 @@ synonym 'look' 'l';
 property global description;
 property global before;
 property global after;
-property object adjective wordbit adjBit;
+property object adjective wordbit adjectiveBit;
 property object noun wordbit nounBit;
 property location n_to;
 property location s_to;
@@ -172,6 +172,13 @@ object hat "nondescript hat" (foyer) {
 	adjective: 'boring' 'nondescript';
 	noun: 'hat';
 	description: "It's a really boring hat just meant to test the cloakroom";
+	clothing;
+}
+
+object hat2 "fancy hat" (foyer) {
+	adjective: 'fancy' 'handsome';
+	noun: 'hat';
+	description: "It's a fancy hat that also tests the cloakroom";
 	clothing;
 }
 
@@ -450,28 +457,32 @@ global MatchProp;
 global MatchWord;
 global it;			// the last direct object
 
+routine MatchPropertyWord [match obj prop; j k] {
+	k = addrof(obj.prop);
+	if (isnz k) {
+		while (j+j < sizeof(k)) {
+			if (match is k[[j]])
+				rtrue;
+			++j;
+		}
+	}
+	rfalse;
+}
+
 routine RecurseMatch [obj; j k] {
 	if (obj has child -> obj) {
 		repeat {
 			// print_num obj; print_char @ ; print_obj obj; crlf;
 			if (obj isn't ExcludeObject) {
 				if (obj has $is_object) {
-					k = addrof(obj.MatchProp);
-					if (isnonzero k) {
-						// print "...has "; print_num sizeof(k)/2; print " elements.^";
-						j = 0;
-						while (j+j < sizeof(k)) {
-							if (MatchWord is k[[j]]) {
-								// print "adding "; print_num obj; crlf;
-								if (ObjectListCount < MaxObjectList)
-									ObjectList[[ObjectListCount]] = obj;
-								++ObjectListCount;
-							}
-							++j;
-						}
+					if (istruth MatchPropertyWord(MatchWord,obj,MatchProp)) {
+						trace 1 "adding ",object obj,crlf;
+						if (ObjectListCount < MaxObjectList)
+							ObjectList[[ObjectListCount]] = obj;
+						++ObjectListCount;
 					}
-					RecurseMatch(obj);
 				}
+				RecurseMatch(obj);
 			}
 		} while (obj has sibling -> obj);
 	}
@@ -484,18 +495,41 @@ routine PrintDict [w; hdr] {
 	rfalse;
 }
 
-routine ParseCommon [root] {
+routine ParseCommon [root; i adj] {
 	if (parse_buffer[[nw+1]] &= artBit)
 		nw = nw + 2;
 	if (parse_buffer[[nw]] is 'it' and it isn't zero) {
 		nw = nw + 2;
 		return it;
 	}
+	if (parse_buffer[[nw+1]] &= adjectiveBit) {
+		adj = parse_buffer[[nw]];
+		nw = nw + 2;
+	}
 	if (parse_buffer[[nw+1]] &= nounBit) {
 		ObjectListCount = 0;
 		MatchProp = noun;
 		MatchWord = parse_buffer[[nw]];
 		RecurseMatch(root);
+		if (ObjectListCount > 1) {
+			if (isnonzero adj) {
+				i = 0;
+				while (i < ObjectListCount) {
+					if (istruth MatchPropertyWord(adj,ObjectList[[i]],adjective)) {
+						nw = nw + 2;
+						return ObjectList[[i]];
+					}
+					++i;
+				}
+			}
+			print "I'm not sure which one you meant: ";
+			while (i < ObjectListCount - 1) {
+				print "the ",object ObjectList[[i]],", ";
+				++i;
+			}
+			print "or the ",object ObjectList[[i]],"?^";
+			rfalse;
+		}
 		if (ObjectListCount is 1) {
 			nw = nw + 2;
 			return ObjectList[[0]];
@@ -740,11 +774,15 @@ routine ScanParseTable [; n matched] {
 						matched = $actions[[na]];
 						if (DirectObject isn't zero) {
 							IndirectObject = call matched();
-							// print "IndirectObject now "; print_num IndirectObject; crlf;
+							if (isfalse IndirectObject)
+								rfalse;
+							trace 1 "IndirectObject now ",IndirectObject,crlf;
 						}
 						else {
 							DirectObject = call matched();
-							// print "DirectObject now "; print_num DirectObject; crlf;
+							if (isfalse DirectObject)
+								rfalse;
+							trace 1 "DirectObject now ",DirectObject,crlf;
 						}
 					}
 					++na;
