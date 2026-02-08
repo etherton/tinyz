@@ -1,6 +1,9 @@
 #include "header.h"
 
+#include <memory.h>
+
 #include <map>
+#include <vector>
 #include <string>
 
 namespace debug {

@@ -865,6 +865,16 @@
 			printNode((uint8_t)op.value);
 		}
 	};
+	expr *trace_level_expr() {
+		static auto tl = the_globals.find("$tracebits");
+		if (tl != the_globals.end()) {
+			if (tl->second.token == GNAME)
+				return new expr_variable(tl->second.ival + 16);
+			else if (tl->second.token == INTLIT)
+				return new expr_literal(tl->second.ival);
+		}
+		return new expr_literal(0);
+	}
 	struct expr_logical_not: public expr_branch {
 		expr_logical_not(expr_branch *e) : unary(), expr_branch(!e->negated) { }
 		~expr_logical_not() { delete unary; }
@@ -1434,7 +1444,7 @@
 
 %token ATTRIBUTE PROPERTY GLOBAL OBJECT LOCATION ROUTINE WORDBIT ACTION HAS HASNT IN HOLDS SYNONYM CONTINUE BREAK
 %token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET PRINT_RETF SELF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF ONCE
-%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF
+%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF TRACE
 %token <ival> DICT ANAME PNAME LNAME GNAME INTLIT ONAME
 %token <sval> STRLIT
 %token <rval> RNAME
@@ -1469,7 +1479,7 @@
 %type <eval> expr pname objref primary aname arg
 %type <brval> bool_expr cond_expr
 %type <ival> vname opt_parent opt_default opt_wordbit opt_arrow has_or_hasnt phrase dict
-%type <rval> routine_body pvalue
+%type <rval> routine_body pvalue rname
 %type <scopeval> scope
 %type <dlist> dict_list;
 %type <elist> opt_call_args arg_list
@@ -1777,7 +1787,12 @@ wordbit_def
 
 action_def
 	: ACTION INTLIT ';'
-	| ACTION INTLIT '{' RNAME ':' { actions_blob->addRelocation($4); action_bit = 32; } action_list '}'
+	| ACTION INTLIT '{' rname ':' { actions_blob->addRelocation($4); action_bit = 32; } action_list '}'
+	;
+
+rname
+	: RNAME				{ $$ = $1; }
+	| routine_body		{ $$ = $1; }
 	;
 
 action_list
@@ -1879,6 +1894,12 @@ stmt
 	| PRINT { print_type = PRINT; } print_sequence ';'				{ $$ = new stmts($3); }
 	| PRINT_RET { print_type = PRINT_RET; } print_sequence ';'		{ $$ = new stmts($3); }
 	| PRINT_RETF { print_type = PRINT_RETF; } print_sequence ';'	{ $$ = new stmts($3); }
+	| TRACE INTLIT { print_type = PRINT; } print_sequence ';'				
+		{ 
+			// depending on trace_level_expr, this will dead strip in release builds.
+			auto c = new expr_binary_branch(trace_level_expr(),_2op::test,false,new expr_literal($2),[](int16_t a,int16_t b)->int16_t { return (a&b)==b; });
+			$$ = new stmt_if(c,new stmts($4),nullptr);
+		}
 	| INCR vname ';'				{ $$ = new stmt_1op(_1op::inc,new expr_literal($2)); }
 	| DECR vname ';'				{ $$ = new stmt_1op(_1op::dec,new expr_literal($2)); }
 	| objref GAINS aname ';' 		{ $$ = new stmt_2op(_2op::set_attr,$1,$3); }
@@ -1897,6 +1918,11 @@ print_sequence
 		{ 
 			$$ = new list_node<stmt*>(new stmt_print(print_type==PRINT_RET? _0op::print_ret : _0op::print,
 					print_type==PRINT_RETF,$1),nullptr); 
+		}
+	| STMT_0OP
+		{
+			// intended for crlf;
+			$$ = new list_node<stmt*>(new stmt_0op($1),nullptr);
 		}
 	;
 
@@ -1965,7 +1991,7 @@ bool_expr
 			static_cast<expr_branch*>(new expr_binary_branch($1,_2op::je,true,$3,[](int16_t a,int16_t b)->int16_t{return a!=b;})); }
 	| ISZERO expr		{ $$ = new expr_unary_branch(_1op::jz,false,$2); }
 	| ISNONZERO expr	{ $$ = new expr_unary_branch(_1op::jz,true,$2); }
-	| expr '&' '=' expr { $$ = new expr_binary_branch($1,_2op::test,false,$4,nullptr); }
+	| expr '&' '=' expr { $$ = new expr_binary_branch($1,_2op::test,false,$4,[](int16_t a,int16_t b)->int16_t { return (a&b)==b; }); }
 	| expr IN '{' expr '}'	{ $$ = new expr_in($1,$4); }
 	| expr IN '{' expr ',' expr '}' { $$ = new expr_in($1,$4,$6); }
 	| expr IN '{' expr ',' expr ',' expr '}' { $$ = new expr_in($1,$4,$6,$8); }
@@ -2198,6 +2224,7 @@ void init(int version) {
 	rw["print"] = PRINT;
 	rw["print_ret"] = PRINT_RET;
 	rw["print_retf"] = PRINT_RETF;
+	rw["trace"] = TRACE;
 	rw["self"] = SELF;
 	rw["move"] = MOVE;
 	rw["into"] = INTO;
@@ -2529,9 +2556,9 @@ int yylex_() {
 			return NEWSYM;
 		else {
 			if (the_locals.size())
-				yylval.sym = &*the_locals.back()->insert(std::pair<std::string,symbol>(yytoken,{0,0})).first;
+				yylval.sym = &*the_locals.back()->insert(std::pair<std::string,symbol>(yytoken,{INTLIT,0})).first;
 			else
-				yylval.sym = &*the_globals.insert(std::pair<std::string,symbol>(yytoken,{0,0})).first;
+				yylval.sym = &*the_globals.insert(std::pair<std::string,symbol>(yytoken,{INTLIT,0})).first;
 			return NEWSYM;
 		}
 	}
@@ -2737,8 +2764,18 @@ int yylex() {
 RESTART:
 	int token = yylex_();
 	if (token == HASH_IF) {
-		if (yylex_() != INTLIT)
-			yyerror("Expected integer after #if");
+		bool negated = false;
+		token = yylex_();
+		if (token == NOT) {
+			token = yylex_();
+			negated = true;
+		}
+		if (token == NEWSYM)
+			yylval.ival = 0;
+		else if (token != INTLIT)
+			yyerror("Expected symbol or integer after #if, got %s",yytoken);
+		if (negated)
+			yylval.ival = !yylval.ival;
 		// if we were active before, we won't change state
 		if (yyhashstate & 1)
 			yyhashstate = (yyhashstate << 1) | (yylval.ival != 0);

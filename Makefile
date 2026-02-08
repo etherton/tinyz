@@ -16,13 +16,13 @@ zdis: opcodes.h header.h zdis.cpp debug.h debug.cpp Makefile
 	clang++ -std=c++17 zdis.cpp debug.cpp -o zdis
 
 cloak.z3: cloak.tz tinyzc Makefile
-	./tinyzc -z3 -g -rR cloak.tz > cloak.z3.txt
+	./tinyzc -z3 -g -r cloak.tz > cloak.z3.txt
 
 cloak.z4: cloak.tz tinyzc Makefile
-	./tinyzc -z4 -g -rR cloak.tz > cloak.z4.txt
+	./tinyzc -z4 -g -r cloak.tz > cloak.z4.txt
 
 cloak.z5: cloak.tz tinyzc Makefile
-	./tinyzc -z5 -g -rR cloak.tz > cloak.z5.txt
+	./tinyzc -z5 -g -r cloak.tz > cloak.z5.txt
 
 debug3: cloak.z3 Makefile tinyzterpd
 	./tinyzterpd cloak.z3 -debug -di cloak.z3.dbg

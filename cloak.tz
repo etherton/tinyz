@@ -93,6 +93,11 @@ global room;
 global score;
 global turns;
 global scratch;		// fourth global is used as a dummy storage slot for branches and subroutine calls that ignore result.
+#if RELEASE 
+constant $tracebits = 0;
+#else
+global $tracebits;	// this controls which trace statements display
+#endif
 global deadflag;
 
 // player is always first at object 1. this also guarantees that
@@ -566,6 +571,10 @@ action #puton { PutOn: 'hang'/'place'/'put' Held 'on'/'upon'/'on to'/'onto' Here
 action #go { Travel: 'go'/'go to' Direction }
 action #restart { Restart: 'restart'/'restart game' }
 action #quit { Quit: 'quit'/'quit game' }
+#if not RELEASE
+action #traceOn { [] { $tracebits = 1; rfalse; }: '#trace on' }
+action #traceOff { [] { $tracebits = 0; rfalse; }: '#trace off' }
+#endif
 action #leave;
 action #enter;
 
@@ -705,7 +714,7 @@ routine ScanParseTable [; n matched] {
 	IndirectObject = 0;
 	while ($actions[[na]] isn't -1) {
 		ActionRoutine = $actions[[na]];
-		// print "Checking "; print_num ActionRoutine; crlf;
+		trace 1 "Checking ",ActionRoutine,crlf;
 		++na;
 		nw = 1;
 		matched = 0;
@@ -714,7 +723,7 @@ routine ScanParseTable [; n matched] {
 			repeat {
 				n = $actions[[na]];
 				++na;
-				// print "n = "; print_num(n); crlf;
+				trace 1 "n = ",n,crlf;
 				// PrintDict(n & wordMask); crlf;
 				if (n &= hasSecondWord) {
 					if (n & wordMask is parse_buffer[[nw]] and $actions[[na]] & wordMask is parse_buffer[[nw+2]])
