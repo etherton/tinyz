@@ -11,13 +11,15 @@
 	#include <map>
 	#include <cassert>
 
-	/*
 	#include <malloc/malloc.h>
-	const unsigned max_allocs = 32768;
+	#include <execinfo.h>
+	const unsigned max_allocs = 32768, stacks_per = 8;
 	void *debug_allocations[max_allocs];
+	void *debug_stacks[max_allocs][stacks_per];
 	unsigned alloc_count;
 	void* debug_alloc(size_t s) {
 		void *r = malloc(s);
+		backtrace(debug_stacks[alloc_count],stacks_per);
 		debug_allocations[alloc_count++] = r;
 		return r;
 	}
@@ -26,6 +28,7 @@
 			if (debug_allocations[i] == p) {
 				free(p);
 				debug_allocations[i] = debug_allocations[--alloc_count];
+				memcpy(debug_stacks+i, debug_stacks + alloc_count,stacks_per * sizeof(void*));
 				return;
 			}
 		}
@@ -33,13 +36,16 @@
 	}
 	void debug_leaks() {
 		printf("%u leaks\n",alloc_count);
-		for (unsigned i=0; i<alloc_count; i++)
+		for (unsigned i=0; i<alloc_count; i++) {
 			printf("alloc at %p sized %zu bytes\n",debug_allocations[i],malloc_size(debug_allocations[i]));
+			fflush(stdout);
+			backtrace_symbols_fd(debug_stacks[i],stacks_per,fileno(stdout));
+		}
 	}
-	void *operator new[](size_t s,const char *f,unsigned l) { return debug_alloc(s,f,l); }
-	void *operator new(size_t s,const char*f,unsigned l) { return debug_alloc(s,f,l); }
+	void *operator new[](size_t s) { return debug_alloc(s); }
+	void *operator new(size_t s) { return debug_alloc(s); }
 	void operator delete(void *p) { debug_free(p); }
-	void operator delete[](void *p) { debug_free(p); } */
+	void operator delete[](void *p) { debug_free(p); }
 
 	int yylex();
 	void yyerror(const char*,...);
@@ -332,6 +338,8 @@
 	const uint8_t TOS = 0, SCRATCH = 3;
 
 	typedef struct label_info {
+		label_info() : offset(0), references(nullptr) { }
+		~label_info() { assert(!references); }
 		uint16_t offset;
 		list_node<uint16_t> *references;
 	} *label;
@@ -390,6 +398,8 @@
 			else
 				fillBranch(i->car,l->offset,(dest[0] & 0x80) == 0,!(dest[0] & 0x40),false);
 		}
+		delete l->references;
+		l->references = nullptr;
 	}
 	void emitJump(label l,bool isLong) {
 		emitByte(isLong? LONG_JUMP : SHORT_JUMP);
@@ -751,7 +761,7 @@
 	};
 	struct expr_call: public expr { // first arg is func address
 		expr_call(list_node<expr*> *a) : args(a) { }
-		~expr_call() { delete args; }
+		~expr_call() { auto i = args; while (i) { delete i->car; i = i->cdr; } delete args; }
 		list_node<expr*> *args;
 		// TODO: v3 only supports VAR call (3 params). v4 supports 1/2 operand with result and 7 params.
 		// v5 supports implicit pop versions of all calls
@@ -925,6 +935,7 @@
 				left->emitBranch(failed,true,isLong);
 				right->emitBranch(target,false,isLong);
 				placeLabel(failed);
+				delete failed;
 			}
 		}
 		unsigned size() const {
@@ -948,6 +959,7 @@
 				left->emitBranch(success,false,isLong);
 				right->emitBranch(target,true,isLong);
 				placeLabel(success);
+				delete success;
 			}
 			else {
 				left->emitBranch(target,false,isLong);
@@ -1002,7 +1014,14 @@
 			for (auto i=slist; i; i=i->cdr)
 				tsize += i->car->size();
 		}
-		~stmts() { delete slist; }
+		~stmts() { 
+			auto i = slist;
+			while (i) {
+				delete i->car;
+				i = i->cdr;
+			}
+			delete slist;
+		}
 		list_node<stmt*> *slist;
 		unsigned tsize;
 		void emit() const {
@@ -1083,10 +1102,12 @@
 					placeLabel(falseBranch);
 					ifFalse->emit();
 					placeLabel(skipFalse);
+					delete skipFalse;
 				}
 			}
 			else
 				placeLabel(falseBranch);
+			delete falseBranch;
 		}
 		unsigned size() const {
 			return cond->size() + includingBranchPast(ifTrue->size() + jumpPastSize(ifFalse)) +
@@ -1124,6 +1145,8 @@
 			continue_label = flow_stack.back().first;
 			break_label = flow_stack.back().second;
 			flow_stack.pop_back();
+			delete falseBranch;
+			delete top;
 		}
 		unsigned size() const { 
 			return cond->size() + includingJumpPast(body->size()) + 3; 
@@ -1144,6 +1167,7 @@
 			auto trueBranch = createLabelHere();
 			body->emit();
 			cond->emitBranch(trueBranch,false,true);
+			delete trueBranch;
 		}
 		unsigned size() const { 
 			return cond->size() + body->size(); 
@@ -1689,6 +1713,7 @@ object_or_location_def
 				finalProps->append(p);
 		}
 		finalProps->storeByte(0);
+		delete [] cdef->descr;
 		delete [] cdef->properties;
 		cdef->finalProps = finalProps;
 		cdef->propertySize = finalSize;
@@ -3124,10 +3149,21 @@ int main(int argc,char **argv) {
 			for (unsigned i=0; i<the_relocations.size(); i++)
 				if ((size_t)the_relocations[i] > 65535)
 					the_relocations[i]->destroy();
+			the_dictionary.clear();
+			the_globals.clear();
+			di.clear();
+			rw.clear();
+			f_0op.clear();
+			f_1op.clear();
+			f_2op.clear();
+			f_varop1.clear();
+			f_varop2.clear();
+			delete rfalseLabel;
+			delete rtrueLabel;
 		}
 		fclose(yyinput);
 	}
-	// debug_leaks();
+	debug_leaks();
 
 	// typical order
 	// header (64 bytes)
