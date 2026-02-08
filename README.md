@@ -136,63 +136,6 @@ Builtins that take a zero/one parameter don't require parentheses. Builtins that
 more than one parameter do require parentheses. All routine calls require parentheses.
 This is necessary to avoid ambiguities in the Bison grammar.
 
-Z-Machine Instructions to Code
-==============================
-
-Statements
-----------
-@print			`print`\
-@print_ret		`print_ret` (which has an implicit rtrue)\
-@print_ret		`print_retf` This expands to `print`, new_line, and an rfalse.\
-@inc			++var\
-@dec			--var\
-@set_attr		obj `gains` attribute (or `set_attr`)\
-@clear_attr		obj `loses` attribute (or `clear_attr`)\
-@insert_obj		`move` obj `into` obj (or `insert_obj`)\
-@restart		`restart`\
-@quit			`quit`\
-@new_line		`crlf`\
-@show_status	`show_status`\
-@print_addr		`print_addr`\
-@print_paddr	`print_paddr`\
-@remove_obj		`remove_obj`\
-@print_obj		`print_obj`\
-@print_num		`print_num`\
-@output_stream	`output_stream` or `output_stream2` depending on parameter count\
-@read_char		`read_char`
-
-Expressions
------------
-@add			`+`\
-@sub			`-`\
-@mul			`*`\
-@div			`/`\
-@mod			`%`\
-@not			`~`\
-@and			`&`\
-@or				`|`\
-@get_prop		obj `.` property\
-@get_prop_addr	`addrof` `(` obj `.` property_name `)`\
-@get_prop_len	`sizeof` `(` expr `)`\
-
-Boolean Expressions
--------------------
-@jl				`<` (or `>=` negated)\
-@jg				`>` (or `<=` negated)\
-@je				`is` or `==` (or `isn't` or `<>` negated)\
-@test			`&=` (this one is great to replace & and isn't zero)\
-@je				expr `in` {a,b,c} (can test up to three values at once)\
-@jz				`isfalse` expr (or `iszero` or `isz`; or `istruth`, `isnonzero`, or `isnz` negated)\
-@test_attr		obj `has` (or `hasn't`) attribute\
-@get_child		obj `has` (or `hasn't`) `child` `->` dest (store is optional and goes to scratch otherwise)\
-@get_sibling	obj `has` (or `hasn't`) `child` `->` dest (store is optional and goes to scratch otherwise)\
-@jin			obj `holds` obj\
-@inc_chk		`once` var
-
-Note that expr `is` 0 and expr `isn't` 0 (where the right hand size is a constant zero) are already
-turned into @jz instead of @je, so `isfalse` etc is just syntactic sugar. Also not that `istruth`
-specifically means 'is non zero' and not any particular true value (which is exactly 1).
-
 There is also basic preprocessor support. The directives #if, #else, and #endif work anywhere in the
 token stream, not necessarily at the line level. #if expects an integer literal, and tests against zero.
 The symbols $v4, $v5, and $v8 are defined if the Z-machine version is at least that high. Anything `constant`
@@ -202,36 +145,41 @@ Language Syntax
 ---------------
 Toplevel declarations include the following:
 
-`constant symbol integer-expression;` defines a symbol having the specified value, which
+`constant symbol integer-expression;`\
+Defines a symbol having the specified value, which
 must evaluate to a compile-time constant.
 
-`attribute **{**global**|**object**|**location**}** attribute-name;` declares a named attribute. It can
+`attribute {global|object|location} attribute-name;`\
+Declares a named attribute. It can
 be applied to either any object or location, an object, or a location. Internally all objects
 have the $is_object attribute set on them; it is missing on locations.
 
-`property {global|object|location} property-name [wordbit integer-literal];` declares a named
+`property {global|object|location} property-name [wordbit integer-literal];`\Declares a named
 property, with scope like attributes. Additionally you can specify any word defined in that
 property has the specified value or'd into its dictionary type byte.
 
-`synonym word syn1 [syn2...];` declares that syn1, etc are synonyms for the specified base word.
+`synonym word syn1 [syn2...];`\
+Declares that syn1, etc are synonyms for the specified base word.
 They are identical for all intents and purposes, and the substitution is done very early in
 parsing. Synonyms always have a payload byte of 255, and their actual payload is taken from
 the original room once it's been replaced. Synonyms cannot appear anywhere else in the story,
 since they would never match.
 
-`global symbol [= integer-expression];` declares a standard integer global, defaults to zero
-unless an initializer is included.
+`global symbol [= integer-expression];`\
+Declares a standard integer global, defaults to zero unless an initializer is included.
 
-`global symbol = byte_array(element-count) [{ intializers...}];` declares a global that is
-initialized with the address of a sized byte array in dynamic memory. You can also declare a
+`global symbol = byte_array(element-count) [{ intializers...}];`\
+Declares a global that is initialized with the address of a sized byte array in dynamic memory. You can also declare a
 `word_array` this way.
 
-`routine symbol [ params.. ; locals.. ] { statements }` defines a function. In version 3 games,
+`routine symbol [ params.. ; locals.. ] { statements }`\
+Defines a function. In version 3 games,
 a routine can accept up to three parameters; others can accept up to seven. The total number
 of parameters and locals is fifteen. There must be a single routine named `main` and it cannot
 declare any parameters or locals. It defines the entry point for the game.
 
-`action #symbol;` defines an action symbol with no associated syntax. This is useful for fake
+`action #symbol;`\
+Defines an action symbol with no associated syntax. This is useful for fake
 actions that are only passed into `before` or `after` handlers.
 
 `action #symbol { phrases.. : routine-name-or-lambda }`\
@@ -245,8 +193,8 @@ can consist of either one or two dictionary words. Note that lexigraphically 'on
 are identical for all intents and purposes, but the former is clearer. Under the hood, the action
 list is built as a large table; implementation details are in `ScanParseTable`.
 
-`{object|location} symbol "short description" [(initial-location)] { decl.. }` declares either
-an object or a location. The internal declarations can either be attributes, which appear on
+`{object|location} symbol "short description" [(initial-location)] { decl.. }`\
+Declares either an object or a location. The internal declarations can either be attributes, which appear on
 their own with a semicolon, or properties, which are a property name, a colon, and its value.
 The value of a property can either be an object name, an integer, a string, a lambda or routine name, or one or
 more dictionary words (up to four in v3 games, sixteen in others). Internally, a property that
@@ -261,35 +209,41 @@ and locals, which are treated identically by the Z machine.
 `if (branch-expr) stmt`\
 `if (branch-expr) stmt else stmt`\
 `while (branch-expr) stmt`\
-`repeat stmt while (branch-expr);` These all define basic flow control. `break` and `continue` can appear inside them.
+`repeat stmt while (branch-expr);`\
+These all define basic flow control. `break` and `continue` can appear inside them.
 
 `{ stmt.. }` This is a block statement.
 
 `varname = expr;`\
 `varname[expr] = expr;`\
-`varname[[expr]] = expr;` These are variable and array assignments. Note that single square brackets always
+`varname[[expr]] = expr;`\
+These are variable and array assignments. Note that single square brackets always
 implies a byte access; double square brackets always implies a word access. This is a common source of errors,
 be careful.
 
 `return expr;`\
 `rfalse;`\
-`rtrue;` These all exit the current routine. A return with a constant value of zero or one is internally translated
+`rtrue;`\
+These all exit the current routine. A return with a constant value of zero or one is internally translated
 to an `rfalse` or `rtrue` as appropriate. Note that all branches of any routine must explicitly return. There is
 no default, intentionally, so that you have to think about whether you want to return zero or nonzero.
 
 `routine-name (opt-parameter-list);`\
-`call expr (opt-parameter-list);` These are routine calls. The second form allows indirect calls stored in
+`call expr (opt-parameter-list);`\
+These are routine calls. The second form allows indirect calls stored in
 a variable and is how the Z machine implements an object-oriented design.
 
-`{quit|restart|show_status|crlf};` These are zero-operand Z machine statements.
+`{quit|restart|show_status|crlf};`\
+These are zero-operand Z machine statements.
 
-`{print_addr|print_paddr|remove_obj|print_obj|print_char} expr;` These are zero-operand Z machine statements.
-Note that parentheses are not required.
+`{print_addr|print_paddr|remove_obj|print_obj|print_char} expr;`\
+These are zero-operand Z machine statements. Note that parentheses are not required.
 
 There are more, but I'm sick of typing.
 
 `++variable;`\
-`--variable;` These increment or decrement a variable.
+`--variable;`\
+These increment or decrement a variable.
 
 `objref GAINS attribute-name;` is an alias for `set_attr`.
 
@@ -297,8 +251,9 @@ There are more, but I'm sick of typing.
 
 `move objref into objref;` is an alias for `insert_obj`.
 
-`print`, `print_ret`, `print_retf` and `trace integer-literal` all offer extended syntax
-for printing text. It can be a mixture of strings and variables and routine calls. Variables are printed
+`print`, `print_ret`, `print_retf` and `trace integer-literal`\
+These all offer extended syntax for printing text. It can be a mixture of 
+strings and variables and routine calls. Variables are printed
 as numbers (via `print_num`), unless they are preceeded by the `object` keyword, in which case
 `print_obj` is used. Routine calls are assumed to display output themselves, and their result
 is ignored. If you want a routine call's result to be printed, enclose it in an extra pair
@@ -311,36 +266,45 @@ Branch Expressions
 `expr > expr`\
 `expr >= expr`\
 `expr == expr` or `expr is expr`\
-`expr <> expr` or `expr isn't expr` or `expr isnt expr` These are relational operators.
+`expr <> expr` or `expr isn't expr` or `expr isnt expr`\
+These are the standard relational operators.
 
 `iszero expr` or `isfalse expr` or `isz expr`\
-`istruth expr` or `isnonzero expr` or `isnz expr` These test an expression against zero or nonzero.
-They are equivalent to `expr is 0` or `expr isn't 0` but with less typing.
+`istruth expr` or `isnonzero expr` or `isnz expr`\
+These test an expression against zero or nonzero. They are equivalent to `expr is 0` or `expr isn't 0` but with less typing.
 
-`expr &= expr` This succeeds if exactly the bits in the second expression are set in the first, and
-saves a few bytes over `expr & expr isn't 0`.
+`expr &= expr`\
+This succeeds if exactly the bits in the second expression are set in the first, and saves a few bytes over `expr & expr isn't 0`.
 
-`expr in {expr[,expr[,expr]]]}` This tests whether the first expression is equal to up to three
+`expr in {expr[,expr[,expr]]]}`\
+This tests whether the first expression is equal to up to three
 more expressions (utilizing the VAR form of the @je instruction).
 
-`not branch-expr` Negates the sense of the branch expression.
+`not branch-expr`\
+Negates the sense of the branch expression.
 
-`branch-expr and branch-expr` Does a short-circuit logical and. The expression passes only if both
+`branch-expr and branch-expr`\
+Does a short-circuit logical and. The expression passes only if both
 expressions pass. If the first expression fails, the second is not evauated.
 
-`branch-expr or branch-expr` Does a short-circuit logical or. It passes immediate if the first expression
+`branch-expr or branch-expr`\
+Does a short-circuit logical or. It passes immediate if the first expression
 passes, without evaluating the second expression. Otherwise, the expression depends solely on the second expression.
 
-`objref {has|hasn't|hasnt} attribute-name` Passes if the object has (or does not have) the specified attribute set.
+`objref {has|hasn't|hasnt} attribute-name`\
+Passes if the object has (or does not have) the specified attribute set.
 
-`objref {has|hasn't|hasnt} {child|sibling} [-> variable]` Passes if the object has (or does not have) any children or siblings. If the optional variable is included, it will contain the child or sibling object number. Otherwise, the result is written
-to the scratch variable.
+`objref {has|hasn't|hasnt} {child|sibling} [-> variable]`\
+Passes if the object has (or does not have) any children or siblings. If the optional variable is included, it will contain the child or sibling object number. Otherwise, the result is written to the scratch variable.
 
-`objref HOLDS objref` Passes if the second object's parent is the first object (the @jin instruction).
+`objref HOLDS objref`\
+Passes if the second object's parent is the first object (the @jin instruction).
 
-`once variable` Passes if variable was previously zero. The variable is incremented either way. This wraps the @inc_chk instruction.
+`once variable`
+Passes if variable was previously zero. The variable is incremented either way. This wraps the @inc_chk instruction.
 
-`scan_table(expr,expr,expr[,expr]) -> variable` Passes the item is found in the table (and the address of the match
+`scan_table(expr,expr,expr[,expr]) -> variable`\
+Passes the item is found in the table (and the address of the match
 is stored in the variable). If you really don't need the result, just use `scratch` here explicitly.
 
 Numeric Expressions
@@ -348,30 +312,41 @@ Numeric Expressions
 `expr + expr`\
 `expr - expr`\
 `expr * expr`\
-`expr / expr` Addition, subtraction, multiplication, and division. Note there is no unary negation, since the Z machine doesn't include that. Just
-subtract from zero if you need that. Note that `a=a-1;` will not parse correctly because `-1` is seen as an integer literal. `a=a- 1;` or `a = a - 1;` will work
-
-`expr % expr` Modulo operation.
+`expr / expr`\
+`expr % expr`\
+Addition, subtraction, multiplication, division, and modulo. Note there is no unary negation, since the Z machine doesn't include that. Just
+subtract from zero if you need that. Note that `a=a-1;` will not parse correctly because `-1` is seen as an 
+integer literal. `a=a- 1;` or `a = a - 1;` will work
 
 `expr & expr`\
-`expr | expr` These are binary operations. There is no xor operation in the Z machine.
+`expr | expr`\
+These are binary operations. There is no xor operation in the Z machine.
 
-`~expr` Unary bitwise negation.
+`~expr`\
+Unary bitwise negation.
 
-`expr << expr` \
-`expr >> expr` These are logicaal shifts. They can appear in constant expressions in any Z-machine version, but are illegal at runtime in v3 and v4
-targets because the instructions simply don't exist there.
+`expr << expr`\
+`expr >> expr`\
+These are logical shifts. They can appear in constant expressions in any Z-machine version, but are illegal at runtime in v3 and v4
+targets because the instructions simply don't exist there. There isn't currently an arithmetic (sign preserving) shift.
 
-`objref . property-name` This gets the value of a propery as an integer. The property name can be a fixed property name or a variable to indicate
-it should use the property index contained in the variable.
+`objref . property-name`\
+This gets the value of a propery as an integer. The property name can be a fixed property name or a variable to indicate
+it should use the property index contained in the variable. This wraps the `@get_prop` instruction.
 
-`addrof(objref.property-name)` Returns the address of the property blob, or zero if it doesn't exist. Use `addrof` below to determine the size of the property blob.
+`addrof(objref.property-name)`\
+Returns the address of the property blob, or zero if it doesn't exist. This wraps the `@get_prop_addr` instruction.
+Use `sizeof` below to determine the size of the property blob.
 
-`sizeof(expr)` Returns the size of the property blob at the specified address (most often obtained with `addrof` just above).
+`sizeof(expr)`\
+Returns the size of the property blob at the specified address (most often obtained with `addrof` just above). 
+This wraps the `@get_prop_len` instruction.
 
-`(expr)` lets you change evaluation order. Note that since there is a distinct difference between branch expressions and numeric expression, precedence is
+`(expr)`\
+Lets you change evaluation order. Note that since there is a distinct difference between branch expressions and numeric expression, precedence is
 a bit different than you might be used to in C-based language. You'll find you need fewer parentheses than you do in C.
 
-`'dictionary-word` evauates the the index associated with a particular dictionary word.
+`'dictionary-word`\
+Evaluates the the index associated with a particular dictionary word.
 
 You can also make routine calls (either by name, or indirectly with the `call` operator) and the syntax is identical to in statements.
