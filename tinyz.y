@@ -108,9 +108,16 @@
 			return result;
 		}
 		static uint16_t createInt(int16_t t,uint8_t propertyIndex) {
-			auto r = createProperty(2,propertyIndex);
-			r->storeInt(t);
-			return r->index;
+			if (t >= 0 && t <= 255) {
+				auto r = createProperty(1,propertyIndex);
+				r->storeByte(t);
+				return r->index;
+			}
+			else {
+				auto r = createProperty(2,propertyIndex);
+				r->storeInt(t);
+				return r->index;
+			}
 		}
 		static relocatableBlob* createProperty(uint16_t size,uint8_t propertyIndex) {
 			if (!size)
@@ -987,6 +994,7 @@
 		virtual unsigned size() const = 0;
 		virtual bool isReturn() const { return false; }
 		virtual bool isJustReturnBool(int &) const { return false; }
+		virtual bool isPrint() const { return false; }
 	};
 	struct stmts: public stmt {
 		stmts(list_node<stmt*> *s): slist(s) { 
@@ -1362,7 +1370,6 @@
 			call.dump();
 		}
 	};
-	int print_type;
 	struct stmt_print: public stmt {
 		stmt_print(_0op o,bool rf,const char *s) : opcode(o), isRetFalse(rf), string(s), 
 			encodedLength(encode_string(nullptr,0,string,strlen(string))) { }
@@ -1371,6 +1378,15 @@
 		uint16_t encodedLength;
 		_0op opcode;
 		bool isRetFalse;
+		static void modify(list_node<stmt*> *s,_0op o,bool f) {
+			while (s->cdr)
+				s = s->cdr;
+			if (!s->car->isPrint())
+				yyerror("Last element in print_ret or print_retf must be a string literal.");
+			stmt_print *sp = static_cast<stmt_print*>(s->car);
+			sp->opcode = o;
+			sp->isRetFalse = f;
+		}
 		void emit() const {
 			emit0op(opcode);
 			currentRoutine->reserve(encodedLength);
@@ -1391,6 +1407,7 @@
 		bool isReturn() const {
 			return opcode == _0op::print_ret || isRetFalse;
 		}
+		bool isPrint() const { return true; }
 	};
 	uint16_t emit_routine(int numLocals,stmt *body) {
 		if (!currentRoutine)
@@ -1891,14 +1908,14 @@ stmt
 	| STMT_2OP '(' expr ',' expr ')' ';' { $$ = new stmt_2op($1,$3,$5); } 
 	| STMT_VAROP1 expr  ';'			{ $$ = new stmt_varop1($1,$2); }
 	| STMT_VAROP2 '(' expr ',' expr ')'  ';'	{ $$ = new stmt_varop2($1,$3,$5); }
-	| PRINT { print_type = PRINT; } print_sequence ';'				{ $$ = new stmts($3); }
-	| PRINT_RET { print_type = PRINT_RET; } print_sequence ';'		{ $$ = new stmts($3); }
-	| PRINT_RETF { print_type = PRINT_RETF; } print_sequence ';'	{ $$ = new stmts($3); }
-	| TRACE INTLIT { print_type = PRINT; } print_sequence ';'				
+	| PRINT print_sequence ';'			{ $$ = new stmts($2); }
+	| PRINT_RET print_sequence ';'		{ stmt_print::modify($2,_0op::print_ret,false); $$ = new stmts($2); }
+	| PRINT_RETF print_sequence ';'		{ stmt_print::modify($2,_0op::print,true); $$ = new stmts($2); }
+	| TRACE INTLIT print_sequence ';'				
 		{ 
 			// depending on trace_level_expr, this will dead strip in release builds.
 			auto c = new expr_binary_branch(trace_level_expr(),_2op::test,false,new expr_literal($2),[](int16_t a,int16_t b)->int16_t { return (a&b)==b; });
-			$$ = new stmt_if(c,new stmts($4),nullptr);
+			$$ = new stmt_if(c,new stmts($3),nullptr);
 		}
 	| INCR vname ';'				{ $$ = new stmt_1op(_1op::inc,new expr_literal($2)); }
 	| DECR vname ';'				{ $$ = new stmt_1op(_1op::dec,new expr_literal($2)); }
@@ -1910,30 +1927,17 @@ stmt
 	; 
 
 print_sequence
-	: STRLIT ',' print_item ',' print_sequence
-		{ 
-			$$ = new list_node<stmt*>(new stmt_print(_0op::print,false,$1),new list_node<stmt*>($3,$5)); 
-		}
-	| STRLIT	
-		{ 
-			$$ = new list_node<stmt*>(new stmt_print(print_type==PRINT_RET? _0op::print_ret : _0op::print,
-					print_type==PRINT_RETF,$1),nullptr); 
-		}
-	| STMT_0OP
-		{
-			// intended for crlf;
-			$$ = new list_node<stmt*>(new stmt_0op($1),nullptr);
-		}
+	: print_item ',' print_sequence		{ $$ = new list_node<stmt*>($1,$3); }
+	| print_item						{ $$ = new list_node<stmt*>($1,nullptr); }
 	;
 
 print_item
 	: primary { $$ = new stmt_varop1(_var::print_num,$1); }
 	| '(' expr ')' { $$ = new stmt_varop1(_var::print_num,$2); }
-	| RNAME '(' arg_list ')'
-		{
-			$$ = new stmt_call(new list_node<expr*>(new expr_reloc($1),$3))
-		}
+	| RNAME '(' arg_list ')' { $$ = new stmt_call(new list_node<expr*>(new expr_reloc($1),$3)) }
 	| OBJECT expr { $$ = new stmt_1op(_1op::print_obj,$2); }
+	| STMT_0OP { $$ = new stmt_0op($1); }
+	| STRLIT { $$ = new stmt_print(_0op::print,false,$1); }
 	;
 	
 cond_expr

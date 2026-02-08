@@ -14,6 +14,23 @@ attribute object supporter;
 attribute object clothing;
 attribute object worn;
 attribute object scenery;
+attribute object vowel;
+
+routine An [obj] {
+	if (obj has vowel)
+		print "An ";
+	else
+		print "A ";
+	rfalse;
+}
+
+routine an [obj] {
+	if (obj has vowel)
+		print "an ";
+	else
+		print "a ";
+	rfalse;
+}
 
 // the global constant $object_count is always the count
 // of objects in the game. for properties that can refer
@@ -133,6 +150,7 @@ location foyer "Foyer of the Opera House" (Locations) {
 object Aardvark "aardvark" (foyer) {
 	noun: 'aardvark';
 	description: "It's here to test printing an object starting with a vowel.";
+	vowel;
 }
 
 // location_or_object new_name "short description" ['(' parent ')'] '{'
@@ -157,11 +175,8 @@ object hook "small brass hook" (cloakroom) {
 	noun: 'hook' 'peg';
 	description: [;c] {
 		print "It's just a small brass hook, ";
-		if (self has child -> c) {
-			print "with a ";
-			print_obj c;
-			print_ret " hanging on it.";
-		}
+		if (self has child -> c)
+			print_ret "with ",an(c),object c," hanging on it.";
 		else
 			print_ret "screwed to the wall.";
 	}
@@ -307,22 +322,6 @@ routine CallAfter [act obj;r] {
 	rtrue;
 }
 
-global CaptureBuffer = byte_array(64);
-
-routine PrintAObj [i] {
-	output_stream2(3, CaptureBuffer);
-	print_obj i;
-	output_stream(-3);
-	if (CaptureBuffer[[0]] isnt 0) {
-		if (CaptureBuffer[2] in {@a,@e,@i} or CaptureBuffer[2] in {@o,@u})
-			print "An ";
-		else
-			print "A ";
-		print_obj i;
-	}
-	rfalse;
-}
-
 routine Look [; i r f] {
 	if (room hasn't lit)
 		print_ret "It's too dark to see anything.";
@@ -332,7 +331,7 @@ routine Look [; i r f] {
 			if (i isn't Player and i has $is_object and i hasn't scenery) {
 				if (once f)
 					print "You can also see:^";
-				PrintAObj(i); crlf;
+				print An(i),object i,crlf;
 			}
 		} while (i has sibling -> i);
 	}
@@ -360,9 +359,7 @@ routine Travel [dir;r] {
 }
 
 routine Take [obj] {
-	if (iszero obj)
-		print_retf "I don't see that here.";
-	else if (obj parent is Player)
+	if (obj parent is Player)
 		print_ret "You're already carrying it.";
 	else if (obj has scenery)
 		print_retf "You can't take that, it's just scenery.";
@@ -376,8 +373,6 @@ routine Take [obj] {
 }
 
 routine Examine [obj; desc] {
-	if (iszero obj)
-		print_retf "I don't see that here.";
 	if (room hasn't lit)
 		print_retf "It's too dark to see anything.";
 	desc = obj.description;
@@ -449,7 +444,7 @@ global na;	// next action being processed
 
 // These all control RecurseMatch functionality.
 // They're globals to get around v3 parameter count limitations and to save stack space.
-constant MaxObjectList = 32;
+constant MaxObjectList = 8;
 global ObjectList = word_array(MaxObjectList);
 global ObjectListCount;
 global ExcludeObject;
@@ -708,7 +703,7 @@ routine CheckErrors [tb pb; i j] {
 routine ObjLoop[;i j k w] {
 	while (i < $object_count) {
 		++i;
-		PrintAObj(i);
+		print An(i),object i,crlf;
 		if (i has $is_object) {
 			j = addrof(i.adjective);
 			if (j isnt 0) {
