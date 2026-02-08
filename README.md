@@ -193,4 +193,7 @@ Note that expr `is` 0 and expr `isn't` 0 (where the right hand size is a constan
 turned into @jz instead of @je, so `isfalse` etc is just syntactic sugar. Also not that `istruth`
 specifically means 'is non zero' and not any particular true value (which is exactly 1).
 
-
+There is also basic preprocessor support. The directives #if, #else, and #endif work anywhere in the
+token stream, not necessarily at the line level. #if expects an integer literal, and tests against zero.
+The symbols $v4, $v5, and $v8 are defined if the Z-machine version is at least that high. Anything `constant`
+can appear here, or values can be passed in on the command line with the `-D` directive.

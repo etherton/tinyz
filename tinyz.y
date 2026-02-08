@@ -2800,11 +2800,19 @@ int main(int argc,char **argv) {
 	enum { R_OBJECTS=1,R_ROUTINES=2,R_GLOBALS=4,R_DICTIONARY=8,R_ACTIONS=16,R_SUMMARY=32,R_ALL=63};
 	int report = 0;
 	while (--argc && **++argv=='-') {
-		const char *arg = *argv + 1;
+		char *arg = *argv + 1;
 		switch(*arg++) {
 #if YYDEBUG
 			case 'y': yydebug = 1; break;
 #endif
+			case 'D': {
+				char *eq = strchr(arg,'=');
+				int16_t value = 1;
+				if (eq)
+					value = atoi(eq+1);
+				the_globals[arg] = { INTLIT,value };
+				break;
+			}
 			case 'r':  if (*arg) while (*arg) switch (*arg++) {
 				case 'S': report |= R_SUMMARY; break;
 				case 'O': report |= R_OBJECTS; break;
