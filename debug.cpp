@@ -174,6 +174,18 @@ bool debug_info::read(const char *filename) {
     return true;
 }
 
+void debug_info::resolveAddress(char *dest,size_t destSize,uint32_t addr) {
+	if (addressMappings.size()) {
+		auto it = addressMappings.lower_bound(addr);
+		if (it != addressMappings.begin()) {
+			it = std::prev(it);
+			snprintf(dest,destSize,"[%s+%x]",routines[it->second].name.c_str(),addr - it->first);
+            return;
+		}
+	}
+    snprintf(dest,destSize,"[%06x]",addr);
+}
+
 void debug_info::dump() {
     for (auto &i: files)
         printf("file %u named %s\n",i.first,i.second.c_str());

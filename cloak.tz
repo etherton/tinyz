@@ -42,7 +42,8 @@ constant dirBit = 1 << 2;
 
 // synonyms of a word are identical to it in all contexts. if a word appears
 // here as a synonym it cannot appear anywhere else (because it would never match)
-// internally synonyms are flagged with a payload of 0xFF.
+// internally synonyms are flagged with a payload of 0xFF. It's a table of words
+// pointed to by the global variable $synonyms
 synonym 'north' 'n';
 synonym 'south' 's';
 synonym 'east' 'e';
@@ -365,6 +366,8 @@ routine Take [obj] {
 routine Examine [obj; desc] {
 	if (iszero obj)
 		print_retf "I don't see that here.";
+	if (room hasn't lit)
+		print_retf "It's too dark to see anything.";
 	desc = obj.description;
 	if (isnz desc)
 		return call desc();
@@ -418,7 +421,8 @@ routine PutOn [do ido] {
 constant isEnd = 1 << 15;			// This is the last part of the action
 constant isRoutine = 1 << 14;		// Routine (possibly after second word) marks end of phrase
 constant hasSecondWord = 1 << 13;	// This is a two word phrase, not a one word phrase.
-constant wordMask = 8191;
+// constant wordMask = 8191;
+global wordMask = 8191;		// declaring as a global allows it to use smaller instructions
 
 // going into tokenization, [0] is number of words we can store, on return [1]
 // is the number of words stored. [[1]], [[3]], etc are the word addresses of
@@ -534,17 +538,16 @@ routine Direction [] {
 
 routine Yes [] {
 	print "Are you sure? [y/N]^";
-	if ($zversion>=5)
-		text_buffer[1] = 0;
+#if $v5
+	text_buffer[1] = 0;
+	sread(text_buffer, 0);
+	if (text_buffer[2] in {@Y,@y})
+		rtrue;
+#else
 	sread(text_buffer, parse_buffer);
-	if ($zversion>=5) {
-		if (text_buffer[2] in {@Y,@y})
-			rtrue;
-	}
-	else {
-		if (text_buffer[1] in {@Y,@y})
-			rtrue;
-	}
+	if (text_buffer[1] in {@Y,@y})
+		rtrue;
+#endif
 	print_retf "Canceled.";
 }
 
@@ -586,9 +589,22 @@ routine DictAddrToIndex [addr; hdr] {
 }
 
 // given address of a word that is a synonym, return address of original word
-// TODO: could use scan_table in v4+ but we'd need table length.
-routine FindSynonym [wordAddr; i m hdr] {
-	while ($synonyms[[i]] isnt -1) {
+// on v4+ the count is stored first so we can use scan_table.
+// on v3, the list is terminated by -1
+routine FindSynonym [wordAddr; c i m hdr] {
+#if $v4
+	// scans entire table for word match. The base words have the MSB set
+	// so they will never match.
+	if (scan_table(wordAddr[[0]],$synonyms + 2,$synonyms[[0]]) -> i) {
+		repeat { i = i - 2; } while (i[[0]]>=0);
+		m = i[[0]] & wordMask;
+		wordAddr[[0]] = m;
+		m = m * ($dict_entry_size+1) + 7 + hdr[[4]];
+		wordAddr[[1]] = m[$dict_entry_size];
+		rtrue;
+	}
+#else
+	while ($synonyms[[i]] isn't -1) {
 		if ($synonyms[[i]] < 0)
 			m = $synonyms[[i]] & wordMask;
 		else if ($synonyms[[i]] is wordAddr[[0]]) {
@@ -599,6 +615,7 @@ routine FindSynonym [wordAddr; i m hdr] {
 		}
 		++i;
 	}
+#endif
 	rfalse;
 }
 
@@ -607,10 +624,12 @@ routine CheckErrors [tb pb; i j] {
 	print_num tb[1]; print_char 32;
 	print_num tb[2]; print_char 32;
 	print "[[";
-	if ($zversion<5)
-		PrintString(tb+1,tb[0]);
+#if $v5
+	PrintString(tb+2,tb[1]);
+#else
+	PrintString(tb+1,tb[0]);
+#endif
 	else
-		PrintString(tb+2,tb[1]);
 	print "]]^"; */
 
 	// check number of words parsed
@@ -625,11 +644,8 @@ routine CheckErrors [tb pb; i j] {
 		j = pb + 2 + i * 4;
 		// print_num j; crlf;
 		// print_num j[[0]]; print " addr.^";
-		if (j[[0]] is zero) {
-			print "I don't understand the word '";
-			PrintString(tb + j[3], j[2]);
-			print_ret "'.";
-		}
+		if (j[[0]] is zero)
+			print_ret "I don't understand the word '",PrintString(tb + j[3], j[2]),"'.";
 		else {
 			// Copy the type byte over
 			j[[1]] = j[[0]][$dict_entry_size];
@@ -750,8 +766,9 @@ routine DoTurn[; i] {
 	// first two bytes is address of the word, or 0 if unknown
 	// next byte is the length of the word, then the position in text_buffer.
 	repeat {
-		if ($zversion>=5)
-			text_buffer[1] = 0;
+#if $v5
+		text_buffer[1] = 0;
+#endif
 		sread(text_buffer, parse_buffer);
 	} while (CheckErrors(text_buffer, parse_buffer) isnt zero);
 

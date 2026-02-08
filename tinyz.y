@@ -233,6 +233,10 @@
 			storeByte(w >> 8);
 			storeByte(w);
 		}
+		void storeWordAt(uint16_t a,uint16_t w) {
+			contents[a] = w >> 8;
+			contents[a+1] = w;
+		}
 		void storeInt(int16_t w) {
 			storeByte(w >> 8);
 			storeByte(w);
@@ -705,6 +709,37 @@
 			printNode(right1);
 			printNode(right2);
 			printNode(right3);
+		}
+	};
+	struct expr_scan_table_branch_store: public expr_branch {
+		expr_scan_table_branch_store(expr *a,expr *b,expr *c,expr *d,uint8_t de) : expr0(a), expr1(b), expr2(c), expr3(d), dest(de), expr_branch(false) { }
+		~expr_scan_table_branch_store() { delete expr0; delete expr1; delete expr2; delete expr3; }
+		uint8_t dest;
+		expr *expr0, *expr1, *expr2, *expr3;
+		void emitBranch(label target,bool negated,bool isLong) {
+			operand op0, op1, op2, op3;
+			if (expr3)
+				expr3->eval(op3);
+			expr2->eval(op2);
+			expr1->eval(op1);
+			expr0->eval(op0);
+			if (expr3)
+				emitvarop(_var::scan_table,op0,op1,op2,op3);
+			else
+				emitvarop(_var::scan_table,op0,op1,op2);
+			emitByte(dest);
+			expr_branch::emitBranch(target,negated,isLong);
+		}
+		unsigned size() const {
+			return expr0->size() + expr1->size() + expr2->size() + (expr3? expr3->size() : 0) + 5;
+		}
+		void dump() const {
+			printNode("scan_table:");
+			printNode(expr0);
+			printNode(expr1);
+			printNode(expr2);
+			if (expr3)
+				printNode(expr3);
 		}
 	};
 	struct expr_call: public expr { // first arg is func address
@@ -1399,7 +1434,7 @@
 
 %token ATTRIBUTE PROPERTY GLOBAL OBJECT LOCATION ROUTINE WORDBIT ACTION HAS HASNT IN HOLDS SYNONYM CONTINUE BREAK
 %token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET PRINT_RETF SELF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF ONCE
-%token ISZERO ISNONZERO
+%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF
 %token <ival> DICT ANAME PNAME LNAME GNAME INTLIT ONAME
 %token <sval> STRLIT
 %token <rval> RNAME
@@ -1407,7 +1442,7 @@
 %token WHILE REPEAT IF ELSE
 %token LE "<=" GE ">=" EQ "==" NE "!="
 // %token DEC_CHK "--<" INC_CHK "++>"
-%token SAVE RESTORE
+%token SAVE RESTORE SCAN_TABLE
 %token LSH "<<" RSH ">>"
 %token ARROW "->" INCR "++" DECR "--"
 %token RFALSE RTRUE RETURN
@@ -1944,6 +1979,8 @@ bool_expr
 	| ONCE vname		{ $$ = new expr_binary_branch(new expr_literal($2),_2op::inc_chk,true,new expr_literal(1)); }
 	| SAVE				{ $$ = new expr_saveRestore(_0op::save); }
 	| RESTORE			{ $$ = new expr_saveRestore(_0op::restore); }
+	| SCAN_TABLE '(' expr ',' expr ',' expr ')' ARROW vname { $$ = new expr_scan_table_branch_store($3,$5,$7,nullptr,$10); }
+	| SCAN_TABLE '(' expr ',' expr ',' expr ',' expr ')' ARROW vname { $$ = new expr_scan_table_branch_store($3,$5,$7,$9,$12); }
 	| '(' bool_expr ')' { $$ = $2; }
 	;
 
@@ -2154,6 +2191,7 @@ void init(int version) {
 	rw["not"] = NOT;
 	rw["save"] = SAVE;
 	rw["restore"] = RESTORE;
+	rw["scan_table"] = SCAN_TABLE;
 	rw["sibling"] = SIBLING;
 	rw["parent"] = PARENT;
 	rw["child"] = CHILD;
@@ -2174,6 +2212,9 @@ void init(int version) {
 	rw["isnz"] = ISNONZERO;
 	rw["isnonzero"] = ISNONZERO;
 	rw["istruth"] = ISNONZERO;
+	rw["#if"] = HASH_IF;
+	rw["#else"] = HASH_ELSE;
+	rw["#endif"] = HASH_ENDIF;
 
 	f_0op["restart"] = _0op::restart;
 	f_0op["quit"] = _0op::quit;
@@ -2243,6 +2284,9 @@ void init(int version) {
 	the_globals["$zversion"] = { INTLIT, int16_t(version) };
 	the_globals["$dict_entry_size"] = { INTLIT, int16_t(dict_entry_size) };
 	the_globals["$is_object"] = { ANAME, int16_t(0) };
+	the_globals["$v4"] = { INTLIT, int16_t(version >= 4) };
+	the_globals["$v5"] = { INTLIT, int16_t(version >= 5) };
+	the_globals["$v8"] = { INTLIT, int16_t(version >= 8) };
 }
 
 int encode_string(const char *src) {
@@ -2686,8 +2730,38 @@ NEWLINE:
 	}
 }
 
+// preprocessing starts active
+unsigned yyhashstate = 1;
+
 int yylex() {
+RESTART:
 	int token = yylex_();
+	if (token == HASH_IF) {
+		if (yylex_() != INTLIT)
+			yyerror("Expected integer after #if");
+		// if we were active before, we won't change state
+		if (yyhashstate & 1)
+			yyhashstate = (yyhashstate << 1) | (yylval.ival != 0);
+		else
+			yyhashstate <<= 1;
+		goto RESTART;
+	}
+	else if (token == HASH_ELSE) {
+		if (yyhashstate == 1)
+			yyerror("#else without any #if");
+		else if (yyhashstate & 2)
+			yyhashstate ^= 1;
+		goto RESTART;
+	}
+	else if (token == HASH_ENDIF) {
+		if (!yyhashstate)
+			yyerror("#endif without any #if");
+		yyhashstate >>= 1;
+		goto RESTART;
+	}
+	// Note that dictionary words are still added if in inactive blocks.
+	if (!(yyhashstate & 1))
+		goto RESTART;
 #if YYDEBUG
 	if (yydebug) {
 		printf("(%d)",yyscope);
@@ -2760,12 +2834,9 @@ int main(int argc,char **argv) {
 	*ext++ = 'z';
 	*ext++ = the_header.version + '0';
 	*ext = 0;
-	char dbgname[64];
-	strlcpy(dbgname,argv[0],sizeof(dbgname)-5);
-	ext = strrchr(dbgname,'.');
-	if (!ext)
-		ext = dbgname + strlen(dbgname);
-	strcpy(ext,".dbg");
+	char dbgname[68];
+	strlcpy(dbgname,outname,sizeof(dbgname));
+	strlcat(dbgname,".dbg",sizeof(dbgname));
 
 	// printf("compiling release %d\n",release_number);
 
@@ -2834,6 +2905,8 @@ int main(int argc,char **argv) {
 			globals_blob = relocatableBlob::create(next_global * 2,UD_DYNAMIC,"globals");
 			actions_blob = relocatableBlob::create(the_action_table.size() << 4,UD_STATIC,"actions");
 			synonyms_blob = relocatableBlob::create(256,UD_STATIC,"synonyms");
+			if (the_header.version > 3)
+				synonyms_blob->storeWord(0); // table size
 			if (report & R_SUMMARY) {
 				printf("%u globals\n",next_global);
 				printf("%zu objects\n",the_object_table.size()-1);
@@ -2860,7 +2933,10 @@ int main(int argc,char **argv) {
 				// di.dump();
 			}
 			actions_blob->storeWord(-1); // terminate the action list
-			synonyms_blob->storeWord(-1); // terminate the synonym list
+			if (the_header.version==3)
+				synonyms_blob->storeWord(-1);
+			else
+				synonyms_blob->storeWordAt(0,(synonyms_blob->offset - 2) >> 1); // store size of synonyms blob
 			globals_blob->addRelocation(actions_blob->index);
 			globals_blob->addRelocation(synonyms_blob->index);
 			uint8_t objSize = the_header.version==3? 9 : 14;

@@ -1,5 +1,6 @@
 #include "machine.h"
 #include "opcodes.h"
+#include "debug.h"
 
 #include <stdarg.h>
 #include <stdlib.h>
@@ -9,6 +10,8 @@
 
 #define HEIGHT 0x20
 #define WIDTH 0x21
+
+debug::debug_info di;
 
 void machine::init(const void *data,bool debug) {
 	uint8_t version = *(uint8_t*)data;
@@ -243,8 +246,11 @@ uint32_t machine::print_zscii(uint32_t addr) {
 void machine::fault(const char *fmt,...) const {
 	va_list args;
 	va_start(args,fmt);
-	printf("fault at address %x, opcode bytes %x %x...: ",
-		m_faultpc, read_mem8(m_faultpc), read_mem8(m_faultpc+1));
+	char addrBuf[64];
+	di.resolveAddress(addrBuf,sizeof(addrBuf),m_faultpc);
+	printf("fault at address %s, opcode bytes %x %x...: ",
+		addrBuf, read_mem8(m_faultpc), read_mem8(m_faultpc+1));
+
 	vprintf(fmt,args);
 	printf("\n");
 	va_end(args);
@@ -617,7 +623,11 @@ void machine::run(uint32_t pc) {
 		int opcodeLen = strlen(opcode_names[opcode]);
 		if (strchr(opcode_names[opcode],'$'))
 			opcodeLen = strchr(opcode_names[opcode],'$') - opcode_names[opcode] - 1;
-		if (m_debug) printf("%06x: %*.*s ",m_faultpc,opcodeLen,opcodeLen,opcode_names[opcode]);
+		if (m_debug) {
+			char addrBuf[64];
+			di.resolveAddress(addrBuf,sizeof(addrBuf),m_faultpc);
+			printf("%s: %*.*s ",addrBuf,opcodeLen,opcodeLen,opcode_names[opcode]);
+		}
 #endif
 		uint16_t types = opTypes[opcode >> 4] << 8;
 		if (!types)

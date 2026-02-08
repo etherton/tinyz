@@ -1,4 +1,5 @@
 #include "machine.h"
+#include "debug.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +17,9 @@ static struct termios orig_termios, raw_termios;
 static char *script_text;
 static long script_size, script_offset;
 static bool nostatus;
+static bool debug_enable;
+
+extern debug::debug_info di;
 
 static void standard_mode() {
 	tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
@@ -40,6 +44,14 @@ void interface::init(int argc,char **argv) {
 			else
 				nostatus = true;
 		}
+		else if (!strcmp(argv[i],"-di") && i+1<argc) {
+			if (!di.read(argv[++i]))
+				exit(1);
+			else
+				puts("debug info read okay");
+		}
+		else if (!strcmp(argv[i],"-debug"))
+			debug_enable = true;
 	}
 }
 
@@ -198,6 +210,6 @@ int main(int argc,char **argv) {
 	char *story = interface::readStory(argv[1]);
 	if (story) {
 		machine *m = new machine;
-		m->init(story,argc>2&&!strcmp(argv[2],"-debug"));
+		m->init(story,debug_enable);
 	}	
 }

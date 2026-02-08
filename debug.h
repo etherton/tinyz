@@ -58,6 +58,7 @@ struct debug_info {
 	bool read(const char*);
 	bool write(const char*);
 	void dump();
+	void resolveAddress(char *dest,size_t destSize,uint32_t address);
 	void clear() {
 		files.clear();
 		attributes.clear();
