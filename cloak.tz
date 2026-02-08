@@ -562,18 +562,18 @@ routine Quit[] { if (istruth Yes()) quit; rfalse; }
 // actions are scanned in-order
 // so specific cases need to be before more general cases
 // some actions are really just messages and aren't part of grammar
-action #inv { Inventory: 'inventory'/'take inventory' }
-action #take { Take: 'get'/'take'/'pick up' Here }
-action #drop { Drop: 'drop'/'put down' Held }
-action #look { Examine: 'look at'/'examine' Nearby }
-action #lookHere { Look: 'look' }
-action #puton { PutOn: 'hang'/'place'/'put' Held 'on'/'upon'/'on to'/'onto' Here }
-action #go { Travel: 'go'/'go to' Direction }
-action #restart { Restart: 'restart'/'restart game' }
-action #quit { Quit: 'quit'/'quit game' }
+action #inv { 'inventory'/'take inventory': Inventory }
+action #take { 'get'/'take'/'pick up' Here: Take }
+action #drop { 'drop'/'put down' Held: Drop }
+action #look { 'look at'/'examine' Nearby: Examine }
+action #lookHere { 'look': Look }
+action #puton { 'hang'/'place'/'put' Held 'on'/'upon'/'on to'/'onto' Here: PutOn }
+action #go { 'go'/'go to' Direction: Travel }
+action #restart { 'restart'/'restart game': [] { if (istruth Yes()) restart; rfalse; } }
+action #quit { 'quit'/'quit game': [] { if (istruth Yes()) quit; rfalse; } }
 #if not RELEASE
-action #traceOn { [] { $tracebits = 1; rfalse; }: '#trace on' }
-action #traceOff { [] { $tracebits = 0; rfalse; }: '#trace off' }
+action #traceOn { '#trace on' : [] { $tracebits = 1; rfalse; } }
+action #traceOff { '#trace off' : [] { $tracebits = 0; rfalse; }}
 #endif
 action #leave;
 action #enter;
@@ -713,9 +713,6 @@ routine ScanParseTable [; n matched] {
 	DirectObject = 0;
 	IndirectObject = 0;
 	while ($actions[[na]] isn't -1) {
-		ActionRoutine = $actions[[na]];
-		trace 1 "Checking ",ActionRoutine,crlf;
-		++na;
 		nw = 1;
 		matched = 0;
 		repeat {
@@ -753,9 +750,12 @@ routine ScanParseTable [; n matched] {
 					++na;
 				}
 			} while (n & (isRoutine | isEnd) is 0);
-			// If we got to the end of the rule already leave now.
-			if (n &= isEnd and matched isn't 0)
-				rtrue;
+			if (n &= isEnd) {
+				ActionRoutine = $actions[[na]];
+				++na;
+				if (istruth matched)
+					rtrue;
+			}
 			matched = 0;
 		} while (n >= 0);
 	}
@@ -809,8 +809,6 @@ routine DoTurn[; i] {
 
 routine DebugActions[;a n] {
 	while ($actions[[a]] isnt -1) {
-		print "routine at ",$actions[[a]],":";
-		++a;
 		repeat {
 			n = $actions[[a]];
 			++a;
@@ -824,7 +822,8 @@ routine DebugActions[;a n] {
 				++a;
 			}
 		} while (n > 0);
-		crlf;
+		print ": routine ",$actions[[a]],crlf;
+		++a;
 	}
 	rfalse;
 }

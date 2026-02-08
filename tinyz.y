@@ -1787,7 +1787,7 @@ wordbit_def
 
 action_def
 	: ACTION INTLIT ';'
-	| ACTION INTLIT '{' rname ':' { actions_blob->addRelocation($4); action_bit = 32; } action_list '}'
+	| ACTION INTLIT '{' { action_bit = 32; } action_list ':' rname '}' { actions_blob->addRelocation($7); }
 	;
 
 rname
@@ -3099,24 +3099,21 @@ int main(int argc,char **argv) {
 				uint16_t o = 0;
 				uint8_t *d = dictionary_blob->contents + 7;
 				while (o < actions_blob->offset) {
-					uint16_t r = actions_blob->readWord(o); 
-					if (r == 0xFFFF)
-						break;
-					printf("routine %06x:",r << story_shift);
-					for (;;) {
-						uint16_t n = actions_blob->readWord(o);
-						//printf(" [%04x]",n);
-						print_encoded_string(d + (dict_entry_size+1) * (n & 0x1FFF),[](char ch){putchar(ch);});
-						if (n & 0x2000)
-							putchar('+');
-						else
-							putchar(32);
-						if (n & 0x4000)
-							printf(" (routine %06x)",actions_blob->readWord(o) << story_shift);
-						if (n & 0x8000) {
-							putchar('\n');
-							break;
+					uint16_t n = actions_blob->readWord(o);
+					if (n != 0xFFFF) {
+						for(;;) {
+							print_encoded_string(d + (dict_entry_size+1) * (n & 0x1FFF),[](char ch){putchar(ch);});
+							if (n & 0x2000)
+								putchar('+');
+							else
+								putchar(32);
+							if (n & 0x4000)
+								printf(" (routine %06x)",actions_blob->readWord(o) << story_shift);
+							if (n & 0x8000)
+								break;
+							n = actions_blob->readWord(o);
 						}
+						printf(": routine %06x\n:",actions_blob->readWord(o) << story_shift);
 					}
 				}
 			}
