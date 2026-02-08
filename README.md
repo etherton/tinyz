@@ -197,3 +197,181 @@ There is also basic preprocessor support. The directives #if, #else, and #endif 
 token stream, not necessarily at the line level. #if expects an integer literal, and tests against zero.
 The symbols $v4, $v5, and $v8 are defined if the Z-machine version is at least that high. Anything `constant`
 can appear here, or values can be passed in on the command line with the `-D` directive.
+
+Language Syntax
+---------------
+Toplevel declarations include the following:
+
+`constant symbol integer-expression;` defines a symbol having the specified value, which
+must evaluate to a compile-time constant.
+
+`attribute **{**global**|**object**|**location**}** attribute-name;` declares a named attribute. It can
+be applied to either any object or location, an object, or a location. Internally all objects
+have the $is_object attribute set on them; it is missing on locations.
+
+`property {global|object|location} property-name [wordbit integer-literal];` declares a named
+property, with scope like attributes. Additionally you can specify any word defined in that
+property has the specified value or'd into its dictionary type byte.
+
+`synonym word syn1 [syn2...];` declares that syn1, etc are synonyms for the specified base word.
+They are identical for all intents and purposes, and the substitution is done very early in
+parsing. Synonyms always have a payload byte of 255, and their actual payload is taken from
+the original room once it's been replaced. Synonyms cannot appear anywhere else in the story,
+since they would never match.
+
+`global symbol [= integer-expression];` declares a standard integer global, defaults to zero
+unless an initializer is included.
+
+`global symbol = byte_array(element-count) [{ intializers...}];` declares a global that is
+initialized with the address of a sized byte array in dynamic memory. You can also declare a
+`word_array` this way.
+
+`routine symbol [ params.. ; locals.. ] { statements }` defines a function. In version 3 games,
+a routine can accept up to three parameters; others can accept up to seven. The total number
+of parameters and locals is fifteen. There must be a single routine named `main` and it cannot
+declare any parameters or locals. It defines the entry point for the game.
+
+`action #symbol;` defines an action symbol with no associated syntax. This is useful for fake
+actions that are only passed into `before` or `after` handlers.
+
+`action #symbol { phrases.. : routine-name-or-lambda }`\
+`action #symbol { phrases.. routine-name : routine-name-or-lambda }`\
+`action #symbol { phrases.. routine-name phrases.. routine-name : routine-name-or-lambda }`\
+These define the parsing rules. They're searched in order and the first match stops processing.
+All phrases that appear in the first part have bit 5 set (verbBit in game source, but the actual
+value is hard-coded into the compiler). All words in the second part have bit 4 set (prepBit
+in the game source). The phrases in the phrase list should be separated by slashes. Each phrase
+can consist of either one or two dictionary words. Note that lexigraphically 'one two' and 'one' 'two'
+are identical for all intents and purposes, but the former is clearer. Under the hood, the action
+list is built as a large table; implementation details are in `ScanParseTable`.
+
+`{object|location} symbol "short description" [(initial-location)] { decl.. }` declares either
+an object or a location. The internal declarations can either be attributes, which appear on
+their own with a semicolon, or properties, which are a property name, a colon, and its value.
+The value of a property can either be an object name, an integer, a string, a lambda or routine name, or one or
+more dictionary words (up to four in v3 games, sixteen in others). Internally, a property that
+is a string is turned into a routine with a print_ret.
+
+Routine Syntax
+--------------
+A routine consists of several statements. Statements can incorporate branch expressions and numeric
+expressions. All variables declared by a routine are in the brackets at the beginning, both parameters
+and locals, which are treated identically by the Z machine.
+
+`if (branch-expr) stmt`\
+`if (branch-expr) stmt else stmt`\
+`while (branch-expr) stmt`\
+`repeat stmt while (branch-expr);` These all define basic flow control. `break` and `continue` can appear inside them.
+
+`{ stmt.. }` This is a block statement.
+
+`varname = expr;`\
+`varname[expr] = expr;`\
+`varname[[expr]] = expr;` These are variable and array assignments. Note that single square brackets always
+implies a byte access; double square brackets always implies a word access. This is a common source of errors,
+be careful.
+
+`return expr;`\
+`rfalse;`\
+`rtrue;` These all exit the current routine. A return with a constant value of zero or one is internally translated
+to an `rfalse` or `rtrue` as appropriate. Note that all branches of any routine must explicitly return. There is
+no default, intentionally, so that you have to think about whether you want to return zero or nonzero.
+
+`routine-name (opt-parameter-list);`\
+`call expr (opt-parameter-list);` These are routine calls. The second form allows indirect calls stored in
+a variable and is how the Z machine implements an object-oriented design.
+
+`{quit|restart|show_status|crlf};` These are zero-operand Z machine statements.
+
+`{print_addr|print_paddr|remove_obj|print_obj|print_char} expr;` These are zero-operand Z machine statements.
+Note that parentheses are not required.
+
+There are more, but I'm sick of typing.
+
+`++variable;`\
+`--variable;` These increment or decrement a variable.
+
+`objref GAINS attribute-name;` is an alias for `set_attr`.
+
+`objref LOSES attribute-name;` is an alias for `clear_attr`.
+
+`move objref into objref;` is an alias for `insert_obj`.
+
+`print`, `print_ret`, `print_retf` and `trace integer-literal` all offer extended syntax
+for printing text. It can be a mixture of strings and variables and routine calls. Variables are printed
+as numbers (via `print_num`), unless they are preceeded by the `object` keyword, in which case
+`print_obj` is used. Routine calls are assumed to display output themselves, and their result
+is ignored. If you want a routine call's result to be printed, enclose it in an extra pair
+of parentheses.
+
+Branch Expressions
+------------------
+`expr < expr`\
+`expr <= expr`\
+`expr > expr`\
+`expr >= expr`\
+`expr == expr` or `expr is expr`\
+`expr <> expr` or `expr isn't expr` or `expr isnt expr` These are relational operators.
+
+`iszero expr` or `isfalse expr` or `isz expr`\
+`istruth expr` or `isnonzero expr` or `isnz expr` These test an expression against zero or nonzero.
+They are equivalent to `expr is 0` or `expr isn't 0` but with less typing.
+
+`expr &= expr` This succeeds if exactly the bits in the second expression are set in the first, and
+saves a few bytes over `expr & expr isn't 0`.
+
+`expr in {expr[,expr[,expr]]]}` This tests whether the first expression is equal to up to three
+more expressions (utilizing the VAR form of the @je instruction).
+
+`not branch-expr` Negates the sense of the branch expression.
+
+`branch-expr and branch-expr` Does a short-circuit logical and. The expression passes only if both
+expressions pass. If the first expression fails, the second is not evauated.
+
+`branch-expr or branch-expr` Does a short-circuit logical or. It passes immediate if the first expression
+passes, without evaluating the second expression. Otherwise, the expression depends solely on the second expression.
+
+`objref {has|hasn't|hasnt} attribute-name` Passes if the object has (or does not have) the specified attribute set.
+
+`objref {has|hasn't|hasnt} {child|sibling} [-> variable]` Passes if the object has (or does not have) any children or siblings. If the optional variable is included, it will contain the child or sibling object number. Otherwise, the result is written
+to the scratch variable.
+
+`objref HOLDS objref` Passes if the second object's parent is the first object (the @jin instruction).
+
+`once variable` Passes if variable was previously zero. The variable is incremented either way. This wraps the @inc_chk instruction.
+
+`scan_table(expr,expr,expr[,expr]) -> variable` Passes the item is found in the table (and the address of the match
+is stored in the variable). If you really don't need the result, just use `scratch` here explicitly.
+
+Numeric Expressions
+-------------------
+`expr + expr`\
+`expr - expr`\
+`expr * expr`\
+`expr / expr` Addition, subtraction, multiplication, and division. Note there is no unary negation, since the Z machine doesn't include that. Just
+subtract from zero if you need that. Note that `a=a-1;` will not parse correctly because `-1` is seen as an integer literal. `a=a- 1;` or `a = a - 1;` will work
+
+`expr % expr` Modulo operation.
+
+`expr & expr`\
+`expr | expr` These are binary operations. There is no xor operation in the Z machine.
+
+`~expr` Unary bitwise negation.
+
+`expr << expr` \
+`expr >> expr` These are logicaal shifts. They can appear in constant expressions in any Z-machine version, but are illegal at runtime in v3 and v4
+targets because the instructions simply don't exist there.
+
+`objref . property-name` This gets the value of a propery as an integer. The property name can be a fixed property name or a variable to indicate
+it should use the property index contained in the variable.
+
+`addrof(objref.property-name)` Returns the address of the property blob, or zero if it doesn't exist. Use `addrof` below to determine the size of the property blob.
+
+`sizeof(expr)` Returns the size of the property blob at the specified address (most often obtained with `addrof` just above).
+
+`(expr)` lets you change evaluation order. Note that since there is a distinct difference between branch expressions and numeric expression, precedence is
+a bit different than you might be used to in C-based language. You'll find you need fewer parentheses than you do in C.
+
+`'dictionary-word` evauates the the index associated with a particular dictionary word.
+
+You can also make routine calls (either by name, or indirectly with the `call` operator) and the syntax is identical to in statements.
