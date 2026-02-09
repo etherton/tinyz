@@ -13,11 +13,15 @@
 
 #if DEBUG_MEM
 	#include <malloc/malloc.h>
+	#ifdef __APPLE__
 	#include <execinfo.h>
+	#endif
 	const unsigned max_allocs = 32768, stacks_per = 16;
 	struct debug_alloc {
 		void *ptr;
+		#ifdef __APPLE__
 		void *stack[stacks_per];
+		#endif
 		unsigned size;
 		int line;
 		int stored;
@@ -27,7 +31,9 @@
 	void* debug_alloc(size_t s,int line) {
 		auto &da = debug_allocations[alloc_count++];
 		da.ptr = malloc(s);
+		#ifdef __APPLE__
 		da.stored = backtrace(da.stack,stacks_per);
+		#endif
 		da.line = line;
 		da.size = s;
 		return da.ptr;
@@ -51,8 +57,10 @@
 			for (unsigned i=0; i<alloc_count; i++) {
 				auto &da = debug_allocations[i];
 				printf("alloc at %p sized %u bytes from line %d\n",da.ptr,da.size,da.line);
+				#ifdef __APPLE__
 				fflush(stdout);
 				backtrace_symbols_fd(da.stack,da.stored,fileno(stdout));
+				#endif
 			}
 		}
 	}
