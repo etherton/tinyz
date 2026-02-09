@@ -46,26 +46,22 @@
 		abort();
 	}
 	void debug_leaks() {
-		printf("%u leaks\n",alloc_count);
-		for (unsigned i=0; i<alloc_count; i++) {
-			auto &da = debug_allocations[i];
-			printf("alloc at %p sized %u bytes from line %d\n",da.ptr,da.size,da.line);
-			if (da.size == 512)
-				printf("STRLIT %s\n",da.ptr);
-			else if (da.size == 16) {
-				uint32_t *w = (uint32_t*) da.ptr;
-				printf("INTLIT %08x %08x %08x %08x (%d %d)\n",w[0],w[1],w[2],w[3],w[2],w[3]);
+		if (alloc_count) {
+			printf("%u leaks\n",alloc_count);
+			for (unsigned i=0; i<alloc_count; i++) {
+				auto &da = debug_allocations[i];
+				printf("alloc at %p sized %u bytes from line %d\n",da.ptr,da.size,da.line);
+				fflush(stdout);
+				backtrace_symbols_fd(da.stack,da.stored,fileno(stdout));
 			}
-			fflush(stdout);
-			backtrace_symbols_fd(da.stack,da.stored,fileno(stdout));
 		}
 	}
 	void *operator new[](size_t s) { return debug_alloc(s,0); }
 	void *operator new(size_t s) { return debug_alloc(s,0); }
 	void *operator new[](size_t s,int line) { return debug_alloc(s,line); }
 	void *operator new(size_t s,int line) { return debug_alloc(s,line); }
-	void operator delete(void *p) { debug_free(p); }
-	void operator delete[](void *p) { debug_free(p); }
+	void operator delete(void *p) _NOEXCEPT { debug_free(p); }
+	void operator delete[](void *p) _NOEXCEPT { debug_free(p); }
 	#define NEW new(__LINE__)
 #else
 	#define NEW new
@@ -377,7 +373,6 @@
 		return result;
 	}
 	label rfalseLabel, rtrueLabel;
-	label continue_label, break_label;
 	std::vector<std::pair<label,label>> flow_stack;
 	void fillBranch(uint16_t branchOffset,uint16_t targetOffset,bool negated,bool isLong,bool isJump) {
 		assert(!isJump || !negated);
@@ -1155,17 +1150,13 @@
 		expr_branch *cond;
 		stmt *body;
 		void emit() const {
-			flow_stack.push_back(std::pair<label,label>(continue_label,break_label));
 			label falseBranch = createLabel(), top = createLabelHere();
-			continue_label = top;
-			break_label = falseBranch;
+			flow_stack.push_back(std::pair<label,label>(falseBranch,top));
 			cond->emitBranch(falseBranch,true,body->size() > 58);
 			// TODO: continue and break via a stack
 			body->emit();
 			emitJump(top,true);
 			placeLabel(falseBranch);
-			continue_label = flow_stack.back().first;
-			break_label = flow_stack.back().second;
 			flow_stack.pop_back();
 			delete falseBranch;
 			delete top;
@@ -1202,24 +1193,24 @@
 		}
 	};
 	// TODO: an if whose body is continue/break should just be a direct branch like rtrue/rfalse
-	struct stmt_continue: public stmt {
+	struct stmt_break: public stmt {
 		void emit() const {
-			if (continue_label == nullptr)
+			if (!flow_stack.size())
+				yyerror("break found outside of any loop");
+			emitJump(flow_stack.back().first,true);
+		}
+		unsigned size() const { return 3; }
+		void dump() const { printNode("break;"); }
+	};	struct stmt_continue: public stmt {
+		void emit() const {
+			if (!flow_stack.size())
 				yyerror("continue found outside of any loop");
-			emitJump(continue_label,true);
+			emitJump(flow_stack.back().second,true);
 		}
 		unsigned size() const { return 3; }
 		void dump() const { printNode("continue;"); }
 	};
-	struct stmt_break: public stmt {
-		void emit() const {
-			if (break_label == nullptr)
-				yyerror("break found outside of any loop");
-			emitJump(break_label,true);
-		}
-		unsigned size() const { return 3; }
-		void dump() const { printNode("break;"); }
-	};
+
 	struct stmt_return: public stmt {
 		stmt_return(expr *e) : value(e) { }
 		~stmt_return() { delete value; }
@@ -3079,7 +3070,9 @@ int main(int argc,char **argv) {
 					delete &o;
 				}
 			}
-			the_object_table.clear();
+
+			std::vector<object*> empty;
+			the_object_table.swap(empty);
 			
 			header_blob->storeByte(the_header.version);	// +0 version
 			header_blob->storeByte(0);
@@ -3188,8 +3181,10 @@ int main(int argc,char **argv) {
 			the_dictionary.clear();
 			the_globals.clear();
 			the_locals.clear();
-			the_relocations.clear();
-			flow_stack.clear();
+			std::vector<relocatableBlob*> the_relocations_empty;
+			the_relocations.swap(the_relocations_empty);
+			std::vector<std::pair<label,label>> flow_stack_empty;
+			flow_stack.swap(flow_stack_empty);
 			di.clear();
 			rw.clear();
 			f_0op.clear();

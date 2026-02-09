@@ -1,7 +1,7 @@
 all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5
 
 tinyzcd: opcodes.h header.h tinyz.y debug.h debug.cpp Makefile
-	bison --debug tinyz.y -v -o tinyz.debug.tab.cpp && clang++ -g -std=c++17 tinyz.debug.tab.cpp debug.cpp -o tinyzcd
+	bison --debug tinyz.y -v -o tinyz.debug.tab.cpp && clang++ -DDEBUG_MEM=1 -g -std=c++17 tinyz.debug.tab.cpp debug.cpp -o tinyzcd
 
 tinyzc: opcodes.h header.h tinyz.y debug.h debug.cpp Makefile
 	bison tinyz.y -v -o tinyz.tab.cpp && clang++ -std=c++17 -O2 tinyz.tab.cpp debug.cpp -o tinyzc
