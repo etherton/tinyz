@@ -257,7 +257,8 @@ strings and variables and routine calls. Variables are printed
 as numbers (via `print_num`), unless they are preceeded by the `object` keyword, in which case
 `print_obj` is used. Routine calls are assumed to display output themselves, and their result
 is ignored. If you want a routine call's result to be printed, enclose it in an extra pair
-of parentheses.
+of parentheses. You can also include simple calls like `crlf`, `rfalse`, `rtrue`, `normal`,
+`bold`, `italic`, and `reverse`. The latter four set the text style (or do nothing on v3 games).
 
 Branch Expressions
 ------------------
