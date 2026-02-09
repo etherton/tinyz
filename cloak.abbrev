@@ -1,5 +1,50 @@
-You have
-You
-loakroom
-It's
-***
+zabbrev 1
+Based on the C# version by Henrik Åsman, (c) 2021-2024
+Ported to C by Jason Self, (c) 2025
+License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+Abbreviate "oo dark to see anyth";          !     2x20, saved    15
+Abbreviate " of the Opera House";           !     2x21, saved    17
+Abbreviate "irectObject now ";              !     2x17, saved    12
+Abbreviate "ed in the sawdu";               !     2x15, saved    11
+Abbreviate "mall brass hook";               !     2x15, saved    11
+Abbreviate "understand";                    !     2x10, saved     4
+Abbreviate "the north,";                    !     2x11, saved     6
+Abbreviate " seems to ";                    !     3x10, saved    12
+Abbreviate " carrying";                     !     3x 9, saved    12
+Abbreviate "fancy hat";                     !     2x 9, saved     5
+Abbreviate "ng aroun";                      !     2x 8, saved     3
+Abbreviate " message";                      !     4x 8, saved    15
+Abbreviate "loakroom";                      !     3x 8, saved     9
+Abbreviate "o test";                        !     3x 6, saved     6
+Abbreviate "scrawl";                        !     2x 6, saved     2
+Abbreviate "ou're ";                        !     3x 7, saved     6
+Abbreviate "You ca";                        !     5x 7, saved    16
+Abbreviate "room.";                         !     2x 6, saved     2
+Abbreviate " cloa";                         !     3x 5, saved     3
+Abbreviate "meant";                         !     3x 5, saved     3
+Abbreviate "light";                         !     3x 5, saved     3
+Abbreviate "have ";                         !     3x 5, saved     3
+Abbreviate "ds...";                         !     2x 8, saved     3
+Abbreviate " you ";                         !     3x 5, saved     3
+Abbreviate "with ";                         !     6x 5, saved    12
+Abbreviate "just ";                         !     6x 5, saved    12
+Abbreviate " and ";                         !     6x 5, saved    12
+Abbreviate " that";                         !     7x 5, saved    15
+Abbreviate "It's ";                         !     9x 7, saved    36
+Abbreviate " the ";                         !    24x 5, saved    66
+Abbreviate " to ";                          !     6x 4, saved     6
+Abbreviate "You ";                          !     9x 5, saved    21
+Abbreviate "n't ";                          !     7x 5, saved    15
+Abbreviate "ing";                           !    16x 3, saved    13
+Abbreviate "***";                           !     4x12, saved    28
+Abbreviate "in ";                           !     4x 3, saved     1
+Abbreviate "rou";                           !     4x 3, saved     1
+Abbreviate "The";                           !     9x 4, saved    12
+Abbreviate "re ";                           !    10x 3, saved     7
+Abbreviate "ly ";                           !    11x 3, saved     8
+Abbreviate "ed ";                           !     7x 3, saved     4
+Abbreviate " no";                           !     4x 3, saved     1
+Abbreviate ", ";                            !    14x 3, saved    11
+Abbreviate "?";                            !     2x 6, saved     2

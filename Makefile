@@ -16,7 +16,7 @@ zdis: opcodes.h header.h zdis.cpp debug.h debug.cpp Makefile
 	clang++ -std=c++17 zdis.cpp debug.cpp -o zdis
 
 cloak.z3: cloak.tz tinyzc Makefile
-	./tinyzc -z3 -Acloak.abbrev -g -r cloak.tz > cloak.z3.txt
+	./tinyzc -z3 -agametext.txt -Acloak.abbrev -g -r cloak.tz > cloak.z3.txt
 
 cloak.z4: cloak.tz tinyzc Makefile
 	./tinyzc -z4 -Acloak.abbrev -g -r cloak.tz > cloak.z4.txt
