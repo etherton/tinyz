@@ -11,43 +11,68 @@
 	#include <map>
 	#include <cassert>
 
+#if 1
 	#include <malloc/malloc.h>
 	#include <execinfo.h>
 	const unsigned max_allocs = 32768, stacks_per = 8;
-	void *debug_allocations[max_allocs];
-	void *debug_stacks[max_allocs][stacks_per];
+	struct debug_alloc {
+		void *ptr;
+		void *stack[stacks_per];
+		unsigned size;
+		int line;
+		int stored;
+	};
+	debug_alloc debug_allocations[max_allocs];
 	unsigned alloc_count;
-	void* debug_alloc(size_t s) {
-		void *r = malloc(s);
-		backtrace(debug_stacks[alloc_count],stacks_per);
-		debug_allocations[alloc_count++] = r;
-		return r;
+	void* debug_alloc(size_t s,int line) {
+		auto &da = debug_allocations[alloc_count++];
+		da.ptr = malloc(s);
+		da.stored = backtrace(da.stack,stacks_per);
+		da.line = line;
+		da.size = s;
+		return da.ptr;
 	}
 	void debug_free(void *p) {
+		if (!p)
+			return;
 		for (unsigned i=0; i<alloc_count; i++) {
-			if (debug_allocations[i] == p) {
+			if (debug_allocations[i].ptr == p) {
 				free(p);
 				debug_allocations[i] = debug_allocations[--alloc_count];
-				memcpy(debug_stacks+i, debug_stacks + alloc_count,stacks_per * sizeof(void*));
 				return;
 			}
 		}
+		printf("unknown pointer %p\n",p);
 		abort();
 	}
 	void debug_leaks() {
 		printf("%u leaks\n",alloc_count);
 		for (unsigned i=0; i<alloc_count; i++) {
-			printf("alloc at %p sized %zu bytes\n",debug_allocations[i],malloc_size(debug_allocations[i]));
+			auto &da = debug_allocations[i];
+			printf("alloc at %p sized %u bytes from line %d\n",da.ptr,da.size,da.line);
+			if (da.size == 512)
+				printf("STRLIT %s\n",da.ptr);
+			else if (da.size == 16) {
+				uint32_t *w = (uint32_t*) da.ptr;
+				printf("INTLIT %08x %08x %08x %08x (%d %d)\n",w[0],w[1],w[2],w[3],w[2],w[3]);
+			}
 			fflush(stdout);
-			backtrace_symbols_fd(debug_stacks[i],stacks_per,fileno(stdout));
+			backtrace_symbols_fd(da.stack,da.stored,fileno(stdout));
 		}
 	}
-	void *operator new[](size_t s) { return debug_alloc(s); }
-	void *operator new(size_t s) { return debug_alloc(s); }
+	void *operator new[](size_t s) { return debug_alloc(s,0); }
+	void *operator new(size_t s) { return debug_alloc(s,0); }
+	void *operator new[](size_t s,int line) { return debug_alloc(s,line); }
+	void *operator new(size_t s,int line) { return debug_alloc(s,line); }
 	void operator delete(void *p) { debug_free(p); }
 	void operator delete[](void *p) { debug_free(p); }
+	#define NEW new(__LINE__)
+#else
+	#define NEW new
+#endif
 
 	int yylex();
+	extern int yyline;
 	void yyerror(const char*,...);
 	uint16_t encode_string(uint8_t *dest,size_t destSize,const char *src,size_t srcSize,bool forDict = false);
 	int encode_string(const char*);
@@ -91,7 +116,7 @@
 		static uint16_t firstFree, firstPlaced, lastPlaced;
 		static uint32_t nextAddress;
 		static relocatableBlob* create(uint16_t totalSize,uint16_t ud = 0,const char *desc = nullptr) {
-			relocatableBlob* result = new relocatableBlob;
+			relocatableBlob* result = NEW relocatableBlob;
 			result->size = totalSize;
 			result->offset = 0;
 			result->relocations = nullptr;
@@ -99,7 +124,7 @@
 			result->address = ~0U;
 			result->nextPlaced = 0xFFFF;
 			result->desc = desc? desc : "";
-			result->contents = new uint8_t[totalSize];
+			result->contents = NEW uint8_t[totalSize];
 			result->referenceCount = 0;
 			memset(result->contents,0,totalSize);
 			if (firstFree != 0xFFFF) {
@@ -155,13 +180,13 @@
 			uint16_t indexSave = index;
 			delete the_relocations[index]->relocations;
 			delete [] the_relocations[index]->contents;
-			delete  the_relocations[index];
+			delete the_relocations[index];
 			the_relocations[indexSave] = (relocatableBlob*)(size_t)firstFree;
 			firstFree = indexSave;
 		}
 		void resize(unsigned newSize) {
 			if (newSize != size) {
-				uint8_t *newContents = new uint8_t[newSize];
+				uint8_t *newContents = NEW uint8_t[newSize];
 				memcpy(newContents,contents,offset);
 				delete [] contents;
 				contents = newContents;
@@ -207,6 +232,8 @@
 								the_relocations[j->car.first]->referenceCount--;
 								j = j->cdr;
 							}
+							delete [] the_relocations[i]->contents;
+							the_relocations[i]->contents = nullptr;
 							delete the_relocations[i]->relocations;
 							the_relocations[i]->relocations = nullptr;
 							did_something = true;
@@ -264,7 +291,7 @@
 			return (contents[o-2]<<8) | contents[o-1];
 		}
 		void addRelocation(uint16_t ri,int16_t bias = 0) {
-			relocations = new relocation_t(std::pair<uint16_t,uint16_t>(ri,offset),relocations);
+			relocations = NEW relocation_t(std::pair<uint16_t,uint16_t>(ri,offset),relocations);
 			the_relocations[ri]->referenceCount++;
 			storeWord(bias);
 		}
@@ -284,7 +311,7 @@
 		}
 		void append(relocatableBlob *other) {
 			for (auto i=other->relocations; i; i=i->cdr)
-				relocations = new relocation_t(std::pair<uint16_t,uint16_t>(i->car.first,i->car.second + offset),relocations);
+				relocations = NEW relocation_t(std::pair<uint16_t,uint16_t>(i->car.first,i->car.second + offset),relocations);
 			copy(other->contents,other->size);
 			other->destroy();
 		}
@@ -344,7 +371,7 @@
 		list_node<uint16_t> *references;
 	} *label;
 	label createLabel() {
-		label result = new label_info;
+		label result = NEW label_info;
 		result->offset = 0xFFFF;
 		result->references = nullptr;
 		return result;
@@ -408,7 +435,7 @@
 			currentRoutine->offset += 1 + isLong;
 		}
 		else {
-			l->references = new list_node<uint16_t>(currentRoutine->offset,l->references);
+			l->references = NEW list_node<uint16_t>(currentRoutine->offset,l->references);
 			emitByte(0xFF); // signal jump instead of branch
 			if (isLong)
 				emitByte(0);
@@ -431,7 +458,7 @@
 	std::vector<std::map<std::string,symbol>*> the_locals;
 	std::vector<relocatableBlob*> routine_stack;
 	void open_scope() { 
-		the_locals.push_back(new std::map<std::string,symbol>()); 
+		the_locals.push_back(NEW std::map<std::string,symbol>()); 
 		routine_stack.push_back(currentRoutine);
 		currentRoutine = nullptr;
 	}
@@ -452,11 +479,10 @@
 			relocatableBlob *finalProps;
 		};
 	} *cdef;
-	uint16_t self_value;
+	uint16_t self_value, action_count;
 	std::vector<object*> the_object_table;
 	struct action {
 	};
-	std::vector<action*> the_action_table;
 
 	struct dict_entry {
 		uint8_t encoded[6];
@@ -567,6 +593,7 @@
 	};
 	struct expr_binary_log_shift: public expr {
 		expr_binary_log_shift(expr *l,expr *r) : left(l), right(r) { }
+		~expr_binary_log_shift() { delete left; delete right; }
 		expr *left, *right;
 		void emit(uint8_t dest) const {
 			// we defer eval call because there may be unsigned forward references
@@ -632,7 +659,7 @@
 				currentRoutine->offset += 1 + isLong;
 			}
 			else {
-				target->references = new list_node<uint16_t>(currentRoutine->offset,target->references);
+				target->references = NEW list_node<uint16_t>(currentRoutine->offset,target->references);
 				if (isLong) {
 					emitByte(n? 0x00 : 0x80);
 					emitByte(0);
@@ -835,6 +862,7 @@
 	};
 	struct expr_operand: public expr {
 		operand op;
+		int line;
 		void eval(operand &o) const {
 			o = op;
 		}
@@ -842,10 +870,11 @@
 		unsigned size() const { return op.type == optype::large_constant? 2 : 1; }
 	};
 	struct expr_literal: public expr_operand {
-		expr_literal(int value) {
+		expr_literal(int value,int l = 0) {
 			op.type =  value >= 0 && value <= 255? optype::small_constant : optype::large_constant;
 			op.value = value;
 			op.relocation = false;
+			line = l;
 		}
 		bool isConstant(int &v) const { v = op.value; return true; }
 		void dump() const {
@@ -857,6 +886,7 @@
 			op.type = optype::large_constant;
 			op.value = r;
 			op.relocation = true;
+			line = 0;
 		}
 		void dump() const {
 			spaces(); printf("reloc %u (%s)\n",op.value,the_relocations[op.value]->desc.c_str());
@@ -867,7 +897,7 @@
 			if (e->isConstant(c)) {
 				delete e;
 				// printf("constant folded to %d\n",c);
-				return new expr_literal(c);
+				return NEW expr_literal(c);
 			}
 			else
 				return e;
@@ -877,6 +907,7 @@
 			op.type = optype::variable;
 			op.value = v;
 			op.relocation = false;
+			line = 1;
 		}
 		void dump() const {
 			printNode((uint8_t)op.value);
@@ -886,11 +917,11 @@
 		static auto tl = the_globals.find("$tracebits");
 		if (tl != the_globals.end()) {
 			if (tl->second.token == GNAME)
-				return new expr_variable(tl->second.ival + 16);
+				return NEW expr_variable(tl->second.ival + 16);
 			else if (tl->second.token == INTLIT)
-				return new expr_literal(tl->second.ival);
+				return NEW expr_literal(tl->second.ival);
 		}
-		return new expr_literal(0);
+		return NEW expr_literal(0);
 	}
 	struct expr_logical_not: public expr_branch {
 		expr_logical_not(expr_branch *e) : unary(), expr_branch(!e->negated) { }
@@ -1557,6 +1588,7 @@ constant_def
 				yyerror("constant directive must evaluate to compile-time constant value");
 			 $2->second.token = INTLIT; 
 			 $2->second.ival = v;
+			 delete $4;
 			 // printf("constant = %d\n",v);
 		}
 	;
@@ -1600,8 +1632,8 @@ opt_wordbit
 	;
 
 dict_list
-	: dict dict_list	{ $$ = new list_node<uint16_t>($1,$2); }
-	| dict				{ $$ = new list_node<uint16_t>($1,nullptr); }
+	: dict dict_list	{ $$ = NEW list_node<uint16_t>($1,$2); }
+	| dict				{ $$ = NEW list_node<uint16_t>($1,nullptr); }
 	;
 
 synonym_def
@@ -1690,14 +1722,14 @@ object_or_location_def
 		}
 
 		cdef->descrLen = encode_string(nullptr,0,$2,strlen($2));
-		cdef->descr = new uint8_t[cdef->descrLen];
+		cdef->descr = NEW uint8_t[cdef->descrLen];
 		encode_string(cdef->descr,cdef->descrLen,$2,strlen($2));
 		delete[] $2;
 		memset(cdef->attributes,0,sizeof(cdef->attributes));
 		if (expected_scope == SCOPE_OBJECT_MASK)
 			cdef->attributes[0] = 0x80;
 		unsigned propCount = the_header.version==3? 32 : 64;
-		cdef->properties = new relocatableBlob*[propCount];
+		cdef->properties = NEW relocatableBlob*[propCount];
 		cdef->propertySize = 0;
 		memset(cdef->properties,0,propCount * sizeof(relocatableBlob*));
 	} opt_property_or_attribute_list '}' {
@@ -1764,7 +1796,7 @@ pvalue
 			// string literal is just a shorthand for the address of a routine that calls print_ret with that string
 			open_scope();
 			auto p = relocatableBlob::createProperty(2,currentProperty);
-			p->addRelocation(emit_routine(0,new stmt_print(_0op::print_ret,false,$1)));
+			p->addRelocation(emit_routine(0,NEW stmt_print(_0op::print_ret,false,$1)));
 			close_scope();
 			$$ = p->index;
 		}
@@ -1909,60 +1941,60 @@ local
 	;
 
 stmts
-	: stmt stmts	{ if ($1->isReturn() && $2) yyerror("unreachable code"); $$ = new list_node<stmt*>($1,$2); }
-	| stmt			{ $$ = new list_node<stmt*>($1,nullptr); }
+	: stmt stmts	{ if ($1->isReturn() && $2) yyerror("unreachable code"); $$ = NEW list_node<stmt*>($1,$2); }
+	| stmt			{ $$ = NEW list_node<stmt*>($1,nullptr); }
 	;
 
 stmt
-	: IF cond_expr stmt  				{ $$ = new stmt_if($2,$3,nullptr); }
-	| IF cond_expr stmt ELSE stmt 	%prec IF	{ $$ = new stmt_if($2,$3,$5); }
-	| REPEAT stmt WHILE cond_expr ';'	{ $$ = new stmt_repeat($2,$4); }
-	| WHILE cond_expr stmt				{ $$ = new stmt_while($2,$3); }
+	: IF cond_expr stmt  				{ $$ = NEW stmt_if($2,$3,nullptr); }
+	| IF cond_expr stmt ELSE stmt 	%prec IF	{ $$ = NEW stmt_if($2,$3,$5); }
+	| REPEAT stmt WHILE cond_expr ';'	{ $$ = NEW stmt_repeat($2,$4); }
+	| WHILE cond_expr stmt				{ $$ = NEW stmt_while($2,$3); }
 	// | FOR '(' opt_init_expr ';' opt_bool_expr
-	| '{' stmts '}'			{ $$ = new stmts($2); }
-	| vname '=' expr ';'	{ $$ = new stmt_assign($1,expr::fold_constant($3)); }
-	| vname '[' expr ']' '=' expr ';' { $$ = new stmt_store(_var::storeb,new expr_variable($1),$3,$6); }
-	| vname '[' '[' expr ']' ']' '=' expr ';' { $$ = new stmt_store(_var::storew,new expr_variable($1),$4,$8); }
-	| RETURN expr ';'		{ $$ = new stmt_return(expr::fold_constant($2)); }
-	| RFALSE ';'			{ $$ = new stmt_return(new expr_literal(0)); }
-	| RTRUE ';'				{ $$ = new stmt_return(new expr_literal(1)); }
-	| CALL expr opt_call_args ';'	{ $$ = new stmt_call(new list_node<expr*>($2,$3));  }
-	| RNAME opt_call_args ';'		{ $$ = new stmt_call(new list_node<expr*>(new expr_reloc($1),$2)); }
-	| STMT_0OP ';'					{ $$ = new stmt_0op($1); }
-	| STMT_1OP  expr  ';'			{ $$ = new stmt_1op($1,$2); }
-	| STMT_2OP '(' expr ',' expr ')' ';' { $$ = new stmt_2op($1,$3,$5); } 
-	| STMT_VAROP1 expr  ';'			{ $$ = new stmt_varop1($1,$2); }
-	| STMT_VAROP2 '(' expr ',' expr ')'  ';'	{ $$ = new stmt_varop2($1,$3,$5); }
-	| PRINT print_sequence ';'			{ $$ = new stmts($2); }
-	| PRINT_RET print_sequence ';'		{ stmt_print::modify($2,_0op::print_ret,false); $$ = new stmts($2); }
-	| PRINT_RETF print_sequence ';'		{ stmt_print::modify($2,_0op::print,true); $$ = new stmts($2); }
+	| '{' stmts '}'			{ $$ = NEW stmts($2); }
+	| vname '=' expr ';'	{ $$ = NEW stmt_assign($1,expr::fold_constant($3)); }
+	| vname '[' expr ']' '=' expr ';' { $$ = NEW stmt_store(_var::storeb,NEW expr_variable($1),$3,$6); }
+	| vname '[' '[' expr ']' ']' '=' expr ';' { $$ = NEW stmt_store(_var::storew,NEW expr_variable($1),$4,$8); }
+	| RETURN expr ';'		{ $$ = NEW stmt_return(expr::fold_constant($2)); }
+	| RFALSE ';'			{ $$ = NEW stmt_return(NEW expr_literal(0)); }
+	| RTRUE ';'				{ $$ = NEW stmt_return(NEW expr_literal(1)); }
+	| CALL expr opt_call_args ';'	{ $$ = NEW stmt_call(NEW list_node<expr*>($2,$3));  }
+	| RNAME opt_call_args ';'		{ $$ = NEW stmt_call(NEW list_node<expr*>(NEW expr_reloc($1),$2)); }
+	| STMT_0OP ';'					{ $$ = NEW stmt_0op($1); }
+	| STMT_1OP  expr  ';'			{ $$ = NEW stmt_1op($1,$2); }
+	| STMT_2OP '(' expr ',' expr ')' ';' { $$ = NEW stmt_2op($1,$3,$5); } 
+	| STMT_VAROP1 expr  ';'			{ $$ = NEW stmt_varop1($1,$2); }
+	| STMT_VAROP2 '(' expr ',' expr ')'  ';'	{ $$ = NEW stmt_varop2($1,$3,$5); }
+	| PRINT print_sequence ';'			{ $$ = NEW stmts($2); }
+	| PRINT_RET print_sequence ';'		{ stmt_print::modify($2,_0op::print_ret,false); $$ = NEW stmts($2); }
+	| PRINT_RETF print_sequence ';'		{ stmt_print::modify($2,_0op::print,true); $$ = NEW stmts($2); }
 	| TRACE INTLIT print_sequence ';'				
 		{ 
 			// depending on trace_level_expr, this will dead strip in release builds.
-			auto c = new expr_binary_branch(trace_level_expr(),_2op::test,false,new expr_literal($2),[](int16_t a,int16_t b)->int16_t { return (a&b)==b; });
-			$$ = new stmt_if(c,new stmts($3),nullptr);
+			auto c = NEW expr_binary_branch(trace_level_expr(),_2op::test,false,NEW expr_literal($2),[](int16_t a,int16_t b)->int16_t { return (a&b)==b; });
+			$$ = NEW stmt_if(c,NEW stmts($3),nullptr);
 		}
-	| INCR vname ';'				{ $$ = new stmt_1op(_1op::inc,new expr_literal($2)); }
-	| DECR vname ';'				{ $$ = new stmt_1op(_1op::dec,new expr_literal($2)); }
-	| objref GAINS aname ';' 		{ $$ = new stmt_2op(_2op::set_attr,$1,$3); }
-	| objref LOSES aname ';'		{ $$ = new stmt_2op(_2op::clear_attr,$1,$3); }
-	| MOVE objref INTO objref ';'	{ $$ = new stmt_2op(_2op::insert_obj,$2,$4); }
-	| CONTINUE ';'					{ $$ = new stmt_continue(); }
-	| BREAK ';'						{ $$ = new stmt_break(); }
+	| INCR vname ';'				{ $$ = NEW stmt_1op(_1op::inc,NEW expr_literal($2)); }
+	| DECR vname ';'				{ $$ = NEW stmt_1op(_1op::dec,NEW expr_literal($2)); }
+	| objref GAINS aname ';' 		{ $$ = NEW stmt_2op(_2op::set_attr,$1,$3); }
+	| objref LOSES aname ';'		{ $$ = NEW stmt_2op(_2op::clear_attr,$1,$3); }
+	| MOVE objref INTO objref ';'	{ $$ = NEW stmt_2op(_2op::insert_obj,$2,$4); }
+	| CONTINUE ';'					{ $$ = NEW stmt_continue(); }
+	| BREAK ';'						{ $$ = NEW stmt_break(); }
 	; 
 
 print_sequence
-	: print_item ',' print_sequence		{ $$ = new list_node<stmt*>($1,$3); }
-	| print_item						{ $$ = new list_node<stmt*>($1,nullptr); }
+	: print_item ',' print_sequence		{ $$ = NEW list_node<stmt*>($1,$3); }
+	| print_item						{ $$ = NEW list_node<stmt*>($1,nullptr); }
 	;
 
 print_item
-	: primary { $$ = new stmt_varop1(_var::print_num,$1); }
-	| '(' expr ')' { $$ = new stmt_varop1(_var::print_num,$2); }
-	| RNAME '(' arg_list ')' { $$ = new stmt_call(new list_node<expr*>(new expr_reloc($1),$3)) }
-	| OBJECT expr { $$ = new stmt_1op(_1op::print_obj,$2); }
-	| STMT_0OP { $$ = new stmt_0op($1); }
-	| STRLIT { $$ = new stmt_print(_0op::print,false,$1); }
+	: primary { $$ = NEW stmt_varop1(_var::print_num,$1); }
+	| '(' expr ')' { $$ = NEW stmt_varop1(_var::print_num,$2); }
+	| RNAME '(' arg_list ')' { $$ = NEW stmt_call(NEW list_node<expr*>(NEW expr_reloc($1),$3)) }
+	| OBJECT expr { $$ = NEW stmt_1op(_1op::print_obj,$2); }
+	| STMT_0OP { $$ = NEW stmt_0op($1); }
+	| STRLIT { $$ = NEW stmt_print(_0op::print,false,$1); }
 	;
 	
 cond_expr
@@ -1970,14 +2002,14 @@ cond_expr
 	;
 
 opt_call_args
-	: STRLIT			{ $$ = new list_node<expr*>(new expr_literal(encode_string($1)),nullptr); delete[] $1; }
+	: STRLIT			{ $$ = NEW list_node<expr*>(NEW expr_literal(encode_string($1)),nullptr); delete[] $1; }
 	| '(' ')'			{ $$ = nullptr; }
 	| '(' arg_list ')'	{ $$ = $2; }
 	;
 
 arg_list
-	: arg ',' arg_list	{ $$ = new list_node<expr*>($1,$3); }
-	| arg				{ $$ = new list_node<expr*>($1,nullptr); }
+	: arg ',' arg_list	{ $$ = NEW list_node<expr*>($1,$3); }
+	| arg				{ $$ = NEW list_node<expr*>($1,nullptr); }
 	;
 
 arg
@@ -1985,57 +2017,69 @@ arg
 	;
 
 expr
-	: expr '+' expr 	{ $$ = expr::fold_constant(new expr_binary($1,_2op::add,$3,[](int16_t a,int16_t b)->int16_t{return a+b;})); }
-	| expr '-' expr 	{ $$ = expr::fold_constant(new expr_binary($1,_2op::sub,$3,[](int16_t a,int16_t b)->int16_t{return a-b;})); }
-	| expr '*' expr 	{ $$ = expr::fold_constant(new expr_binary($1,_2op::mul,$3,[](int16_t a,int16_t b)->int16_t{return a*b;})); }
-	| expr '/' expr 	{ $$ = expr::fold_constant(new expr_binary($1,_2op::div,$3,[](int16_t a,int16_t b)->int16_t{if (!b) yyerror("division by zero"); return a/b;})); }
-	| expr '%' expr 	{ $$ = expr::fold_constant(new expr_binary($1,_2op::mod,$3,[](int16_t a,int16_t b)->int16_t{if (!b) yyerror("modulo by zero"); return a%b;})); }
-	| '~' expr      	{ $$ = new expr_unary(_1op::not_,$2); }
-	| expr '&' expr 	{ $$ = expr::fold_constant(new expr_binary($1,_2op::and_,$3,[](int16_t a,int16_t b)->int16_t{return a&b;})); }
-	| expr '|' expr 	{ $$ = expr::fold_constant(new expr_binary($1,_2op::or_,$3,[](int16_t a,int16_t b)->int16_t{return a|b;})); }
-	| expr LSH expr		{ $$ = new expr_binary_log_shift($1,$3); }
-	| expr RSH expr		{ $$ = new expr_binary_log_shift($1,new expr_binary(new expr_literal(0),_2op::sub,$3)); }
-	| objref '.' pname	{ $$ = new expr_binary($1,_2op::get_prop,$3); }
-	| ADDROF '(' objref '.' pname ')' { $$ = new expr_binary($3,_2op::get_prop_addr,$5); }
-	| SIZEOF '(' expr ')' { $$ = new expr_unary(_1op::get_prop_len,$3); }
+	: expr '+' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::add,$3,[](int16_t a,int16_t b)->int16_t{return a+b;})); }
+	| expr '-' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::sub,$3,[](int16_t a,int16_t b)->int16_t{return a-b;})); }
+	| expr '*' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::mul,$3,[](int16_t a,int16_t b)->int16_t{return a*b;})); }
+	| expr '/' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::div,$3,[](int16_t a,int16_t b)->int16_t{if (!b) yyerror("division by zero"); return a/b;})); }
+	| expr '%' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::mod,$3,[](int16_t a,int16_t b)->int16_t{if (!b) yyerror("modulo by zero"); return a%b;})); }
+	| '~' expr      	{ $$ = NEW expr_unary(_1op::not_,$2); }
+	| expr '&' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::and_,$3,[](int16_t a,int16_t b)->int16_t{return a&b;})); }
+	| expr '|' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::or_,$3,[](int16_t a,int16_t b)->int16_t{return a|b;})); }
+	| expr LSH expr		{ $$ = NEW expr_binary_log_shift($1,$3); }
+	| expr RSH expr		{ $$ = NEW expr_binary_log_shift($1,NEW expr_binary(NEW expr_literal(0),_2op::sub,$3)); }
+	| objref '.' pname	{ $$ = NEW expr_binary($1,_2op::get_prop,$3); }
+	| ADDROF '(' objref '.' pname ')' { $$ = NEW expr_binary($3,_2op::get_prop_addr,$5); }
+	| SIZEOF '(' expr ')' { $$ = NEW expr_unary(_1op::get_prop_len,$3); }
 	| '(' expr ')'  	{ $$ = expr::fold_constant($2); }
 	| primary       	{ $$ = $1; }
-	| INTLIT        	{ $$ = new expr_literal($1); }
-	| dict				{ $$ = new expr_literal($1); }
-	| PNAME				{ $$ = new expr_literal($1 & 63); }
-	| RNAME opt_call_args { $$ = new expr_call(new list_node<expr*>(new expr_reloc($1),$2)); }
-	| CALL expr opt_call_args { $$ = new expr_call(new list_node<expr*>($2,$3)); }
+	| INTLIT        	{ $$ = NEW expr_literal($1,yyline); }
+	| dict				{ $$ = NEW expr_literal($1,yyline); }
+	| PNAME				{ $$ = NEW expr_literal($1 & 63,yyline); }
+	| RNAME opt_call_args { $$ = NEW expr_call(NEW list_node<expr*>(NEW expr_reloc($1),$2)); }
+	| CALL expr opt_call_args { $$ = NEW expr_call(NEW list_node<expr*>($2,$3)); }
 	;
 
 bool_expr
-	: expr '<' expr		{ $$ = new expr_binary_branch($1,_2op::jl,false,$3,[](int16_t a,int16_t b)->int16_t{return a<b;}); }
-	| expr LE expr		{ $$ = new expr_binary_branch($1,_2op::jg,true,$3,[](int16_t a,int16_t b)->int16_t{return a<=b;}); }
-	| expr '>' expr		{ $$ = new expr_binary_branch($1,_2op::jg,false,$3,[](int16_t a,int16_t b)->int16_t{return a>b;}); }
-	| expr GE expr		{ $$ = new expr_binary_branch($1,_2op::jl,true,$3,[](int16_t a,int16_t b)->int16_t{return a>=b;}); }
-	| expr EQ expr		{ $$ = $3->isZero()? 
-			static_cast<expr_branch*>(new expr_unary_branch(_1op::jz,false,$1)) : 
-			static_cast<expr_branch*>(new expr_binary_branch($1,_2op::je,false,$3,[](int16_t a,int16_t b)->int16_t{return a==b;})); }
-	| expr NE expr		{ $$ = $3->isZero()? 
-			static_cast<expr_branch*>(new expr_unary_branch(_1op::jz,true,$1)) : 
-			static_cast<expr_branch*>(new expr_binary_branch($1,_2op::je,true,$3,[](int16_t a,int16_t b)->int16_t{return a!=b;})); }
-	| ISZERO expr		{ $$ = new expr_unary_branch(_1op::jz,false,$2); }
-	| ISNONZERO expr	{ $$ = new expr_unary_branch(_1op::jz,true,$2); }
-	| expr '&' '=' expr { $$ = new expr_binary_branch($1,_2op::test,false,$4,[](int16_t a,int16_t b)->int16_t { return (a&b)==b; }); }
-	| expr IN '{' expr '}'	{ $$ = new expr_in($1,$4); }
-	| expr IN '{' expr ',' expr '}' { $$ = new expr_in($1,$4,$6); }
-	| expr IN '{' expr ',' expr ',' expr '}' { $$ = new expr_in($1,$4,$6,$8); }
-	| NOT bool_expr		{ $$ = new expr_logical_not($2); }
-	| bool_expr AND bool_expr		{ $$ = new expr_logical_and($1,$3); }
-	| bool_expr OR bool_expr		{ $$ = new expr_logical_or($1,$3); }
-	| objref has_or_hasnt aname	{ $$ = new expr_binary_branch($1,_2op::test_attr,$2,$3); }
-	| objref has_or_hasnt CHILD opt_arrow { $$ = new expr_unary_branch_store(_1op::get_child,$2,$1,$4); }
-	| objref has_or_hasnt SIBLING opt_arrow { $$ = new expr_unary_branch_store(_1op::get_sibling,$2,$1,$4); }
-	| objref HOLDS objref 	{ $$ = new expr_binary_branch($3,_2op::jin,false,$1); }
-	| ONCE vname		{ $$ = new expr_binary_branch(new expr_literal($2),_2op::inc_chk,true,new expr_literal(1)); }
-	| SAVE				{ $$ = new expr_saveRestore(_0op::save); }
-	| RESTORE			{ $$ = new expr_saveRestore(_0op::restore); }
-	| SCAN_TABLE '(' expr ',' expr ',' expr ')' ARROW vname { $$ = new expr_scan_table_branch_store($3,$5,$7,nullptr,$10); }
-	| SCAN_TABLE '(' expr ',' expr ',' expr ',' expr ')' ARROW vname { $$ = new expr_scan_table_branch_store($3,$5,$7,$9,$12); }
+	: expr '<' expr		{ $$ = NEW expr_binary_branch($1,_2op::jl,false,$3,[](int16_t a,int16_t b)->int16_t{return a<b;}); }
+	| expr LE expr		{ $$ = NEW expr_binary_branch($1,_2op::jg,true,$3,[](int16_t a,int16_t b)->int16_t{return a<=b;}); }
+	| expr '>' expr		{ $$ = NEW expr_binary_branch($1,_2op::jg,false,$3,[](int16_t a,int16_t b)->int16_t{return a>b;}); }
+	| expr GE expr		{ $$ = NEW expr_binary_branch($1,_2op::jl,true,$3,[](int16_t a,int16_t b)->int16_t{return a>=b;}); }
+	| expr EQ expr		
+		{ 
+			if ($3->isZero()) { 
+				$$ = NEW expr_unary_branch(_1op::jz,false,$1);
+				delete $3;
+			}
+			else 
+				$$ = NEW expr_binary_branch($1,_2op::je,false,$3,[](int16_t a,int16_t b)->int16_t{return a==b;}); 
+		}
+	| expr NE expr		
+		{ 
+			if ($3->isZero()) {
+				$$ = NEW expr_unary_branch(_1op::jz,true,$1);
+				delete $3;
+			}
+			else
+				$$ = NEW expr_binary_branch($1,_2op::je,true,$3,[](int16_t a,int16_t b)->int16_t{return a!=b;}); 
+		}
+	| ISZERO expr		{ $$ = NEW expr_unary_branch(_1op::jz,false,$2); }
+	| ISNONZERO expr	{ $$ = NEW expr_unary_branch(_1op::jz,true,$2); }
+	| expr '&' '=' expr { $$ = NEW expr_binary_branch($1,_2op::test,false,$4,[](int16_t a,int16_t b)->int16_t { return (a&b)==b; }); }
+	| expr IN '{' expr '}'	{ $$ = NEW expr_in($1,$4); }
+	| expr IN '{' expr ',' expr '}' { $$ = NEW expr_in($1,$4,$6); }
+	| expr IN '{' expr ',' expr ',' expr '}' { $$ = NEW expr_in($1,$4,$6,$8); }
+	| NOT bool_expr		{ $$ = NEW expr_logical_not($2); }
+	| bool_expr AND bool_expr		{ $$ = NEW expr_logical_and($1,$3); }
+	| bool_expr OR bool_expr		{ $$ = NEW expr_logical_or($1,$3); }
+	| objref has_or_hasnt aname	{ $$ = NEW expr_binary_branch($1,_2op::test_attr,$2,$3); }
+	| objref has_or_hasnt CHILD opt_arrow { $$ = NEW expr_unary_branch_store(_1op::get_child,$2,$1,$4); }
+	| objref has_or_hasnt SIBLING opt_arrow { $$ = NEW expr_unary_branch_store(_1op::get_sibling,$2,$1,$4); }
+	| objref HOLDS objref 	{ $$ = NEW expr_binary_branch($3,_2op::jin,false,$1); }
+	| ONCE vname		{ $$ = NEW expr_binary_branch(NEW expr_literal($2),_2op::inc_chk,true,NEW expr_literal(1)); }
+	| SAVE				{ $$ = NEW expr_saveRestore(_0op::save); }
+	| RESTORE			{ $$ = NEW expr_saveRestore(_0op::restore); }
+	| SCAN_TABLE '(' expr ',' expr ',' expr ')' ARROW vname { $$ = NEW expr_scan_table_branch_store($3,$5,$7,nullptr,$10); }
+	| SCAN_TABLE '(' expr ',' expr ',' expr ',' expr ')' ARROW vname { $$ = NEW expr_scan_table_branch_store($3,$5,$7,$9,$12); }
 	| '(' bool_expr ')' { $$ = $2; }
 	;
 
@@ -2050,28 +2094,28 @@ opt_arrow
 	;
 
 pname
-	: PNAME			{ $$ = new expr_literal($1 & 63); }
-	| vname			{ $$ = new expr_variable($1); }
+	: PNAME			{ $$ = NEW expr_literal($1 & 63); }
+	| vname			{ $$ = NEW expr_variable($1); }
 	;
 
 primary
 	: objref						{ $$ = $1; }
-	| primary '[' expr ']'			{ $$ = new expr_binary($1,_2op::loadb,$3); }
-	| primary '[' '[' expr ']' ']'	{ $$ = new expr_binary($1,_2op::loadw,$4); }
+	| primary '[' expr ']'			{ $$ = NEW expr_binary($1,_2op::loadb,$3); }
+	| primary '[' '[' expr ']' ']'	{ $$ = NEW expr_binary($1,_2op::loadw,$4); }
 	;
 
 objref
-	: ONAME			{ $$ = new expr_literal($1); }
-	| SELF			{ $$ = new expr_literal(self_value); }
-	| vname			{ $$ = new expr_variable($1); }
-	| objref PARENT { $$ = new expr_unary(_1op::get_parent,$1); }
-	| objref CHILD 	{ $$ = new expr_unary(_1op::get_child,$1); }
-	| objref SIBLING { $$ = new expr_unary(_1op::get_sibling,$1); }
+	: ONAME			{ $$ = NEW expr_literal($1); }
+	| SELF			{ $$ = NEW expr_literal(self_value); }
+	| vname			{ $$ = NEW expr_variable($1); }
+	| objref PARENT { $$ = NEW expr_unary(_1op::get_parent,$1); }
+	| objref CHILD 	{ $$ = NEW expr_unary(_1op::get_child,$1); }
+	| objref SIBLING { $$ = NEW expr_unary(_1op::get_sibling,$1); }
 	;
 
 aname
-	: ANAME			{ $$ = new expr_literal($1 & 63); }
-	| vname			{ $$ = new expr_variable($1); }
+	: ANAME			{ $$ = NEW expr_literal($1 & 63); }
+	| vname			{ $$ = NEW expr_variable($1); }
 	;
 
 vname
@@ -2324,7 +2368,6 @@ void init(int version) {
 	// 1,2,3=abbreviations, 4=shift1, 5=shift2
 
 	the_object_table.push_back(nullptr);	// object zero doesn't exist
-	the_action_table.push_back(nullptr);
 
 	rfalseLabel = createLabel(); rfalseLabel->offset = 0xFFF0;
 	rtrueLabel = createLabel(); rtrueLabel->offset = 0xFFF1;
@@ -2348,7 +2391,7 @@ void init(int version) {
 int encode_string(const char *src) {
 	size_t srcLen = strlen(src);
 	uint16_t bytes = encode_string(nullptr,0,src,srcLen);
-	uint8_t *dest = new uint8_t[bytes];
+	uint8_t *dest = NEW uint8_t[bytes];
 	encode_string(dest,bytes,src,srcLen);
 	return 0; // TODO
 }
@@ -2580,7 +2623,7 @@ int yylex_() {
 			yylval.ival = s->second.ival;
 			return s->second.token;
 		}
-		// otherwise it's a new symbol (do no actual work on first pass)
+		// otherwise it's a NEW symbol (do no actual work on first pass)
 		if (yypass==1)
 			return NEWSYM;
 		else {
@@ -2728,7 +2771,7 @@ int yylex_() {
 				yytoken[yylen++] = tolower(yych);
 				yynext();
 			}
-			// turn a space into a new dict word
+			// turn a space into a NEW dict word
 			if (yych==32)
 				yych = '\'';
 			else
@@ -2748,7 +2791,7 @@ int yylex_() {
 		}
 		case '"': {
 			const unsigned maxString = 512;
-			char *sval = new char[maxString];
+			char sval[maxString];
 			unsigned offset = 0;
 			char term = yych;
 			while (yynext()!=EOF && yych!=term) {
@@ -2774,8 +2817,11 @@ NEWLINE:
 				}
 			}
 			yynext();
-			sval[offset] = 0;
-			yylval.sval = sval;
+			sval[offset++] = 0;
+			if (yypass==1)
+				yylval.sval = nullptr;
+			else
+				memcpy((char*)(yylval.sval = new char[offset]), sval, offset);
 			return STRLIT;
 		}
 		default:
@@ -2930,15 +2976,14 @@ int main(int argc,char **argv) {
 						if (yylex() == NEWSYM) {
 							// declare the object and assign its value
 							the_globals[yytoken] = { ONAME,(int16_t)the_object_table.size() };
-							the_object_table.push_back(new object {});
+							the_object_table.push_back(NEW object {});
 						}
 					}
 					else if (t == ACTION) {
 						if (yylex() == NEWSYM) {
 							if (yytoken[0]!='#')
 								yyerror("action symbols must start with #");
-							the_globals[yytoken] = { INTLIT,(int16_t)the_action_table.size() };
-							the_action_table.push_back(new action {});
+							the_globals[yytoken] = { INTLIT,(int16_t)++action_count };
 						}
 					}
 					else if (t == GLOBAL) {
@@ -2977,14 +3022,14 @@ int main(int argc,char **argv) {
 			the_globals["$synonyms"] = { GNAME, int16_t(next_global++) };
 
 			globals_blob = relocatableBlob::create(next_global * 2,UD_DYNAMIC,"globals");
-			actions_blob = relocatableBlob::create(the_action_table.size() << 4,UD_STATIC,"actions");
+			actions_blob = relocatableBlob::create(action_count << 4,UD_STATIC,"actions");
 			synonyms_blob = relocatableBlob::create(256,UD_STATIC,"synonyms");
 			if (the_header.version > 3)
 				synonyms_blob->storeWord(0); // table size
 			if (report & R_SUMMARY) {
 				printf("%u globals\n",next_global);
 				printf("%zu objects\n",the_object_table.size()-1);
-				printf("%zu actions\n",the_action_table.size()-1);
+				printf("%u actions\n",action_count);
 			}
 			the_globals["$object_count"] = { INTLIT, int16_t(the_object_table.size() - 1) };
 			the_globals["$dict_word_count"] = { INTLIT, int16_t(the_dictionary.size()) };
@@ -3029,6 +3074,7 @@ int main(int argc,char **argv) {
 					object_blob->addRelocation(o.finalProps->index);
 					if (report & R_OBJECTS)
 						printf("object %d properties at blob %d\n",i,o.finalProps->index);
+					delete &o;
 				}
 			}
 			else {
@@ -3042,8 +3088,10 @@ int main(int argc,char **argv) {
 					object_blob->addRelocation(o.finalProps->index);
 					if (report & R_OBJECTS)
 						printf("object %d properties at blob %d\n",i,o.finalProps->index);
+					delete &o;
 				}
 			}
+			the_object_table.clear();
 			
 			header_blob->storeByte(the_header.version);	// +0 version
 			header_blob->storeByte(0);
@@ -3151,6 +3199,10 @@ int main(int argc,char **argv) {
 					the_relocations[i]->destroy();
 			the_dictionary.clear();
 			the_globals.clear();
+			the_locals.clear();
+			the_relocations.clear();
+			routine_stack.clear();
+			flow_stack.clear();
 			di.clear();
 			rw.clear();
 			f_0op.clear();
