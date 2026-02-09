@@ -2957,9 +2957,26 @@ int main(int argc,char **argv) {
 	int release_number = 0;
 	enum { R_OBJECTS=1,R_ROUTINES=2,R_GLOBALS=4,R_DICTIONARY=8,R_ACTIONS=16,R_SUMMARY=32,R_ALL=63};
 	int report = 0;
+	const char *help = 
+			"-aFILE         write Inform-style gametext file\n"
+			"-AFILE         read abbreviations from supplied file (in zabbrev format)\n"
+			"-DSYM[=value]  define SYM as a constant (default 1, or supplied value)\n"
+			"-g             write Inform DEBF debug information file\n"
+			"-r[SORGDA]     generate report to stdout; default is all, else one or more of:\n"
+			"               S=summary O=objects R=routines G=globals D=dictionary A=actions\n"
+			"-RNUM          set release number in header to NUM\n"
+#if YYDEBUG
+			"-y             enable grammar debugging (for weird syntax errors)\n"
+#endif
+			"-zVER          set Z-machine version, one of 3/4/5/8\n\n"
+			"output file is based on input file with extension changed to .z3/4/5/8.\n"
+			"debug file is output file with .dbg tacked on to end";
+
 	while (--argc && **++argv=='-') {
 		char *arg = *argv + 1;
 		switch(*arg++) {
+			case 'h':
+				puts(help);
 #if YYDEBUG
 			case 'y': yydebug = 1; break;
 #endif
@@ -3017,7 +3034,7 @@ int main(int argc,char **argv) {
 		}
 	}
 	if (!argc)
-		yyerror("missing input tz name");
+		yyerror("missing input tz name; use -h for help");
 	if (write_debug_info)
 		di.files[1] = argv[0];
 	init(zversion);
