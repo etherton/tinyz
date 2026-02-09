@@ -107,7 +107,8 @@
 
 	const uint16_t UD_DYNAMIC = 1;
 	const uint16_t UD_STATIC = 2;
-	const uint16_t UD_HIGH = 3;
+	const uint16_t UD_STATIC_ABBREVIATION = 3;
+	const uint16_t UD_HIGH = 4;
 
 	// a relocatable blob can itself be relocated, and can contain
 	// zero or more references to other relocatable blobs.
@@ -251,7 +252,7 @@
 				if ((size_t)the_relocations[i] > 0xFFFF && the_relocations[i]->address == ~0U &&
 					the_relocations[i]->referenceCount && 
 					the_relocations[i]->userData == type)
-					the_relocations[i]->place(type==UD_HIGH?(1U << story_shift)-1:0U);
+					the_relocations[i]->place(type==UD_HIGH?(1U << story_shift)-1:type==UD_STATIC_ABBREVIATION?1U:0U);
 			}
 		}
 		static void writeAll(FILE *output) {
@@ -303,8 +304,8 @@
 			int count = 0;
 			for (auto i = relocations; i; i=i->cdr, count++) {
 				auto &r = *the_relocations[i->car.first];
-				uint16_t a = r.address >> (r.userData == UD_HIGH? story_shift : 0);
-				a += contents[i->car.second + 1];	// add lower byte of offset;
+				uint16_t a = r.address >> (r.userData == UD_HIGH? story_shift : r.userData == UD_STATIC_ABBREVIATION? 1 : 0);
+				a += contents[i->car.second + 1];	// add lower byte of offset (used to skip zero byte of main[])
 				contents[i->car.second] = a >> 8;
 				contents[i->car.second + 1] = a;
 			}
@@ -327,7 +328,8 @@
 	};
 	uint16_t relocatableBlob::firstFree=0xFFFF, relocatableBlob::firstPlaced=0xFFFF, relocatableBlob::lastPlaced;
 	uint32_t relocatableBlob::nextAddress;
-	relocatableBlob *header_blob, *dictionary_blob, *object_blob, *properties_blob, *globals_blob, *actions_blob, *synonyms_blob, *current_global;
+	relocatableBlob *header_blob, *dictionary_blob, *object_blob, *properties_blob, *globals_blob, *actions_blob, 
+		*synonyms_blob, *current_global, *abbreviations_blob;
 	int16_t entry_point_index = -1;
 	uint8_t action_bit = 0;
 
@@ -336,16 +338,16 @@
 	const uint8_t SHORT_JUMP = 0x9C;		// 0-255
 	const uint8_t CALL_VS = 0xE0;
 
-	relocatableBlob * currentRoutine;
+	relocatableBlob * current_routine;
 	uint8_t currentProperty, currentBits;
 	void emitByte(uint8_t b) {
-		// printf("%04x: %02x\n",currentRoutine->offset,b);
-		currentRoutine->storeByte(b);
+		// printf("%04x: %02x\n",current_routine->offset,b);
+		current_routine->storeByte(b);
 	}
 	void emitOperand(operand o) {
 		if (o.relocation && o.type==optype::large_constant) {
 			// printf("add relocatoin to blob %d\n",o.value);
-			currentRoutine->addRelocation(o.value);
+			current_routine->addRelocation(o.value);
 		}
 		else {
 			// static const char *types[] = {"large","small","variable","omitted"};
@@ -384,7 +386,7 @@
 	std::vector<std::pair<label,label>> flow_stack;
 	void fillBranch(uint16_t branchOffset,uint16_t targetOffset,bool negated,bool isLong,bool isJump) {
 		assert(!isJump || !negated);
-		uint8_t *dest = currentRoutine->contents + branchOffset;
+		uint8_t *dest = current_routine->contents + branchOffset;
 		int delta = (targetOffset - (branchOffset + 1 + isLong)) + 2;
 		assert(delta!=0 && delta!=1);
 		if (isJump) {
@@ -395,7 +397,7 @@
 				if (delta>0 && delta<=255)
 					dest[0] = delta;
 				else {
-					printf("warning - jump delta %d out of range in %s\n",delta,currentRoutine->desc.c_str());
+					printf("warning - jump delta %d out of range in %s\n",delta,current_routine->desc.c_str());
 					dest[0] = 0;
 				}
 			}
@@ -412,17 +414,17 @@
 				else if (delta>0 && delta<64)
 					dest[0] = (negated? 0x00 : 0x80) | 0x40 | delta;
 				else {
-					printf("branch delta %d out of range in %s, changing to rfalse\n",delta,currentRoutine->desc.c_str());
+					printf("branch delta %d out of range in %s, changing to rfalse\n",delta,current_routine->desc.c_str());
 					dest[0] = negated? 0x40 : 0xC0;
 				}
 			}
 		}
 	}
 	void placeLabel(label l) {
-		l->offset = currentRoutine->offset;
+		l->offset = current_routine->offset;
 		for (auto i=l->references; i; i=i->cdr) {
-			int16_t delta = (currentRoutine->offset - i->car + 2);
-			uint8_t *dest = currentRoutine->contents + i->car;
+			int16_t delta = (current_routine->offset - i->car + 2);
+			uint8_t *dest = current_routine->contents + i->car;
 			if (dest[0]==0xFF)
 				fillBranch(i->car,l->offset,false,dest[-1]==LONG_JUMP,true);
 			else
@@ -434,11 +436,11 @@
 	void emitJump(label l,bool isLong) {
 		emitByte(isLong? LONG_JUMP : SHORT_JUMP);
 		if (l->offset != 0xFFFF) {
-			fillBranch(currentRoutine->offset,l->offset,false,isLong,true);
-			currentRoutine->offset += 1 + isLong;
+			fillBranch(current_routine->offset,l->offset,false,isLong,true);
+			current_routine->offset += 1 + isLong;
 		}
 		else {
-			l->references = NEW list_node<uint16_t>(currentRoutine->offset,l->references);
+			l->references = NEW list_node<uint16_t>(current_routine->offset,l->references);
 			emitByte(0xFF); // signal jump instead of branch
 			if (isLong)
 				emitByte(0);
@@ -450,6 +452,12 @@
 		return l;
 	}
 
+	const char *abbreviations[96];
+	uint8_t abbreviation_lengths[96];
+	uint8_t abbreviations_lut[95][95];
+	uint8_t abbreviations_next[96];
+	uint8_t abbreviation_count;
+
 	struct symbol {
 		int16_t token;	// if zero, it's a NEWSYM
 		union {
@@ -459,11 +467,11 @@
 	};
 	std::map<std::string,symbol> the_globals, the_locals;
 	void open_scope() { 
-		currentRoutine = nullptr;
+		current_routine = nullptr;
 		next_local = 0;
 	}
 	void close_scope() { 
-		currentRoutine = nullptr;
+		current_routine = nullptr;
 		the_locals.clear();
 		next_local = -1;
 	 }
@@ -653,11 +661,11 @@
 			if (negated)
 				n = !n;
 			if (target->offset != 0xFFFF) {
-				fillBranch(currentRoutine->offset,target->offset,n,isLong,false);
-				currentRoutine->offset += 1 + isLong;
+				fillBranch(current_routine->offset,target->offset,n,isLong,false);
+				current_routine->offset += 1 + isLong;
 			}
 			else {
-				target->references = NEW list_node<uint16_t>(currentRoutine->offset,target->references);
+				target->references = NEW list_node<uint16_t>(current_routine->offset,target->references);
 				if (isLong) {
 					emitByte(n? 0x00 : 0x80);
 					emitByte(0);
@@ -1050,12 +1058,12 @@
 		list_node<stmt*> *slist;
 		unsigned tsize;
 		void emit() const {
-			//unsigned actualSize = currentRoutine->offset;
+			//unsigned actualSize = current_routine->offset;
 			for (auto i=slist; i; i=i->cdr) {
 				i->car->emit();
-				// printf("accum %u\n",currentRoutine->offset - actualSize);
+				// printf("accum %u\n",current_routine->offset - actualSize);
 			}
-			//actualSize = currentRoutine->offset - actualSize;
+			//actualSize = current_routine->offset - actualSize;
 			// assert(computedSize <= tsize);
 			/*if (actualSize > tsize) {
 				for (auto i=slist; i; i=i->cdr)
@@ -1437,9 +1445,9 @@
 		}
 		void emit() const {
 			emit0op(opcode);
-			currentRoutine->reserve(encodedLength);
-			encode_string(currentRoutine->contents + currentRoutine->offset,encodedLength,string,strlen(string));
-			currentRoutine->offset += encodedLength;
+			current_routine->reserve(encodedLength);
+			encode_string(current_routine->contents + current_routine->offset,encodedLength,string,strlen(string));
+			current_routine->offset += encodedLength;
 			if (isRetFalse) {
 				emit0op(_0op::new_line);
 				emit0op(_0op::rfalse);
@@ -1458,8 +1466,8 @@
 		bool isPrint() const { return true; }
 	};
 	uint16_t emit_routine(int numLocals,stmt *body) {
-		if (!currentRoutine)
-			currentRoutine = relocatableBlob::create(1024,UD_HIGH);
+		if (!current_routine)
+			current_routine = relocatableBlob::create(1024,UD_HIGH);
 		// printf("%d locals\n",numLocals);
 		emitByte(numLocals);
 		if (the_header.version < 5) {
@@ -1469,8 +1477,8 @@
 			}
 		}
 		if (write_debug_info) {
-			auto &r = di.routines[currentRoutine->index];
-			r.name = currentRoutine->desc;
+			auto &r = di.routines[current_routine->index];
+			r.name = current_routine->desc;
 			for (auto &l: the_locals)
 				r.locals.push_back(l.first);
 		}
@@ -1478,11 +1486,11 @@
 		if (!body->isReturn())
 			yyerror("missing return at end of routine (or not all if paths return)");
 		body->emit();
-		while (currentRoutine->offset & ((1 << story_shift)-1))
+		while (current_routine->offset & ((1 << story_shift)-1))
 			emitByte(0xB4 /*nop*/);
-		currentRoutine->seal(); // arp arp
+		current_routine->seal(); // arp arp
 		delete body;
-		return currentRoutine->index;
+		return current_routine->index;
 	}
 
 	uint16_t property_defaults[63];
@@ -1569,7 +1577,7 @@ decl
 	| routine_def
 	| wordbit_def
 	| action_def
-	| synonym_def;
+	| synonym_def
 	| constant_def
 	;
 
@@ -1816,13 +1824,13 @@ routine_def
 	: ROUTINE NEWSYM '[' 
 		{
 			open_scope(); 
-			currentRoutine = relocatableBlob::create(1024,UD_HIGH,$2->first.c_str()); 
+			current_routine = relocatableBlob::create(1024,UD_HIGH,$2->first.c_str()); 
 			$2->second.token = RNAME;
-			$2->second.ival = currentRoutine->index;
+			$2->second.ival = current_routine->index;
 		} 
 		opt_params_list opt_locals_list ']' stmt
 		{
-			int cr = currentRoutine->index;
+			int cr = current_routine->index;
 			the_relocations[cr]->desc = $2->first;
 			if ($2->first == "main") {
 				if (entry_point_index == -1) {
@@ -2154,6 +2162,11 @@ const uint8_t* print_encoded_string(const uint8_t *src,void (*pr)(char ch)) {
 		uint8_t ch = readCode();
 		if (!ch)
 			pr(32);
+		else if (ch>=1 && ch<=3) {
+			const char *s = abbreviations[((ch-1)<<5) | readCode()];
+			while (*s)
+				pr(*s++);
+		}
 		else if (ch==4)
 			shift = 26;
 		else if (ch==5)
@@ -2205,7 +2218,24 @@ uint16_t encode_string(uint8_t *dest,size_t destSize,const char *src,size_t srcS
 		}
 	};
 	const char *baseSrc = src;
-	while (srcSize-- && (!destSize || offset < destSize)) {
+	while (srcSize && (!destSize || offset < destSize)) {
+		if (!forDict && srcSize>=2 && src[0]>=32 && src[0]<127 && src[1]>=32 && src[1]<127) {
+			uint8_t j = abbreviations_lut[src[0]-32][src[1]-32];
+			while (j != 255) {
+				if (!strncmp(abbreviations[j],src,abbreviation_lengths[j]))
+					break;
+				else
+					j = abbreviations_next[j];
+			}
+			if (j != 255) {
+				storeCode((j>>5)+1);
+				storeCode(j&31);
+				src += abbreviation_lengths[j];
+				srcSize -= abbreviation_lengths[j];
+				continue;
+			}
+		}
+		--srcSize;
 		uint8_t code = s_EncodedCharacters[*src++];
 		if (code == 255) {
 			storeCode(5);
@@ -2374,6 +2404,8 @@ void init(int version) {
 	// s_EncodedCharacters[10] = (5 << 5) | 7;
 	s_EncodedCharacters[13] = (5 << 5) | 7;
 	// 1,2,3=abbreviations, 4=shift1, 5=shift2
+	memset(abbreviations_lut,255,sizeof(abbreviations_lut));
+	memset(abbreviations_next,255,sizeof(abbreviations_next));
 
 	the_object_table.push_back(nullptr);	// object zero doesn't exist
 
@@ -2923,6 +2955,26 @@ int main(int argc,char **argv) {
 #if YYDEBUG
 			case 'y': yydebug = 1; break;
 #endif
+			case 'A': {
+				FILE *a = fopen(arg,"r");
+				if (!a)
+					yyerror("unable to load abbreviations file '%s'",arg);
+				char buf[256];
+				int line = 0;
+				while (fgets(buf,sizeof(buf),a)) {
+					++line;
+					size_t sl = strlen(buf);
+					while (sl && buf[sl-1]<32)
+						--sl;
+					buf[sl] = 0;
+					if (sl<2 || buf[0]<32 || buf[0]>126 || buf[1]<32 || buf[1]>126)
+						yyerror("invalid abbreviation on line %d of %s",line,arg);
+					abbreviations[abbreviation_count] = strcpy(NEW char[sl+1],buf);
+					abbreviation_lengths[abbreviation_count++] = sl;
+				}
+				fclose(a);
+				break;
+			}
 			case 'D': {
 				char *eq = strchr(arg,'=');
 				int16_t value = 1;
@@ -3040,6 +3092,28 @@ int main(int argc,char **argv) {
 			the_globals["$object_count"] = { INTLIT, int16_t(the_object_table.size() - 1) };
 			the_globals["$dict_word_count"] = { INTLIT, int16_t(the_dictionary.size()) };
 			header_blob = relocatableBlob::create(64,UD_DYNAMIC,"story header");
+
+			if (abbreviation_count) {
+				abbreviations_blob = relocatableBlob::create(abbreviation_count * 2,UD_STATIC,"abbreviation table");
+				for (int i=0; i<abbreviation_count; i++) {
+					uint16_t len = encode_string(nullptr,0,abbreviations[i],abbreviation_lengths[i]);
+					auto a = relocatableBlob::create(len,UD_STATIC_ABBREVIATION,"an abbreviation");
+					encode_string(a->contents,len,abbreviations[i],abbreviation_lengths[i]);
+					a->offset = len;
+					abbreviations_blob->addRelocation(a->index);
+				}
+				// Now that all abbreviations are added, built the acceleration lut
+				// Do it after we've encoded the abbreviations so we don't find the abbreviations
+				// when trying to encode them!
+				for (uint8_t i=0; i<abbreviation_count; i++) {
+					// Use a 2D LUT to identify the first two characters of the abbreviation.
+					// If there's more than one, they form a linked list.
+					auto *al = &abbreviations_lut[abbreviations[i][0]-32][abbreviations[i][1]-32];
+					while (*al != 255)
+						al = &abbreviations_next[*al];
+					*al = i;
+				}
+			}
 		}
 		else {
 			yyparse();
@@ -3113,22 +3187,26 @@ int main(int argc,char **argv) {
 			header_blob->addRelocation(object_blob->index); // +10 object table
 			header_blob->addRelocation(globals_blob->index); // +12 globals
 			header_blob->addRelocation(dictionary_blob->index); // +14 static memory
-			header_blob->offset += 2;
+			header_blob->storeWord(0); // +16 flags2
 			time_t now;
 			time(&now);
 			auto t = localtime(&now);
 			char yymmdd[7];
 			snprintf(yymmdd,sizeof(yymmdd),"%02d%02d%02d",t->tm_year % 100,t->tm_mon + 1,t->tm_mday);
-			header_blob->copy((uint8_t*)yymmdd,6);
+			header_blob->copy((uint8_t*)yymmdd,6);  // +18 ascii serial
+			if (abbreviations_blob)
+				header_blob->addRelocation(abbreviations_blob->index);
+			else
+				header_blob->storeWord(0); // +24 abbreviations
 			header_blob->place();
 			globals_blob->place();
 			object_blob->place();
 			relocatableBlob::placeAll(UD_DYNAMIC);
 			relocatableBlob::placeAll(UD_STATIC);
+			relocatableBlob::placeAll(UD_STATIC_ABBREVIATION);
 			relocatableBlob::deadStrip();
 			relocatableBlob::placeAll(UD_HIGH);
 
-			header_blob->storeWord(0); // +24 abbreviations
 			header_blob->storeWord((relocatableBlob::nextAddress + ((1<<story_shift)-1)) >> story_shift); // length of file
 			header_blob->offset = 60;
 			header_blob->storeByte('0');
@@ -3221,6 +3299,8 @@ int main(int argc,char **argv) {
 			f_varop2.clear();
 			delete rfalseLabel;
 			delete rtrueLabel;
+			while (abbreviation_count)
+				delete abbreviations[--abbreviation_count];
 		}
 		fclose(yyinput);
 	}
