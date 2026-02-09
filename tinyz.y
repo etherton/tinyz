@@ -365,7 +365,7 @@
 	void emitvarop(_var op,operand o0,operand o1,operand o2,operand o3);
 	void emit2op(operand l,_2op op,operand r);
 	void emit1op(_1op op,operand un);
-	void emit0op(_0op op) { emitByte(uint8_t(op) | 0xB0); }
+	void emit0op(_0op op) { emitByte(uint8_t(op)); }
 	const uint8_t TOS = 0, SCRATCH = 3;
 
 	typedef struct label_info {
@@ -1295,19 +1295,22 @@
 		}
 	};	
 	struct stmt_0op: public stmt {
-		stmt_0op(_0op op) : opcode(op) { }
-		_0op opcode;
+		stmt_0op(uint32_t m) : macro(m) { }
+		uint32_t macro;
 		void emit() const {
-			emit0op(opcode);
+			switch (macro>>28) {
+				case 1: emitByte(macro); break;
+				case 3: emitByte(macro); emitByte(macro>>8); emitByte(macro>>16); break;
+			}
 		}
 		unsigned size() const {
-			return 1;
+			return macro >> 28;
 		}
 		void dump() const {
-			printNode(opcode_names[(uint8_t)opcode | 0xB0]);
+			printNode(opcode_names[(uint8_t)macro]);
 		}
 		bool isReturn() const {
-			return opcode==_0op::quit || opcode==_0op::restart;
+			return (uint8_t)macro == (uint8_t)_0op::quit || (uint8_t)macro == (uint8_t)_0op::restart;
 		}
 	};
 	struct stmt_assign: public stmt {
@@ -1498,7 +1501,7 @@
 	list_node<expr*> *elist;
 	list_node<stmt*> *stlist;
 	stmt *stval;
-	_0op zeroOp;
+	uint32_t zeroOp;
 	_1op oneOp;
 	_2op twoOp;
 	_var varOp;
@@ -1984,6 +1987,8 @@ print_item
 	| OBJECT expr { $$ = NEW stmt_1op(_1op::print_obj,$2); }
 	| STMT_0OP { $$ = NEW stmt_0op($1); }
 	| STRLIT { $$ = NEW stmt_print(_0op::print,false,$1); }
+	| RFALSE { $$ = NEW stmt_return(NEW expr_literal(0)); }
+	| RTRUE { $$ = NEW stmt_return(NEW expr_literal(1)); }
 	;
 	
 cond_expr
@@ -2116,7 +2121,7 @@ vname
 %%
 
 std::map<std::string,int16_t> rw;
-std::map<std::string,_0op> f_0op;
+std::map<std::string,uint32_t> f_0op;
 std::map<std::string,_1op> f_1op;
 std::map<std::string,_2op> f_2op;
 std::map<std::string,_var> f_varop1;
@@ -2305,10 +2310,13 @@ void init(int version) {
 	rw["#else"] = HASH_ELSE;
 	rw["#endif"] = HASH_ENDIF;
 
-	f_0op["restart"] = _0op::restart;
-	f_0op["quit"] = _0op::quit;
-	f_0op["crlf"] = _0op::new_line;
-	f_0op["show_status"] = _0op::show_status;
+#define MACRO1(b)		(0x10000000 | uint8_t(b))
+#define MACRO3(b,t,v)	(0x30000000 | (uint8_t(b)|((t)<<8)|((v)<<16)))
+
+	f_0op["restart"] = MACRO1(_0op::restart);
+	f_0op["quit"] = MACRO1(_0op::quit);
+	f_0op["crlf"] = MACRO1(_0op::new_line);
+	f_0op["show_status"] = MACRO1(_0op::show_status);
 
 	// f_1op["get_parent"] = _1op::get_parent; // unlike others, get_parent isn't a branch
 	f_1op["print_addr"] = _1op::print_addr;
@@ -2335,6 +2343,17 @@ void init(int version) {
 		f_varop1["set_text_style"] = _var::set_text_style;
 		f_varop1["buffer_mode"] = _var::buffer_mode;
 		f_varop1["read_char"] = _var::read_char; // not quite correct
+
+		f_0op["normal"] = MACRO3(_var::set_text_style,0x7F,0);
+		f_0op["reverse"] = MACRO3(_var::set_text_style,0x7F,1);
+		f_0op["italic"] = MACRO3(_var::set_text_style,0x7F,2);
+		f_0op["bold"] = MACRO3(_var::set_text_style,0x7F,4);
+	}
+	else {
+		f_0op["normal"] = 0;
+		f_0op["reverse"] = 0;
+		f_0op["italic"] = 0;
+		f_0op["bold"] = 0;
 	}
 
 	if (version >= 5) {
@@ -2421,20 +2440,20 @@ void emitvarop(operand lval,_2op opcode,operand rval1,operand rval2) {
 }
 
 void emitvarop(_var opcode,operand op1) {
-	emitByte((uint8_t)opcode + 0xE0);
+	emitByte((uint8_t)opcode);
 	emitByte((uint8_t(op1.type) << 6) | 0x3F);
 	emitOperand(op1);
 }
 
 void emitvarop(_var opcode,operand op1,operand op2) {
-	emitByte((uint8_t)opcode + 0xE0);
+	emitByte((uint8_t)opcode);
 	emitByte((uint8_t(op1.type) << 6) | (uint8_t(op2.type) << 4) | 0xF);
 	emitOperand(op1);
 	emitOperand(op2);
 }
 
 void emitvarop(_var opcode,operand op1,operand op2,operand op3) {
-	emitByte((uint8_t)opcode + 0xE0);
+	emitByte((uint8_t)opcode);
 	emitByte((uint8_t(op1.type) << 6) | (uint8_t(op2.type) << 4) | (uint8_t(op3.type) << 2) | 0x3);
 	emitOperand(op1);
 	emitOperand(op2);
@@ -2442,7 +2461,7 @@ void emitvarop(_var opcode,operand op1,operand op2,operand op3) {
 }
 
 void emitvarop(_var opcode,operand op1,operand op2,operand op3,operand op4) {
-	emitByte((uint8_t)opcode + 0xE0);
+	emitByte((uint8_t)opcode);
 	emitByte((uint8_t(op1.type) << 6) | (uint8_t(op2.type) << 4) | (uint8_t(op3.type) << 2) | uint8_t(op4.type));
 	emitOperand(op1);
 	emitOperand(op2);

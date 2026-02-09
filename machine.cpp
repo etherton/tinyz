@@ -818,7 +818,7 @@ void machine::run(uint32_t pc) {
 			}
 		}
 		else if (opcode < 0xE0) {
-			switch ((_0op)(opcode - 0xB0)) {
+			switch ((_0op)(opcode)) {
 				case _0op::rtrue: pc = r_return(1); break;
 				case _0op::rfalse: pc = r_return(0); break;
 				case _0op::print: pc = print_zscii(pc); break;
@@ -851,7 +851,7 @@ void machine::run(uint32_t pc) {
 			}
 		}
 		else if (opcode < 0x100) {
-			switch ((_var)(opcode - 0xE0)) {
+			switch ((_var)(opcode)) {
 				case _var::call_vs: pc = call(pc,dest,operands,opCount); break;
 				case _var::storew: write_mem16(uint16_t(operands[0].getU()+(operands[1].getU()<<1)),operands[2]); break;
 				case _var::storeb: write_mem8(uint16_t(operands[0].getU()+operands[1].getU()),operands[2].lo); break;
@@ -877,7 +877,7 @@ void machine::run(uint32_t pc) {
 				case _var::call_vs2: pc = call(pc,dest,operands,opCount); break;
 				case _var::erase_window: interface::eraseWindow(operands[0].getS()); break; // erase_window
 				case _var::set_cursor: setCursor(operands[1].getU(),operands[0].getU()); break; // set_cursor line col
-				case _var::set_text_style: interface::setTextStyle(operands[0].lo); break; // set_text_style
+				case _var::set_text_style: flushMainWindow(); interface::setTextStyle(operands[0].lo); break; // set_text_style
 				case _var::buffer_mode: if (operands[0].notZero()) m_outputEnables |= 1; else m_outputEnables &= ~1; break; // buffer_mode
 				case _var::output_stream: setOutput(operands[0].getS(),opCount>1?operands[1].getU():0); break; // output_stream
 				case _var::sound_effect: break; // sound_effect

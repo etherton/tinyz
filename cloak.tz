@@ -18,18 +18,16 @@ attribute object vowel;
 
 routine An [obj] {
 	if (obj has vowel)
-		print "An ";
+		print "An ",rfalse;
 	else
-		print "A ";
-	rfalse;
+		print "A ",rfalse;
 }
 
 routine an [obj] {
 	if (obj has vowel)
-		print "an ";
+		print "an ",rfalse;
 	else
-		print "a ";
-	rfalse;
+		print "a ",rfalse;
 }
 
 // the global constant $object_count is always the count
@@ -226,9 +224,11 @@ location bar "Foyer Bar" (Locations) {
 object cloak "velvet cloak" (Player) {
 	adjective: 'handsome' 'velvet' 'black' 'satin';
 	noun: 'cloak';
-	description: "A handsome cloak, of velvet trimmed with satin, and slightly
-			spattered with raindrops. Its blackness is so deep that it
+	description: [] {
+		print_ret "A ",bold,"handsome",normal," cloak, of velvet trimmed with satin, and slightly
+			spattered with raindrops. Its ",italic,"blackness",normal," is so deep that it
 			almost seems to suck light from the room.";
+	}
 	before: [act] {
 		if (act in {#drop,#puton} and room isnt cloakroom)
 			print_ret "This isn't the best place to leave

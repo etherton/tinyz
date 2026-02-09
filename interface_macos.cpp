@@ -92,12 +92,18 @@ int interface::readchar() {
 
 
 void interface::setTextStyle(uint8_t style) {
+	// 0 = standard, 1=reverse_video, 2=italic, 4=bold, 8=fixed_pitch
 	if (nostatus)
-		;
-	else if (style == 1)
+		return;
+	if (style == 1)
 		printf("\033[7m");
+	else if (style == 2)
+		printf("\033[4m");	
+	else if (style == 4)
+		printf("\033[1m");
 	else if (style == 0)
 		printf("\033[0m");
+	
 }
 
 void interface::setTextColor(uint8_t fore,uint8_t back) {
