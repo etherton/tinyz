@@ -11,10 +11,10 @@
 	#include <map>
 	#include <cassert>
 
-#if 1
+#if DEBUG_MEM
 	#include <malloc/malloc.h>
 	#include <execinfo.h>
-	const unsigned max_allocs = 32768, stacks_per = 8;
+	const unsigned max_allocs = 32768, stacks_per = 16;
 	struct debug_alloc {
 		void *ptr;
 		void *stack[stacks_per];
@@ -72,12 +72,12 @@
 #endif
 
 	int yylex();
-	extern int yyline;
 	void yyerror(const char*,...);
 	uint16_t encode_string(uint8_t *dest,size_t destSize,const char *src,size_t srcSize,bool forDict = false);
 	int encode_string(const char*);
 	const uint8_t* print_encoded_string(const uint8_t *src,void (*pr)(char ch));
-	uint8_t next_global, next_local, story_shift = 1, dict_entry_size = 4;
+	uint8_t next_global, story_shift = 1, dict_entry_size = 4;
+	int8_t next_local = -1;
 	storyHeader the_header = { 3 };
 	debug::debug_info di;
 	bool write_debug_info;
@@ -454,21 +454,16 @@
 			uint16_t uval;
 		};
 	};
-	std::map<std::string,symbol> the_globals;
-	std::vector<std::map<std::string,symbol>*> the_locals;
-	std::vector<relocatableBlob*> routine_stack;
+	std::map<std::string,symbol> the_globals, the_locals;
 	void open_scope() { 
-		the_locals.push_back(NEW std::map<std::string,symbol>()); 
-		routine_stack.push_back(currentRoutine);
 		currentRoutine = nullptr;
+		next_local = 0;
 	}
 	void close_scope() { 
-		currentRoutine = routine_stack.back();
-		routine_stack.pop_back();
-		delete the_locals.back(); 
-		the_locals.pop_back();
+		currentRoutine = nullptr;
+		the_locals.clear();
+		next_local = -1;
 	 }
-
 	struct object {
 		int16_t child, sibling, parent;
 		uint8_t attributes[6];
@@ -862,7 +857,6 @@
 	};
 	struct expr_operand: public expr {
 		operand op;
-		int line;
 		void eval(operand &o) const {
 			o = op;
 		}
@@ -870,11 +864,10 @@
 		unsigned size() const { return op.type == optype::large_constant? 2 : 1; }
 	};
 	struct expr_literal: public expr_operand {
-		expr_literal(int value,int l = 0) {
+		expr_literal(int value) {
 			op.type =  value >= 0 && value <= 255? optype::small_constant : optype::large_constant;
 			op.value = value;
 			op.relocation = false;
-			line = l;
 		}
 		bool isConstant(int &v) const { v = op.value; return true; }
 		void dump() const {
@@ -886,7 +879,6 @@
 			op.type = optype::large_constant;
 			op.value = r;
 			op.relocation = true;
-			line = 0;
 		}
 		void dump() const {
 			spaces(); printf("reloc %u (%s)\n",op.value,the_relocations[op.value]->desc.c_str());
@@ -907,7 +899,6 @@
 			op.type = optype::variable;
 			op.value = v;
 			op.relocation = false;
-			line = 1;
 		}
 		void dump() const {
 			printNode((uint8_t)op.value);
@@ -1478,7 +1469,7 @@
 		if (write_debug_info) {
 			auto &r = di.routines[currentRoutine->index];
 			r.name = currentRoutine->desc;
-			for (auto &l: *the_locals.back())
+			for (auto &l: the_locals)
 				r.locals.push_back(l.first);
 		}
 		// body->dump();
@@ -1824,7 +1815,6 @@ routine_def
 		{
 			open_scope(); 
 			currentRoutine = relocatableBlob::create(1024,UD_HIGH,$2->first.c_str()); 
-			next_local=0; 
 			$2->second.token = RNAME;
 			$2->second.ival = currentRoutine->index;
 		} 
@@ -1891,7 +1881,7 @@ dict
 	;
 
 routine_body
-	: '[' { open_scope(); next_local=0; } opt_params_list opt_locals_list ']' stmt
+	: '[' { open_scope(); } opt_params_list opt_locals_list ']' stmt
 		{ 
 			$$ = emit_routine(next_local,$6);
 			close_scope();
@@ -2032,9 +2022,9 @@ expr
 	| SIZEOF '(' expr ')' { $$ = NEW expr_unary(_1op::get_prop_len,$3); }
 	| '(' expr ')'  	{ $$ = expr::fold_constant($2); }
 	| primary       	{ $$ = $1; }
-	| INTLIT        	{ $$ = NEW expr_literal($1,yyline); }
-	| dict				{ $$ = NEW expr_literal($1,yyline); }
-	| PNAME				{ $$ = NEW expr_literal($1 & 63,yyline); }
+	| INTLIT        	{ $$ = NEW expr_literal($1); }
+	| dict				{ $$ = NEW expr_literal($1); }
+	| PNAME				{ $$ = NEW expr_literal($1 & 63); }
 	| RNAME opt_call_args { $$ = NEW expr_call(NEW list_node<expr*>(NEW expr_reloc($1),$2)); }
 	| CALL expr opt_call_args { $$ = NEW expr_call(NEW list_node<expr*>($2,$3)); }
 	;
@@ -2610,12 +2600,10 @@ int yylex_() {
 			return STMT_VAROP2;
 		}		
 		// check locals, which take precedence over other symbols
-		if (the_locals.size()) {
-			auto l = the_locals.back()->find(yytoken);
-			if (l != the_locals.back()->end()) {
-				yylval.ival = l->second.ival;
-				return LNAME;
-			}
+		auto l = the_locals.find(yytoken);
+		if (l != the_locals.end()) {
+			yylval.ival = l->second.ival;
+			return LNAME;
 		}
 		// finally search globals
 		auto s = the_globals.find(yytoken);
@@ -2627,8 +2615,8 @@ int yylex_() {
 		if (yypass==1)
 			return NEWSYM;
 		else {
-			if (the_locals.size())
-				yylval.sym = &*the_locals.back()->insert(std::pair<std::string,symbol>(yytoken,{INTLIT,0})).first;
+			if (next_local != -1)
+				yylval.sym = &*the_locals.insert(std::pair<std::string,symbol>(yytoken,{INTLIT,0})).first;
 			else
 				yylval.sym = &*the_globals.insert(std::pair<std::string,symbol>(yytoken,{INTLIT,0})).first;
 			return NEWSYM;
@@ -3201,7 +3189,6 @@ int main(int argc,char **argv) {
 			the_globals.clear();
 			the_locals.clear();
 			the_relocations.clear();
-			routine_stack.clear();
 			flow_stack.clear();
 			di.clear();
 			rw.clear();
@@ -3215,38 +3202,7 @@ int main(int argc,char **argv) {
 		}
 		fclose(yyinput);
 	}
+#if DEBUG_MEM
 	debug_leaks();
-
-	// typical order
-	// header (64 bytes)
-	// +0 version
-	// +1 misc flags
-	// +4 byte address of high memory
-	// +6 initial program counter
-	// +8 byte address of dictionary
-	// +10 byte address of object table
-	// +12 byte address of globals
-	// +14 byte address of static memory
-	// +16 more flags
-	// +18 serial number (ascii)
-	// +24 byte address of abbreviation table
-	// +26 length of file (>> story_shift)
-	// +28 checksum
-	// +46 (v5+) byte address of terminating characters table
-	// +52 (v5+) byte address of alphabet table
-	// property defaults (31 words in v3, else 63)
-	// objects
-	// object properties (dynamic) (first object must be here)
-	// global variables
-	// arrays
-	// -- end of dynamic memory --
-	// object properties (static)
-	// abbreviations (one word per up to 96 abbreviations, word address of that abbreviation)
-	// grammar table
-	// actions table
-	// dictionary
-	// -- high memory --
-	// routines
-	// static strings
-	// -- end of file --
+#endif
 }
