@@ -12,7 +12,7 @@ well on very old machines. While it supports v3/v4/v5/v8, its reason for existin
 to really push the limits of v3 stories.
 
 Dictionary words have a single payload byte. The parser is based on a compact rule-based
-system. The language is much closer to Zilch than Inform. It handles typical verb, direct
+system. The language is much closer to Zilch (Zilf) than Inform. It handles typical verb, direct
 object, indirect object with disambiguation but doesn't support really complex manipulation
 of multiple objects in one game command.
 
@@ -347,7 +347,7 @@ This wraps the `@get_prop_len` instruction.
 Lets you change evaluation order. Note that since there is a distinct difference between branch expressions and numeric expression, precedence is
 a bit different than you might be used to in C-based language. You'll find you need fewer parentheses than you do in C.
 
-`'dictionary-word`\
-Evaluates the the index associated with a particular dictionary word.
+`'dictionary-word'`\
+Evaluates the the index associated with a particular dictionary word. Up to two words are allowed in action statements, but you must use single words everywhere else.
 
 You can also make routine calls (either by name, or indirectly with the `call` operator) and the syntax is identical to in statements.
