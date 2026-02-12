@@ -456,8 +456,8 @@
 
 	const char *abbreviations[96];
 	uint8_t abbreviation_lengths[96];
-	uint8_t abbreviations_lut[95][95];
 	uint8_t abbreviations_next[96];
+	uint8_t abbreviations_lut[256];
 	uint8_t abbreviation_count;
 
 	struct symbol {
@@ -2142,7 +2142,7 @@ std::map<std::string,_var> f_varop1;
 std::map<std::string,_var> f_varop2;
 
 
-static uint8_t s_EncodedCharacters[256];
+static uint8_t s_EncodedCharacters[256], s_ZCost[256];
 
 const uint8_t* print_encoded_string(const uint8_t *src,void (*pr)(char ch)) {
 	uint8_t step = 0, end = 0;
@@ -2223,36 +2223,73 @@ uint16_t encode_string(uint8_t *dest,size_t destSize,const char *src,size_t srcS
 			offset += 2;
 		}
 	};
-	const char *baseSrc = src;
-	while (srcSize && (!destSize || offset < destSize)) {
-		if (!forDict && srcSize>=2 && src[0]>=32 && src[0]<127 && src[1]>=32 && src[1]<127) {
-			uint8_t j = abbreviations_lut[src[0]-32][src[1]-32];
+
+	// If we have abbreviations, do an optimal parse (Wagner, 1973) for them.
+	// The paper is cryptic but Henrik Åsman explained it pretty simply:
+	// 1. Loop through the string and find every possible abbreviation for each position in the string.
+	// 2. Loop backwards through the string and calculate the cost from the current position to the end of the string 
+	//    for each possible abbreviation at that position. Choose the abbreviation the yields the lowest cost.
+	uint32_t *abbrevs = nullptr;
+	if (!forDict && abbreviation_count) {
+		int totalCount = 0;
+		abbrevs = (uint32_t*) alloca(srcSize * 4);
+		for (size_t i=0; i<srcSize-1; i++) {
+			abbrevs[i] = 0;
+			uint8_t j = abbreviations_lut[src[i]];
 			while (j != 255) {
-				if (!strncmp(abbreviations[j],src,abbreviation_lengths[j]))
-					break;
-				else
-					j = abbreviations_next[j];
-			}
-			if (j != 255) {
-				storeCode((j>>5)+1);
-				storeCode(j&31);
-				src += abbreviation_lengths[j];
-				srcSize -= abbreviation_lengths[j];
-				continue;
+				if (!strncmp(abbreviations[j],src+i,abbreviation_lengths[j]) && (abbrevs[i] & 7) != 4)
+					++totalCount, abbrevs[i] = ((abbrevs[i] & ~0x7U) << 7) | (j << 3) | ((abbrevs[i]&7)+1);
+				j = abbreviations_next[j];
 			}
 		}
-		--srcSize;
-		uint8_t code = s_EncodedCharacters[*src++];
-		if (code == 255) {
-			storeCode(5);
-			storeCode(6);
-			storeCode(src[-1]>>5);
-			storeCode(src[-1]&31);
+		abbrevs[srcSize-1] = 0;
+		if (totalCount) {
+			// Cost array has one extra slot, always zero, to simplify logic.
+			uint16_t *costsFromHere = (uint16_t*)alloca((srcSize+1)*2);
+			costsFromHere[srcSize] = 0;
+			for (size_t i=srcSize; i--;) {
+				costsFromHere[i] = s_ZCost[src[i]] + costsFromHere[i+1];
+				if (abbrevs[i]) {
+					int thisCount = abbrevs[i] & 7, best = -1;
+					uint32_t a = abbrevs[i] >> 3;
+					while (thisCount--) {
+						uint16_t costWithPattern = 2 + costsFromHere[i + abbreviation_lengths[a & 127]];
+						if (costWithPattern < costsFromHere[i]) {
+							best = a & 127;
+							costsFromHere[i] = costWithPattern;
+						}
+						a>>=7;
+					}
+					if (best == -1)
+						abbrevs[i] = 0;
+					else // store length to save extra lookup and ensure value isn't zero
+						abbrevs[i] = best | (abbreviation_lengths[best] << 10);
+				}
+			}
+		}
+		else
+			abbrevs = nullptr;
+	}
+	for (size_t i=0; i<srcSize && (!destSize || offset < destSize);) {
+		if (abbrevs && abbrevs[i]) {
+			storeCode(((abbrevs[i] >> 5)+1) & 31);
+			storeCode(abbrevs[i] & 31);
+			i += abbrevs[i]>>10;
 		}
 		else {
-			if (code > 31)
-				storeCode(code >> 5);
-			storeCode(code & 31);
+			uint8_t code = s_EncodedCharacters[src[i]];
+			if (code == 255) {
+				storeCode(5);
+				storeCode(6);
+				storeCode(src[i]>>5);
+				storeCode(src[i]&31);
+			}
+			else {
+				if (code > 31)
+					storeCode(code >> 5);
+				storeCode(code & 31);
+			}
+			++i;
 		}
 	}
 	// pad with shift characters
@@ -2274,9 +2311,9 @@ uint16_t encode_string(uint8_t *dest,size_t destSize,const char *src,size_t srcS
 		captured_string_length = 0;
 		print_encoded_string(dest,capture_string);
 		captured_string[captured_string_length] = 0;
-		if (strcmp(captured_string,baseSrc)) {
+		if (strcmp(captured_string,src)) {
 			printf("encode_string failed.\n");
-			printf("input [%s]\n",baseSrc);
+			printf("input [%s]\n",src);
 			printf("output [%s]\n",captured_string);
 		}
 	}
@@ -2400,15 +2437,21 @@ void init(int version) {
 	// build the forward mapping
 	const char *alphabet = DEFAULT_ZSCII_ALPHABET;
 	memset(s_EncodedCharacters,0xFF,sizeof(s_EncodedCharacters));
+	memset(s_ZCost,4,sizeof(s_ZCost));
 	for (uint32_t i=0; i<26; i++) {
 		s_EncodedCharacters[alphabet[i]] = (i + 6);
+		s_ZCost[alphabet[i]] = 1;
 		s_EncodedCharacters[alphabet[i+26]] = (4<<5) | (i + 6);
+		s_ZCost[alphabet[i+26]] = 2;
 	}
-	for (uint32_t i=2; i<26; i++)
+	for (uint32_t i=2; i<26; i++) {
 		s_EncodedCharacters[alphabet[i+52]] = (5<<5) | (i + 6);
+		s_ZCost[alphabet[i+52]] = 2;
+	}
 	s_EncodedCharacters[32] = 0;
-	// s_EncodedCharacters[10] = (5 << 5) | 7;
+	s_ZCost[32] = 1;
 	s_EncodedCharacters[13] = (5 << 5) | 7;
+	s_ZCost[13] = 2;
 	// 1,2,3=abbreviations, 4=shift1, 5=shift2
 	memset(abbreviations_lut,255,sizeof(abbreviations_lut));
 	memset(abbreviations_next,255,sizeof(abbreviations_next));
@@ -3003,7 +3046,7 @@ int main(int argc,char **argv) {
 						continue;
 					*end = 0;
 					size_t sl = end - start;
-					if (sl<2 || start[0]<32 || start[0]>126 || start[1]<32 || start[1]>126)
+					if (sl<2)
 						continue;
 					abbreviations[abbreviation_count] = strcpy(NEW char[sl+1],start);
 					abbreviation_lengths[abbreviation_count++] = sl;
@@ -3131,20 +3174,25 @@ int main(int argc,char **argv) {
 
 			if (abbreviation_count) {
 				abbreviations_blob = relocatableBlob::create(abbreviation_count * 2,UD_STATIC,"abbreviation table");
-				for (int i=0; i<abbreviation_count; i++) {
+				// temporarily reset abbreviation_count so encode_string doesn't find abbreviations
+				// while trying to encode them.
+				uint8_t ac = abbreviation_count;
+				abbreviation_count = 0;
+				for (int i=0; i<ac; i++) {
 					uint16_t len = encode_string(nullptr,0,abbreviations[i],abbreviation_lengths[i]);
 					auto a = relocatableBlob::create(len,UD_STATIC_ABBREVIATION,"an abbreviation");
 					encode_string(a->contents,len,abbreviations[i],abbreviation_lengths[i]);
 					a->offset = len;
 					abbreviations_blob->addRelocation(a->index);
 				}
+				abbreviation_count = ac;
 				// Now that all abbreviations are added, built the acceleration lut
 				// Do it after we've encoded the abbreviations so we don't find the abbreviations
 				// when trying to encode them!
 				for (uint8_t i=0; i<abbreviation_count; i++) {
-					// Use a 2D LUT to identify the first two characters of the abbreviation.
+					// Use a 1D LUT to identify the first character of the abbreviation.
 					// If there's more than one, they form a linked list.
-					auto *al = &abbreviations_lut[abbreviations[i][0]-32][abbreviations[i][1]-32];
+					uint8_t *al = &abbreviations_lut[abbreviations[i][0]];
 					while (*al != 255)
 						al = &abbreviations_next[*al];
 					*al = i;
