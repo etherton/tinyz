@@ -1542,7 +1542,7 @@
 
 %token ATTRIBUTE PROPERTY GLOBAL OBJECT LOCATION ROUTINE WORDBIT ACTION HAS HASNT IN HOLDS SYNONYM CONTINUE BREAK
 %token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET PRINT_RETF SELF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF ONCE
-%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF TRACE
+%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF HASH_INCLUDE TRACE
 %token <ival> DICT ANAME PNAME LNAME GNAME INTLIT ONAME
 %token <sval> STRLIT
 %token <rval> RNAME
@@ -1783,6 +1783,7 @@ object_or_location_def
 opt_parent
 	: 						{ $$ = 0; }
 	| '(' ONAME ')'			{ $$ = $2; }
+	| IN ONAME				{ $$ = $2; }
 	;
 
 opt_property_or_attribute_list
@@ -2402,6 +2403,7 @@ void init(int version) {
 	rw["#if"] = HASH_IF;
 	rw["#else"] = HASH_ELSE;
 	rw["#endif"] = HASH_ENDIF;
+	rw["#include"] = HASH_INCLUDE;
 
 #define MACRO1(b)		(0x10000000 | uint8_t(b))
 #define MACRO3(b,t,v)	(0x30000000 | (uint8_t(b)|((t)<<8)|((v)<<16)))
@@ -2671,8 +2673,14 @@ void disassemble(uint16_t blob) {
 	}
 }
 
+struct yyfilestate {
+	char filename[64];
+	FILE *input;
+	int line;
+} yyfilestack[8];
+int yyfilestackCount;
 int yych, yylen, yypass, yyline, yyscope;
-char yytoken[32];
+char yytoken[32], yyfilename[64];
 FILE *yyinput;
 inline int yynext() { if (yych!=EOF) { yych = getc(yyinput); if (yych == 10) ++yyline; } return yych; }
 
@@ -2947,6 +2955,15 @@ unsigned yyhashstate = 1;
 int yylex() {
 RESTART:
 	int token = yylex_();
+	if (token == EOF && yyfilestackCount) {
+		auto &st = yyfilestack[--yyfilestackCount];
+		fclose(yyinput);
+		yyline = st.line;
+		yyinput = st.input;
+		strlcpy(yyfilename, st.filename, sizeof(yyfilename));
+		yych = 32;
+		goto RESTART;
+	}
 	if (token == HASH_IF) {
 		bool negated = false;
 		token = yylex_();
@@ -2983,6 +3000,26 @@ RESTART:
 	// Note that dictionary words are still added if in inactive blocks.
 	if (!(yyhashstate & 1))
 		goto RESTART;
+	if (token == HASH_INCLUDE) {
+		int oldpass = yypass;
+		yypass = 2;
+		if (yylex() != STRLIT)
+			yyerror("Expected quoted string after #include");
+		yypass = oldpass;
+		FILE *f = fopen(yylval.sval,"r");
+		if (!f)
+			yyerror("Unable to open include file '%s'",yylval.sval);
+		auto &st = yyfilestack[yyfilestackCount++];
+		strlcpy(st.filename,yyfilename,sizeof(st.filename));
+		strlcpy(yyfilename,yylval.sval,sizeof(yyfilename));
+		delete[] yylval.sval;
+		st.line = yyline;
+		st.input = yyinput;
+		yyinput = f;
+		yyline = 1;
+		yych = 32;
+		goto RESTART;
+	}
 #if YYDEBUG
 	if (yydebug) {
 		printf("(%d)",yyscope);
@@ -3000,7 +3037,7 @@ RESTART:
 void yyerror(const char *fmt,...) {
 	va_list args;
 	va_start(args,fmt);
-	fprintf(stderr,"line %d: ",yyline);
+	fprintf(stderr,"(%s,%d): ",yyfilename,yyline);
 	vfprintf(stderr,fmt,args);
 	putc('\n',stderr);
 	va_end(args);
@@ -3125,6 +3162,7 @@ int main(int argc,char **argv) {
 
 	for (yypass=1; yypass<=2; yypass++) {
 		yyinput = fopen(argv[0],"r");
+		strlcpy(yyfilename,argv[0],sizeof(yyfilename));
 		int nextObject = 1;
 		yych = 32;
 		yyline = 1;
@@ -3250,6 +3288,8 @@ int main(int argc,char **argv) {
 			globals_blob->addRelocation(synonyms_blob->index);
 			uint8_t objSize = the_header.version==3? 9 : 14;
 			uint8_t defPropCount = the_header.version==3? 31 : 63;
+			if (the_header.version==3 && the_object_table.size()>255)
+				yyerror("too many objects (%d) for v3 story",the_object_table.size());
 			object_blob = relocatableBlob::create((the_object_table.size()-1)*objSize + defPropCount*2,UD_DYNAMIC,"object table");
 			for (int i=1; i<=defPropCount; i++)
 				object_blob->storeWord(property_defaults[i]);
