@@ -36,6 +36,7 @@ attribute object supporter;
 attribute object clothing;
 
 attribute location lit;
+attribute location visited;
 
 // plain properties can be attached to rooms or objects
 // object properties can only be attached to objects
@@ -58,9 +59,27 @@ property location w_to;
 property location up_to;
 property location down_to;
 
+// Parent for all locations
+location Locations "Locations" {
+}
+
+location CompassRose "Compass" {
+	n_to: print "north",rfalse;
+	ne_to: print "northeast",rfalse;
+	nw_to: print "northwest",rfalse;
+	s_to: print "south",rfalse;
+	se_to: print "southeast",rfalse;
+	sw_to: print "southwest",rfalse;
+	e_to: print "west",rfalse;
+	w_to: print "east",rfalse;
+	up_to: print "upward",rfalse;
+	down_to: print "downward",rfalse;
+}
+
 // set the specified bit in these words.
 wordbit dirBit 'north' 'south' 'east' 'west' 'northwest' 'northeast' 'southwest' 'southeast' 'up' 'down';
 wordbit artBit 'a' 'an' 'the';
+
 
 // Map a word to a direction property or zero if no match.
 // (property indices cannot be zero)
@@ -85,6 +104,21 @@ routine Compass [word] {
 		return down_to;
 	else
 		rfalse;
+}
+
+routine Capitalize [printIt; i] {
+	output_stream2(3,text_buffer);
+	call printIt();
+	output_stream(-3);
+	if (text_buffer[2] >= @a and text_buffer[2] <= @z) {
+		print_char(text_buffer[2] - 32);
+		++i;
+	}
+	while (i < text_buffer[[0]]) {
+		print_char text_buffer[i + 2];
+		++i;
+	}
+	rfalse;
 }
 
 // the first three must be in this order for status line (v3) games.
@@ -167,6 +201,28 @@ routine CallAfter [act obj;r] {
 	rtrue;
 }
 
+
+routine Exits [;i] {
+	i = n_to;
+	while (i <= down_to) {
+		if (isnonzero room.i) {
+			if (room.i has visited) {
+				Capitalize(CompassRose.i);
+				print " leads to ";
+				print_obj room.i;
+				print ".^";
+			}
+			else {
+				print "There is an exit to the ";
+				call CompassRose.i();
+				print ".^";
+			}
+		}
+		++i;
+	}
+	rfalse;
+}
+
 routine Look [; i r f] {
 	if (room hasn't lit)
 		print_ret "It's too dark to see anything.";
@@ -180,6 +236,8 @@ routine Look [; i r f] {
 			}
 		} while (i has sibling -> i);
 	}
+	Exits();
+	room gains visited;
 	return r;
 }
 

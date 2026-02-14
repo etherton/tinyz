@@ -1,14 +1,11 @@
 // demonstration game for TinyZ
 // Copyright 2026, David C Etherton
 // MIT License.
-#include "core.tzh"
 
 object Player "Player" in Grotto {
 }
 
-// Parent for all locations
-location Locations "Locations" {
-}
+#include "core.tzh"
 
 location Grotto "Secluded Grotto" in Locations {
 	n_to: Riverbed;

@@ -1,4 +1,4 @@
-all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5
+all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3
 
 tinyzcd: opcodes.h header.h tinyz.y debug.h debug.cpp Makefile
 	bison --debug tinyz.y -v -o tinyz.debug.tab.cpp && clang++ -DDEBUG_MEM=1 -g -std=c++17 tinyz.debug.tab.cpp debug.cpp -o tinyzcd
@@ -23,6 +23,9 @@ cloak.z4: cloak.tz tinyzc Makefile
 
 cloak.z5: cloak.tz tinyzc Makefile
 	./tinyzc -z5 -Acloak.abbrev -g -r cloak.tz > cloak.z5.txt
+
+demogame.z3: demogame.tz core.tzh Makefile
+	./tinyzc -z3 demogame.tz
 
 debug3: cloak.z3 Makefile tinyzterpd
 	./tinyzterpd cloak.z3 -debug -di cloak.z3.dbg
