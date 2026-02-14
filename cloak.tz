@@ -135,11 +135,11 @@ location Locations "The World" {
 // of the word at the leftmost column of the next line.
 location foyer "Foyer of the Opera House" (Locations) { 
 	description: 
-		"You are standing in a spacious hall, splendidly decorated in red
+		print_ret "You are standing in a spacious hall, splendidly decorated in red
 		and gold, with glittering chandeliers overhead. The entrance from
 		the street is to the north, and there are doorways south and west.";
 	s_to: bar;
-	n_to: "You've only just arrived, and besides, the weather outside seems
+	n_to: print_ret "You've only just arrived, and besides, the weather outside seems
 	    to be getting worse.";
 	w_to: cloakroom;
 	lit;
@@ -147,7 +147,7 @@ location foyer "Foyer of the Opera House" (Locations) {
 
 object Aardvark "aardvark" (foyer) {
 	noun: 'aardvark';
-	description: "It's here to test printing an object starting with a vowel.";
+	description: print_ret "It's here to test printing an object starting with a vowel.";
 	vowel;
 }
 
@@ -162,7 +162,7 @@ object Aardvark "aardvark" (foyer) {
 //   routine_defintion
 // routine_definition: '[' [params..] [';' locals..] ']' '{' stmts '}'
 location cloakroom "Cloakroom" (Locations) {
-	description: "The walls of this small room were clearly once lined with hooks,
+	description: print_ret "The walls of this small room were clearly once lined with hooks,
 	 	though now only one remains. The exit is a door to the east.";
 	e_to: foyer;
 	lit;
@@ -184,21 +184,21 @@ object hook "small brass hook" (cloakroom) {
 object hat "nondescript hat" (foyer) {
 	adjective: 'boring' 'nondescript';
 	noun: 'hat';
-	description: "It's a really boring hat just meant to test the cloakroom";
+	description: print_ret "It's a really boring hat just meant to test the cloakroom";
 	clothing;
 }
 
 object hat2 "fancy hat" (foyer) {
 	adjective: 'fancy' 'handsome';
 	noun: 'hat';
-	description: "It's a fancy hat that also tests the cloakroom";
+	description: print_ret "It's a fancy hat that also tests the cloakroom";
 	clothing;
 }
 
 global message_damage;
 
 location bar "Foyer Bar" (Locations) {
-	description: "The bar, much rougher than you'd have guessed after the opulence
+	description: print_ret "The bar, much rougher than you'd have guessed after the opulence
 			of the foyer to the north, is completely empty. There seems to
 			be some sort of message scrawled in the sawdust on the floor.";
 	n_to: foyer;
