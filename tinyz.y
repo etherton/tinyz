@@ -1819,6 +1819,23 @@ property_or_attribute
 
 pvalue
 	: ONAME ';' { $$ = relocatableBlob::createInt($1,currentProperty); }
+	| PRINT print_sequence ';'
+		{
+			open_scope();
+			auto p = relocatableBlob::createProperty(2,currentProperty);
+			p->addRelocation(emit_routine(0,NEW stmts($2)));
+			close_scope();
+			$$ = p->index;
+		}
+	| PRINT_RET print_sequence ';'
+		{
+			open_scope();
+			auto p = relocatableBlob::createProperty(2,currentProperty);
+			stmt_print::modify($2,_0op::print_ret,false);
+			p->addRelocation(emit_routine(0,NEW stmts($2)));
+			close_scope();
+			$$ = p->index;
+		}
 	| STRLIT ';'
 		{
 			// string literal is just a shorthand for the address of a routine that calls print_ret with that string
@@ -2056,7 +2073,6 @@ expr
 	| expr '|' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::or_,$3,[](int16_t a,int16_t b)->int16_t{return a|b;})); }
 	| expr LSH expr		{ $$ = NEW expr_binary_log_shift($1,$3); }
 	| expr RSH expr		{ $$ = NEW expr_binary_log_shift($1,NEW expr_binary(NEW expr_literal(0),_2op::sub,$3)); }
-	| objref '.' pname	{ $$ = NEW expr_binary($1,_2op::get_prop,$3); }
 	| ADDROF '(' objref '.' pname ')' { $$ = NEW expr_binary($3,_2op::get_prop_addr,$5); }
 	| SIZEOF '(' expr ')' { $$ = NEW expr_unary(_1op::get_prop_len,$3); }
 	| '(' expr ')'  	{ $$ = expr::fold_constant($2); }
@@ -2137,6 +2153,7 @@ objref
 	: ONAME			{ $$ = NEW expr_literal($1); }
 	| SELF			{ $$ = NEW expr_literal(self_value); }
 	| vname			{ $$ = NEW expr_variable($1); }
+	| objref '.' pname	{ $$ = NEW expr_binary($1,_2op::get_prop,$3); }
 	| objref PARENT { $$ = NEW expr_unary(_1op::get_parent,$1); }
 	| objref CHILD 	{ $$ = NEW expr_unary(_1op::get_child,$1); }
 	| objref SIBLING { $$ = NEW expr_unary(_1op::get_sibling,$1); }
