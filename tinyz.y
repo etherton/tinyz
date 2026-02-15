@@ -1542,7 +1542,7 @@
 
 %token ATTRIBUTE PROPERTY GLOBAL OBJECT LOCATION ROUTINE WORDBIT ACTION HAS HASNT IN HOLDS SYNONYM CONTINUE BREAK
 %token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET PRINT_RETF SELF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF ONCE
-%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF HASH_INCLUDE TRACE
+%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF HASH_INCLUDE TRACE UNPARENT
 %token <ival> DICT ANAME PNAME LNAME GNAME INTLIT ONAME
 %token <sval> STRLIT
 %token <rval> RNAME
@@ -2023,6 +2023,7 @@ stmt
 	| objref GAINS aname ';' 		{ $$ = NEW stmt_2op(_2op::set_attr,$1,$3); }
 	| objref LOSES aname ';'		{ $$ = NEW stmt_2op(_2op::clear_attr,$1,$3); }
 	| MOVE objref INTO objref ';'	{ $$ = NEW stmt_2op(_2op::insert_obj,$2,$4); }
+	| UNPARENT objref ';'			{ $$ = NEW stmt_1op(_1op::remove_obj,$2); }
 	| CONTINUE ';'					{ $$ = NEW stmt_continue(); }
 	| BREAK ';'						{ $$ = NEW stmt_break(); }
 	; 
@@ -2405,6 +2406,7 @@ void init(int version) {
 	rw["trace"] = TRACE;
 	rw["self"] = SELF;
 	rw["move"] = MOVE;
+	rw["unparent"] = UNPARENT;
 	rw["into"] = INTO;
 	rw["sizeof"] = SIZEOF;
 	rw["addrof"] = ADDROF;
@@ -2460,12 +2462,14 @@ void init(int version) {
 		f_0op["reverse"] = MACRO3(_var::set_text_style,0x7F,1);
 		f_0op["italic"] = MACRO3(_var::set_text_style,0x7F,2);
 		f_0op["bold"] = MACRO3(_var::set_text_style,0x7F,4);
+		f_0op["fixed"] = MACRO3(_var::set_text_style,0x7F,8);
 	}
 	else {
 		f_0op["normal"] = 0;
 		f_0op["reverse"] = 0;
 		f_0op["italic"] = 0;
 		f_0op["bold"] = 0;
+		f_0op["fixed"] = 0;
 	}
 
 	if (version >= 5) {
@@ -3009,7 +3013,7 @@ RESTART:
 		goto RESTART;
 	}
 	else if (token == HASH_ENDIF) {
-		if (!yyhashstate)
+		if (yyhashstate==1)
 			yyerror("#endif without any #if");
 		yyhashstate >>= 1;
 		goto RESTART;
