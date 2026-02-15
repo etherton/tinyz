@@ -62,6 +62,7 @@
 				backtrace_symbols_fd(da.stack,da.stored,fileno(stdout));
 				#endif
 			}
+			exit(1);
 		}
 	}
 	void *operator new[](size_t s) { return debug_alloc(s,0); }
@@ -1548,7 +1549,7 @@
 %token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET PRINT_RETF SELF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF ONCE
 %token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF HASH_INCLUDE TRACE UNPARENT
 %token <ival> DICT ANAME PNAME LNAME GNAME INTLIT ONAME
-%token <sval> STRLIT
+%token <sval> STRLIT CSTRLIT
 %token <rval> RNAME
 %token <sym> NEWSYM
 %token WHILE REPEAT IF ELSE
@@ -1848,6 +1849,17 @@ pvalue
 			p->addRelocation(emit_routine(0,NEW stmt_print(_0op::print_ret,false,$1)));
 			close_scope();
 			$$ = p->index;
+		}
+	| CSTRLIT ';' 
+		{
+			// this is a counted string (first byte is length) in static memory, not high memory
+			auto s = relocatableBlob::create(strlen($1)+1,UD_STATIC);
+			s->storeByte(strlen($1));
+			s->copy((const uint8_t*)($1),strlen($1));
+			auto p = relocatableBlob::createProperty(2,currentProperty);
+			p->addRelocation(s->index);
+			$$ = p->index;
+			delete $1;
 		}
 	| INTLIT ';' { $$ = relocatableBlob::createInt($1,currentProperty); }
 	| routine_body { 
@@ -2929,6 +2941,7 @@ int yylex_() {
 			}
 			return DICT;
 		}
+		case '`':
 		case '"': {
 			const unsigned maxString = 512;
 			char sval[maxString];
@@ -2964,7 +2977,7 @@ NEWLINE:
 				yylval.sval = nullptr;
 			else
 				memcpy((char*)(yylval.sval = new char[offset]), sval, offset);
-			return STRLIT;
+			return term=='`'? CSTRLIT : STRLIT;
 		}
 		default:
 			yyerror("unknown character %c in input",yych);

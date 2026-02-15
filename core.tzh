@@ -75,16 +75,16 @@ location Locations "Locations" {
 }
 
 location CompassRose "Compass" {
-	n_to: print "north",rfalse;
-	ne_to: print "northeast",rfalse;
-	nw_to: print "northwest",rfalse;
-	s_to: print "south",rfalse;
-	se_to: print "southeast",rfalse;
-	sw_to: print "southwest",rfalse;
-	e_to: print "west",rfalse;
-	w_to: print "east",rfalse;
-	up_to: print "upward",rfalse;
-	down_to: print "downward",rfalse;
+	n_to: `north`;
+	ne_to: `northeast`;
+	nw_to: `northwest`;
+	s_to: `south`;
+	se_to: `southeast`;
+	sw_to: `southwest`;
+	e_to: `west`;
+	w_to: `east`;
+	up_to: `upward`;
+	down_to: `downward`;
 }
 
 // set the specified bit in these words.
@@ -117,19 +117,28 @@ routine Compass [word] {
 		rfalse;
 }
 
-routine Capitalize [printIt; i] {
-	output_stream2(3,text_buffer);
-	call printIt();
-	output_stream(-3);
-	if (text_buffer[2] >= @a and text_buffer[2] <= @z) {
-		print_char(text_buffer[2] - 32);
+routine PrStr [cstr i] {
+	while (i < cstr[0]) {
 		++i;
-	}
-	while (i < text_buffer[[0]]) {
-		print_char text_buffer[i + 2];
-		++i;
+		print_char(cstr[i]);
 	}
 	rfalse;
+}
+
+routine Lowercase [cstr; i] {
+	if (cstr[1] >= @A and cstr[1] <= @Z) {
+		print_char(cstr[1] + 32);
+		++i;
+	}
+	return PrStr(cstr,i);
+}
+
+routine Uppercase [cstr; i] {
+	if (cstr[1] >= @a and cstr[1] <= @z) {
+		print_char(cstr[1] - 32);
+		++i;
+	}
+	return PrStr(cstr,i);
 }
 
 // the first three must be in this order for status line (v3) games.
@@ -218,14 +227,14 @@ routine Exits [;i] {
 	while (i <= down_to) {
 		if (isnonzero room.i) {
 			if (room.i has visited) {
-				Capitalize(CompassRose.i);
+				Uppercase(CompassRose.i);
 				print " leads to ";
 				print_obj room.i;
 				print ".^";
 			}
 			else {
 				print "There is an exit to the ";
-				call CompassRose.i();
+				PrStr(CompassRose.i);
 				print ".^";
 			}
 		}
