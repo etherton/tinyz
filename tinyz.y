@@ -390,6 +390,7 @@
 	void emitvarop(_var op,operand o0,operand o1);
 	void emitvarop(_var op,operand o0,operand o1,operand o2);
 	void emitvarop(_var op,operand o0,operand o1,operand o2,operand o3);
+	void emitvarop(_var op,operand o[8]);
 	void emit2op(operand l,_2op op,operand r);
 	void emit1op(_1op op,operand un);
 	void emit0op(_0op op) { emitByte(uint8_t(op)); }
@@ -827,26 +828,49 @@
 		list_node<expr*> *args;
 		// TODO: v3 only supports VAR call (3 params). v4 supports 1/2 operand with result and 7 params.
 		// v5 supports implicit pop versions of all calls
+		static void fill_operands(operand dest[8],list_node<expr*> *a) {
+			// args need to be pushed onto stack in reverse order so do recursion first.
+			if (a->cdr)
+				fill_operands(dest+1,a->cdr);
+			a->car->eval(dest[0]);
+		}
 		virtual void emit(uint8_t dest) const {
-			operand o1, o2, o3, o4;
-			if (args->size()>=4)
-				args->cdr->cdr->cdr->car->eval(o4);
-			else
-				o4.type = optype::omitted;
-			if (args->size()>=3)
-				args->cdr->cdr->car->eval(o3);
-			else
-				o3.type = optype::omitted;
-			if (args->size()>=2)
-				args->cdr->car->eval(o2);
-			else
-				o2.type = optype::omitted;
-			if (args->size()>=1)
-				args->car->eval(o1);
-			else
-				o1.type = optype::omitted;
-			emitvarop(_var::call_vs,o1,o2,o3,o4);
-			emitByte(dest);
+			operand o[8];
+			for (int i=0; i<8; i++)
+				o[i].type = optype::omitted;
+			fill_operands(o,args);
+			if (the_header.version>=4 && args->size()==1 && o[0].type!=optype::large_constant) {
+				if (the_header.version<5 || dest!=16+SCRATCH) {
+					emit1op(_1op::call_1s,o[0]);
+					emitByte(dest);
+				}
+				else
+					emit1op(_1op::call_1n,o[0]);
+			}
+			else if (the_header.version>=4 && args->size()==2 && o[0].type!=optype::large_constant && o[1].type!=optype::large_constant) {
+				if (the_header.version<5 || dest!=16+SCRATCH) {
+					emit2op(o[0],_2op::call_2s,o[1]);
+					emitByte(dest);
+				}
+				else
+					emit2op(o[0],_2op::call_2n,o[1]);
+			}
+			else {
+				if (args->size() > 4) {
+					if (the_header.version<5 || dest!=16+SCRATCH) {
+						emitvarop(_var::call_vs2,o);
+						emitByte(dest);
+					}
+					else
+						emitvarop(_var::call_vn2,o);
+				}
+				else if (the_header.version<5 || dest!=16+SCRATCH) {
+					emitvarop(_var::call_vs,o[0],o[1],o[2],o[3]);
+					emitByte(dest);
+				}
+				else
+					emitvarop(_var::call_vn,o[0],o[1],o[2],o[3]);
+			}
 		}
 		unsigned size() const {
 			// size %zd\n",args->size(),3 + args->size()*2);
@@ -2626,6 +2650,14 @@ void emitvarop(operand lval,_2op opcode,operand rval1,operand rval2,operand rval
 	emitOperand(rval1);
 	emitOperand(rval2);
 	emitOperand(rval3);
+}
+
+void emitvarop(_var opcode,operand op[8]) {
+	emitByte((uint8_t)opcode);
+	emitByte((uint8_t(op[0].type) << 6) | (uint8_t(op[1].type) << 4) | (uint8_t(op[2].type) << 2) | uint8_t(op[3].type));
+	emitByte((uint8_t(op[4].type) << 6) | (uint8_t(op[5].type) << 4) | (uint8_t(op[6].type) << 2) | uint8_t(op[7].type));
+	for (int i=0; i<8; i++)
+		emitOperand(op[i]);
 }
 
 void disassemble(uint16_t blob) {
