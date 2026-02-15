@@ -661,14 +661,18 @@
 		void emit(uint8_t dest) const {
 			operand uval;
 			unary->eval(uval);
-			emit1op(opcode,uval);
+			if (opcode == _1op::not_ && the_header.version>=5)
+				emitvarop(_var::not_,uval);
+			else
+				emit1op(opcode,uval);
 			emitByte(dest);
 			// emit a dummy branch to next instruction.
 			if (opcode == _1op::get_sibling || opcode == _1op::get_child)
 				emitByte(0x42);
 		}
 		unsigned size() const {
-			return 1 + unary->opsize() + 1 + (opcode == _1op::get_sibling || opcode == _1op::get_child);
+			return 1 + unary->opsize() + 1 + (opcode == _1op::get_sibling || opcode == _1op::get_child || 
+				(opcode==_1op::not_ && the_header.version>=5? 2 : 0));
 		}
 		void dump() const {
 			spaces(); printf("%s\n",opcode_names[(uint8_t)opcode | 0x80]);
