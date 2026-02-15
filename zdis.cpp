@@ -104,8 +104,9 @@ int dis(const storyHeader *h,int pc,pf xprintf = printf,debug::routine_info *ri 
 				snprintf(buf,sizeof(buf),"L%d",t-1);
 		}
 		else {
-			if (const char *s = di.globals[t-16].c_str())
-				strlcpy(buf,s,sizeof(buf));
+			auto it = di.globals.find(t-16);
+			if (it != di.globals.end())
+				strlcpy(buf,it->second.c_str(),sizeof(buf));
 			else
 				snprintf(buf,sizeof(buf),"G%d",t-16);
 		}
