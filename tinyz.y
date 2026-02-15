@@ -1581,7 +1581,7 @@
 
 %type <eval> expr pname objref primary aname arg
 %type <brval> bool_expr cond_expr
-%type <ival> vname opt_parent opt_default opt_wordbit opt_arrow has_or_hasnt phrase dict
+%type <ival> vname opt_parent opt_default opt_wordbit opt_arrow has_or_hasnt phrase dict counted_string
 %type <rval> routine_body pvalue rname
 %type <scopeval> scope
 %type <dlist> dict_list;
@@ -1850,16 +1850,11 @@ pvalue
 			close_scope();
 			$$ = p->index;
 		}
-	| CSTRLIT ';' 
+	| counted_string ';' 
 		{
-			// this is a counted string (first byte is length) in static memory, not high memory
-			auto s = relocatableBlob::create(strlen($1)+1,UD_STATIC);
-			s->storeByte(strlen($1));
-			s->copy((const uint8_t*)($1),strlen($1));
 			auto p = relocatableBlob::createProperty(2,currentProperty);
-			p->addRelocation(s->index);
+			p->addRelocation($1);
 			$$ = p->index;
-			delete $1;
 		}
 	| INTLIT ';' { $$ = relocatableBlob::createInt($1,currentProperty); }
 	| routine_body { 
@@ -1878,6 +1873,21 @@ pvalue
 		}
 		delete $1;
 	}
+	;
+
+counted_string
+	: CSTRLIT
+		{
+			// this is a counted string (first byte is length) in static memory, not high memory
+			size_t len = strlen($1);
+			if (len > 255)
+				yyerror("counted string is %zu characters, cannot be more than 255",len);
+			auto cs = relocatableBlob::create(len+1,UD_STATIC);
+			cs->storeByte(len);
+			cs->copy((uint8_t*)$1,len);
+			$$ = cs->index;
+			delete[] $1;
+		}
 	;
 
 routine_def

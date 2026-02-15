@@ -45,3 +45,5 @@ run4: cloak.z4 Makefile tinyzterp
 run5: cloak.z5 Makefile tinyzterp
 	./tinyzterp cloak.z5 cloak.z5.dbg
 	
+check:
+	./tinyzcd demogame.tz
