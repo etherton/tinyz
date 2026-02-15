@@ -790,7 +790,7 @@ void machine::run(uint32_t pc) {
 					ref(dest,true).set(operands[0].getS() % operands[1].getS()); break;
 				case _2op::call_2s: pc = call(pc,dest,operands,opCount); break;
 				case _2op::call_2n: pc = call(pc,-1,operands,opCount); break;
-				case _2op::set_colour: interface::setTextColor(operands[0].lo,operands[1].lo); break;
+				case _2op::set_colour: flushMainWindow(); interface::setTextColor(operands[0].lo,operands[1].lo); break;
 				default: fault("illegal 2OP opcode"); break;
 			}
 		}
