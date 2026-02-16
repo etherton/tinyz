@@ -10,6 +10,7 @@
 	#include <set>
 	#include <map>
 	#include <cassert>
+	#include <string_view>
 
 #if DEBUG_MEM
 	#include <malloc/malloc.h>
@@ -128,7 +129,9 @@
 		}
 		else
 			fprintf(gametext,"%c: %s\n",ch,s);
-}
+	}
+	
+	std::map<size_t,uint16_t> the_counted_strings;
 
 	const uint16_t UD_DYNAMIC = 1;
 	const uint16_t UD_STATIC = 2;
@@ -1902,6 +1905,13 @@ pvalue
 counted_string
 	: CSTRLIT
 		{
+			auto sv = std::string_view($1);
+			auto hashValue = std::hash<std::string_view>()(sv);
+			auto prev = the_counted_strings.find(hashValue);
+			if (prev != the_counted_strings.end()) {
+				delete[] $1;
+				return prev->second;
+			}
 			// this is a counted string (first byte is length) in static memory, not high memory
 			size_t len = strlen($1);
 			if (len > 255)
@@ -1910,6 +1920,7 @@ counted_string
 			cs->storeByte(len);
 			cs->copy((uint8_t*)$1,len);
 			$$ = cs->index;
+			the_counted_strings[hashValue] = cs->index;
 			delete[] $1;
 		}
 	;
@@ -3135,7 +3146,7 @@ int main(int argc,char **argv) {
 
 	int zversion = 3;
 	int release_number = 0;
-	enum { R_OBJECTS=1,R_ROUTINES=2,R_GLOBALS=4,R_DICTIONARY=8,R_ACTIONS=16,R_SUMMARY=32,R_ALL=63};
+	enum { R_OBJECTS=1,R_ROUTINES=2,R_GLOBALS=4,R_DICTIONARY=8,R_ACTIONS=16,R_SUMMARY=32,R_STRINGS=64,R_ALL=127};
 	int report = 0;
 	const char *help = 
 			"-aFILE         write Inform-style gametext file\n"
@@ -3207,6 +3218,7 @@ int main(int argc,char **argv) {
 			}
 			case 'r':  if (*arg) while (*arg) switch (*arg++) {
 				case 'S': report |= R_SUMMARY; break;
+				case 'C': report |= R_STRINGS; break;
 				case 'O': report |= R_OBJECTS; break;
 				case 'R': report |= R_ROUTINES; break;
 				case 'G': report |= R_GLOBALS; break;
@@ -3465,6 +3477,12 @@ int main(int argc,char **argv) {
 				for (int i=0; i<globals_blob->size; i+=2)
 					printf("global %d value %04x\n",i>>1,(globals_blob->contents[i] << 8) | globals_blob->contents[i+1]);
 			}
+			if (report & R_STRINGS) {
+				for (auto &it: the_counted_strings) {
+					auto &r = the_relocations[it.second];
+					printf("counted string @%06x [%*.*s]\n",r->address,r->contents[0],r->contents[0],(char*)r->contents+1);
+				}
+			}
 			if (report & R_DICTIONARY) {
 				uint8_t *d = dictionary_blob->contents + 7;
 				int dc = (dictionary_blob->contents[5] << 8) | dictionary_blob->contents[6];
@@ -3527,6 +3545,7 @@ int main(int argc,char **argv) {
 			f_2op.clear();
 			f_varop1.clear();
 			f_varop2.clear();
+			the_counted_strings.clear();
 			delete rfalseLabel;
 			delete rtrueLabel;
 			while (abbreviation_count)
