@@ -663,7 +663,7 @@
 		void emit(uint8_t dest) const {
 			operand uval;
 			unary->eval(uval);
-			if (opcode == _1op::not_ && the_header.version>=5)
+			if (opcode == _1op::not_call_1n && the_header.version>=5)
 				emitvarop(_var::not_,uval);
 			else
 				emit1op(opcode,uval);
@@ -674,7 +674,7 @@
 		}
 		unsigned size() const {
 			return 1 + unary->opsize() + 1 + (opcode == _1op::get_sibling || opcode == _1op::get_child || 
-				(opcode==_1op::not_ && the_header.version>=5? 2 : 0));
+				(opcode==_1op::not_call_1n && the_header.version>=5? 2 : 0));
 		}
 		void dump() const {
 			spaces(); printf("%s\n",opcode_names[(uint8_t)opcode | 0x80]);
@@ -845,7 +845,7 @@
 					emitByte(dest);
 				}
 				else
-					emit1op(_1op::call_1n,o[0]);
+					emit1op(_1op::not_call_1n,o[0]);
 			}
 			else if (the_header.version>=4 && args->size()==2 && o[0].type!=optype::large_constant && o[1].type!=optype::large_constant) {
 				if (the_header.version<5 || dest!=16+SCRATCH) {
@@ -2119,7 +2119,7 @@ expr
 	| expr '*' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::mul,$3,[](int16_t a,int16_t b)->int16_t{return a*b;})); }
 	| expr '/' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::div,$3,[](int16_t a,int16_t b)->int16_t{if (!b) yyerror("division by zero"); return a/b;})); }
 	| expr '%' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::mod,$3,[](int16_t a,int16_t b)->int16_t{if (!b) yyerror("modulo by zero"); return a%b;})); }
-	| '~' expr      	{ $$ = NEW expr_unary(_1op::not_,$2); }
+	| '~' expr      	{ $$ = NEW expr_unary(_1op::not_call_1n,$2); }
 	| expr '&' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::and_,$3,[](int16_t a,int16_t b)->int16_t{return a&b;})); }
 	| expr '|' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::or_,$3,[](int16_t a,int16_t b)->int16_t{return a|b;})); }
 	| expr LSH expr		{ $$ = NEW expr_binary_log_shift($1,$3); }

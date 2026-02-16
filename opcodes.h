@@ -92,12 +92,12 @@ enum class _2op: uint8_t { // 0x00 - 0x7F, 0xC0-0xDF
 
 enum class _1op: uint8_t { // 0x80 - 0xAF
 	jz, get_sibling, get_child, get_parent, get_prop_len, inc, dec, print_addr,
-	call_1s, remove_obj, print_obj, ret, jump, print_paddr, load, not_, call_1n=not_
+	call_1s, remove_obj, print_obj, ret, jump, print_paddr, load, not_call_1n,
 };
 
 enum class _0op: uint8_t { // 0xB0 - 0xBF
 	rtrue=0xB0, rfalse, print, print_ret, nop, save, restore, restart,
-	ret_popped, pop, catch_=pop, quit, new_line, show_status, verify, extended, piracy,
+	ret_popped, pop_catch, quit, new_line, show_status, verify, extended, piracy,
 	je=0xC1
 };
 

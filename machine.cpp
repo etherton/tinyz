@@ -185,7 +185,7 @@ uint32_t machine::r_return(uint16_t v) {
 	if (m_debug > 1)
 		printf("returning %04x to caller, sp now %03x; ",v,m_lp);
 #endif
-		m_sp = m_lp;
+	m_sp = m_lp;
 	int32_t pc = m_stack[m_sp].getU() | ((m_stack[m_sp+1].getU() >> 13) << 16);
 	m_lp = m_stack[m_sp+1].getU() & (kStackSize-1);
 	int addr = m_stack[m_sp+2].getS() >> 5;
@@ -791,6 +791,7 @@ void machine::run(uint32_t pc) {
 				case _2op::call_2s: pc = call(pc,dest,operands,opCount); break;
 				case _2op::call_2n: pc = call(pc,-1,operands,opCount); break;
 				case _2op::set_colour: flushMainWindow(); interface::setTextColor(operands[0].lo,operands[1].lo); break;
+				case _2op::throw_: m_lp = operands[1].getU(); pc = r_return(operands[0].getU()); break;
 				default: fault("illegal 2OP opcode"); break;
 			}
 		}
@@ -813,7 +814,7 @@ void machine::run(uint32_t pc) {
 				case _1op::jump: pc += operands[0].getS() - 2; break;
 				case _1op::print_paddr: print_zscii(m_staticStringOffset + (operands[0].getU() << m_storyShift)); break;
 				case _1op::load: ref(dest,true) = var(operands[0].getS()); break;
-				case _1op::not_: if (m_header->version < 5) ref(dest,true).set(~operands[0].getU());
+				case _1op::not_call_1n: if (m_header->version < 5) ref(dest,true).set(~operands[0].getU());
 					  else pc = call(pc,-1,operands,opCount); break;
 			}
 		}
@@ -833,7 +834,8 @@ void machine::run(uint32_t pc) {
 							pc = m_header->initialPCAddr.getU();
 							 break;
 				case _0op::ret_popped: if (!m_sp) fault("stack underflow in ret_popped"); pc = r_return(m_stack[--m_sp].getU()); break;
-				case _0op::pop: if (!m_sp) fault("stack underflow in pop"); --m_sp; break;
+				case _0op::pop_catch: if (m_header->version<5) { if (!m_sp) fault("stack underflow in pop"); --m_sp; }
+						else { ref(dest,true) = word2word(m_lp); } break;
 				case _0op::quit: exit(0); break;
 				case _0op::new_line: print_char(13); break;
 				case _0op::show_status: showStatus(); break;
