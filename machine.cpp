@@ -477,7 +477,7 @@ uint8_t machine::tokenise(uint16_t textAddr,uint16_t parseAddr,uint8_t offset) {
 		encode_text(zword,(char*)m_dynamic + textAddr + offset,wordLen);
 		// printf("{{%04x,%04x}}\n",zword[0].getU(),zword[1].getU());
 		void *result = bsearch(zword,m_readOnly + dictAddr,numWords,entryLength,
-			m_header->version<5? 
+			m_header->version<4? 
 				[](const void *a,const void *b) { return memcmp(a,b,4); } : 
 				[](const void *a,const void *b) { return memcmp(a,b,6); });
 
