@@ -351,7 +351,7 @@ a bit different than you might be used to in C-based language. You'll find you n
 `'dictionary-word'`\
 Evaluates the the index associated with a particular dictionary word. Up to two words are allowed in action statements, but you must use single words everywhere else.
 
-`&backq;counted-string&backq;`\
+`` `counted-string` ``\
 The supplied string is stored in static memory. If the exact same counted string appears multiple times, it is
 only stored once. A counted string evaluates to the address of its length byte, which is followed by the remaining
 letters in the string, stored one byte per letter in standard Zscii.
