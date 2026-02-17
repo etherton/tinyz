@@ -209,8 +209,9 @@ and locals, which are treated identically by the Z machine.
 `if (branch-expr) stmt`\
 `if (branch-expr) stmt else stmt`\
 `while (branch-expr) stmt`\
+`for (opt-initializer;opt-branch-expr;opt-continue) stmt`\
 `repeat stmt while (branch-expr);`\
-These all define basic flow control. `break` and `continue` can appear inside them.
+These all define basic flow control. `break` and `continue` can appear inside while, for, and repeat loops.
 
 `{ stmt.. }` This is a block statement.
 
@@ -350,7 +351,7 @@ a bit different than you might be used to in C-based language. You'll find you n
 `'dictionary-word'`\
 Evaluates the the index associated with a particular dictionary word. Up to two words are allowed in action statements, but you must use single words everywhere else.
 
-`\`counted-string\``\
+`&backq;counted-string&backq;`\
 The supplied string is stored in static memory. If the exact same counted string appears multiple times, it is
 only stored once. A counted string evaluates to the address of its length byte, which is followed by the remaining
 letters in the string, stored one byte per letter in standard Zscii.

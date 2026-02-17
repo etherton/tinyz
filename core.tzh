@@ -223,8 +223,7 @@ routine CallAfter [act obj;r] {
 
 
 routine Exits [;i] {
-	i = n_to;
-	while (i <= down_to) {
+	for (i = n_to; i <= down_to; ++i) {
 		if (isnonzero room.i) {
 			if (room.i has visited) {
 				Uppercase(CompassRose.i);
@@ -238,7 +237,6 @@ routine Exits [;i] {
 				print ".^";
 			}
 		}
-		++i;
 	}
 	rfalse;
 }

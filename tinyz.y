@@ -1216,6 +1216,43 @@
 			return ifFalse && ifFalse->isReturn() && ifTrue->isReturn();
 		}
 	};
+	struct stmt_for: public stmt_flow {
+		stmt_for(stmt *a,expr_branch *b,stmt *c,stmt *d) : init(a), cond(b), post(c), body(d) { }
+		~stmt_for() { delete init; delete cond; delete post; delete body; }
+		stmt *init, *post, *body;
+		expr_branch *cond;
+		void emit() const {
+			if (init)
+				init->emit();
+			label falseBranch = createLabel(), postBranch = createLabel(), top = createLabelHere();
+			if (!post)
+				placeLabel(postBranch);
+			flow_stack.push_back(std::pair<label,label>(falseBranch,postBranch));
+			if (cond)
+				cond->emitBranch(falseBranch,true,body->size() + (cond?cond->size():0) > 58);
+			body->emit();
+			if (post) {
+				placeLabel(postBranch);
+				post->emit();
+			}
+			emitJump(top,true);
+			placeLabel(falseBranch);
+			flow_stack.pop_back();
+			delete top;
+			delete postBranch;
+			delete falseBranch;
+		}
+		unsigned size() const {
+			return (init?init->size():0) + (cond?cond->size():0) + (post?post->size():0) + body->size() + 3;
+		}
+		void dump() const {
+			printNode("for:");
+			printNode(init);
+			printNode(cond);
+			printNode(post);
+			printNode(body);
+		}
+	};
 	struct stmt_while: public stmt_flow {
 		stmt_while(expr_branch *e,stmt *b): cond(e), body(b) { }
 		~stmt_while() { delete cond; delete body; }
@@ -1225,7 +1262,6 @@
 			label falseBranch = createLabel(), top = createLabelHere();
 			flow_stack.push_back(std::pair<label,label>(falseBranch,top));
 			cond->emitBranch(falseBranch,true,body->size() > 58);
-			// TODO: continue and break via a stack
 			body->emit();
 			emitJump(top,true);
 			placeLabel(falseBranch);
@@ -1249,9 +1285,13 @@
 		stmt *body;
 		expr_branch *cond;
 		void emit() const {
-			auto trueBranch = createLabelHere();
+			auto trueBranch = createLabelHere(), falseBranch = createLabel();
+			flow_stack.push_back(std::pair<label,label>(falseBranch,trueBranch));
 			body->emit();
 			cond->emitBranch(trueBranch,false,true);
+			placeLabel(falseBranch);
+			flow_stack.pop_back();
+			delete falseBranch;
 			delete trueBranch;
 		}
 		unsigned size() const { 
@@ -1574,7 +1614,7 @@
 
 %token ATTRIBUTE PROPERTY GLOBAL OBJECT LOCATION ROUTINE WORDBIT ACTION HAS HASNT IN HOLDS SYNONYM CONTINUE BREAK
 %token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET PRINT_RETF SELF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF ONCE
-%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF HASH_INCLUDE TRACE UNPARENT
+%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF HASH_INCLUDE TRACE UNPARENT FOR
 %token <ival> DICT ANAME PNAME LNAME GNAME INTLIT ONAME
 %token <sval> STRLIT CSTRLIT
 %token <rval> RNAME
@@ -1607,13 +1647,13 @@
 %right '~' NOT
 
 %type <eval> expr pname objref primary aname arg
-%type <brval> bool_expr cond_expr
+%type <brval> bool_expr cond_expr opt_bool_expr
 %type <ival> vname opt_parent opt_default opt_wordbit opt_arrow has_or_hasnt phrase dict counted_string
 %type <rval> routine_body pvalue rname
 %type <scopeval> scope
 %type <dlist> dict_list;
 %type <elist> opt_call_args arg_list
-%type <stval> stmt print_item
+%type <stval> stmt print_item opt_assign opt_assign_incr
 %type <stlist> stmts print_sequence
 
 %%
@@ -2055,6 +2095,7 @@ stmt
 	| IF cond_expr stmt ELSE stmt 	%prec IF	{ $$ = NEW stmt_if($2,$3,$5); }
 	| REPEAT stmt WHILE cond_expr ';'	{ $$ = NEW stmt_repeat($2,$4); }
 	| WHILE cond_expr stmt				{ $$ = NEW stmt_while($2,$3); }
+	| FOR '(' opt_assign ';' opt_bool_expr ';' opt_assign_incr ')' stmt { $$ = NEW stmt_for($3,$5,$7,$9); }
 	// | FOR '(' opt_init_expr ';' opt_bool_expr
 	| '{' stmts '}'			{ $$ = NEW stmts($2); }
 	| vname '=' expr ';'	{ $$ = NEW stmt_assign($1,expr::fold_constant($3)); }
@@ -2088,6 +2129,22 @@ stmt
 	| CONTINUE ';'					{ $$ = NEW stmt_continue(); }
 	| BREAK ';'						{ $$ = NEW stmt_break(); }
 	; 
+
+opt_assign
+	:					{ $$ = nullptr; }
+	| vname '=' expr	{ $$ = NEW stmt_assign($1,expr::fold_constant($3)); }
+	;
+
+opt_bool_expr
+	:					{ $$ = nullptr; }
+	| bool_expr			{ $$ = $1; }
+	;
+
+opt_assign_incr
+	: opt_assign		{ $$ = $1; }
+	| INCR vname		{ $$ = NEW stmt_1op(_1op::inc,NEW expr_literal($2)); }
+	| DECR vname		{ $$ = NEW stmt_1op(_1op::dec,NEW expr_literal($2)); }
+	;
 
 print_sequence
 	: print_item ',' print_sequence		{ $$ = NEW list_node<stmt*>($1,$3); }
@@ -2446,6 +2503,7 @@ void init(int version) {
 	rw["word_array"] = WORD_ARRAY;
 	rw["call"] = CALL;
 	rw["while"] = WHILE;
+	rw["for"] = FOR;
 	rw["repeat"] = REPEAT;
 	rw["rtrue"] = RTRUE;
 	rw["rfalse"] = RFALSE;
