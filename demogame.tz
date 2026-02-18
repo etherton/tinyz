@@ -8,12 +8,35 @@ object Player "Player" in Grotto {
 #include "core.tzh"
 
 location Grotto "Secluded Grotto" in Locations {
+	description: "Nestled in the shade of the forest, this grotto is calm, quiet, and cooler than the rest of the area.";
 	n_to: Riverbed;
 	lit;
 }
 
 location Riverbed "Dry Riverbed" in Locations {
+	description: "The river is dry here, and rocks and dead reeds litter the shoreline";
 	s_to: Grotto;
+	w_to: Riverbank;
+	lit;
+}
+
+location Riverbank "River Bank" in Locations {
+	description: "Opposite bank of the dry river. Not much here but some thick bushes and an opening heading west.";
+	w_to: Forest;
+	e_to: Riverbed;
+	lit;
+}
+
+location Forest "Dense Forest" in Locations {
+	description: "The forst is very thick here. One tree in particular looks very robust and amenable to climing.";
+	up_to: print "You clamber up the tree, getting pine needles everywhere.^",return Up_A_Tree;
+	e_to: Riverbank;
+	lit;
+}
+
+location Up_A_Tree "Up a Tree" in Locations {
+	description: "You're up a tree. The view is incredible.";
+	down_to: Forest;
 	lit;
 }
 
