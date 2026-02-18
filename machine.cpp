@@ -331,8 +331,12 @@ void machine::setCursor(uint8_t x,uint8_t y) {
 void machine::setOutput(int enable,uint16_t tableAddr) {
 	if (enable > 0) {
 		m_outputEnables |= (1 << enable);
-		if (enable == 2 && interface::transcript(true))
-			write_mem16(16,word2word(read_mem16(16).getU() | 1));
+		if (enable == 2) {
+			if (interface::transcript(true))
+				m_dynamic[0x11] |= 1;
+			else
+				m_dynamic[0x11] &= ~1;
+		}
 		else if (enable == 3) {
 			write_mem16(tableAddr,byte2word(0));
 			m_outputBuffer = tableAddr;
@@ -340,7 +344,7 @@ void machine::setOutput(int enable,uint16_t tableAddr) {
 	}
 	else if (enable < 0) {
 		if (enable == -2) {
-			write_mem16(16,word2word(read_mem16(16).getU() & ~1));
+			m_dynamic[0x11] &= ~1;
 			interface::transcript(false);
 		}
 		m_outputEnables &= ~(1 << -enable);

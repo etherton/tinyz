@@ -379,6 +379,8 @@ private:
 		if (addr < 0x38 && addr != 0x10 && addr != 0x11)
 			memfault("illegal write to header addr %02x",addr);
 		m_dynamic[addr] = v;
+		if (addr == 0x11)
+			setOutput(v & 1? 2 : -2,0);
 	}
 	void write_mem16(uint32_t addr,word v) {
 		if (addr+1>=m_dynamicSize)
@@ -387,6 +389,8 @@ private:
 			memfault("illegal write to header addr %02x",addr);
 		m_dynamic[addr] = v.hi;
 		m_dynamic[addr+1] = v.lo;
+		if (addr == 0x10)
+			setOutput(v.lo & 1? 2 : -2,0);
 	}
 	
 	word &ref(int v,bool write) {

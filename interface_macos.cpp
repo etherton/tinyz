@@ -204,12 +204,14 @@ bool interface::readSaveData(chunk *chunks,uint32_t count) {
 bool interface::transcript(bool flag) {
 	static char transcript_name[64];
 	if (flag) {
-		if (!transcript_name[0]) {
-			printf("Save transcript to?");
-			fgets(transcript_name,sizeof(transcript_name),stdin);
-			transcript_name[strlen(transcript_name)-1] = 0;
+		if (!transcript_file) {
+			if (!transcript_name[0]) {
+				printf("Save transcript to?");
+				fgets(transcript_name,sizeof(transcript_name),stdin);
+				transcript_name[strlen(transcript_name)-1] = 0;
+			}
+			transcript_file = transcript_name[0]? fopen(transcript_name,"a") : nullptr;
 		}
-		transcript_file = fopen(transcript_name,"a");
 		return transcript_file != nullptr;
 	}
 	else {
