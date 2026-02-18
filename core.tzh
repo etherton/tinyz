@@ -81,8 +81,8 @@ location CompassRose "Compass" {
 	s_to: `south`;
 	se_to: `southeast`;
 	sw_to: `southwest`;
-	e_to: `west`;
-	w_to: `east`;
+	w_to: `west`;
+	e_to: `east`;
 	up_to: `upward`;
 	down_to: `downward`;
 }
@@ -109,6 +109,8 @@ routine Compass [word] {
 		return sw_to;
 	else if (word is 'east')
 		return e_to;
+	else if (word is 'west')
+		return w_to;
 	else if (word is 'up')
 		return up_to;
 	else if (word is 'down')
@@ -222,17 +224,25 @@ routine CallAfter [act obj;r] {
 }
 
 
-routine Exits [;i] {
+routine Exits [;i j] {
 	for (i = n_to; i <= down_to; ++i) {
 		if (isnonzero room.i) {
-			if (room.i has visited) {
+			j = room.i;
+			if (j > $object_count) {
+				output_stream -1;
+				j = call j();
+				output_stream 1;
+			}
+			if (j has visited) {
 				Uppercase(CompassRose.i);
 				print " leads to ";
-				print_obj room.i;
+				print_obj j;
 				print ".^";
 			}
 			else {
-				print "There is an exit to the ";
+				print "There is an exit ";
+				if (not i in {up_to,down_to})
+					print "to the ";
 				PrStr(CompassRose.i);
 				print ".^";
 			}
