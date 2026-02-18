@@ -982,11 +982,11 @@
 		return NEW expr_literal(0);
 	}
 	struct expr_logical_not: public expr_branch {
-		expr_logical_not(expr_branch *e) : unary(), expr_branch(!e->negated) { }
+		expr_logical_not(expr_branch *e) : unary(e), expr_branch(!e->negated) { }
 		~expr_logical_not() { delete unary; }
 		expr_branch *unary;
 		void emitBranch(label target,bool negated,bool isLong) {
-			unary->emitBranch(target,negated,isLong);
+			unary->emitBranch(target,!negated,isLong);
 		}
 		unsigned size() const {
 			return unary->size();
@@ -2160,6 +2160,7 @@ print_item
 	| STRLIT { $$ = NEW stmt_print(_0op::print,false,$1); }
 	| RFALSE { $$ = NEW stmt_return(NEW expr_literal(0)); }
 	| RTRUE { $$ = NEW stmt_return(NEW expr_literal(1)); }
+	| RETURN expr { $$ = NEW stmt_return($2); }
 	;
 	
 cond_expr
@@ -3087,7 +3088,7 @@ NEWLINE:
 			if (yypass==1)
 				yylval.sval = nullptr;
 			else
-				memcpy((char*)(yylval.sval = new char[offset]), sval, offset);
+				memcpy((char*)(yylval.sval = NEW char[offset]), sval, offset);
 			return term=='`'? CSTRLIT : STRLIT;
 		}
 		default:
