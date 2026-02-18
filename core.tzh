@@ -232,6 +232,9 @@ routine Exits [;i j] {
 				output_stream -1;
 				j = call j();
 				output_stream 1;
+				// catch rfalse/rtrue returns and do nothing.
+				if (j <= 1)
+					continue;
 			}
 			if (j has visited) {
 				Uppercase(CompassRose.i);

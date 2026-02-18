@@ -28,7 +28,7 @@ location Riverbank "River Bank" in Locations {
 }
 
 location Forest "Dense Forest" in Locations {
-	description: "The forst is very thick here. One tree in particular looks very robust and amenable to climing.";
+	description: "The forest is very thick here. One tree in particular looks very robust and amenable to climing.";
 	up_to: print "You clamber up the tree, getting pine needles everywhere.^",return Up_A_Tree;
 	e_to: Riverbank;
 	lit;
@@ -37,6 +37,7 @@ location Forest "Dense Forest" in Locations {
 location Up_A_Tree "Up a Tree" in Locations {
 	description: "You're up a tree. The view is incredible.";
 	down_to: Forest;
+	up_to: "Climbing any higher would be dangerous.";
 	lit;
 }
 
