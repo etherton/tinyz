@@ -41,6 +41,7 @@ public:
 	static void setWindow(uint8_t);
 	static void eraseWindow(uint8_t);
 	static void updateExtents(uint8_t&,uint8_t&);
+	static bool transcript(bool);
 };
 
 class machine {

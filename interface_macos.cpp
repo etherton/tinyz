@@ -56,10 +56,13 @@ void interface::init(int argc,char **argv) {
 }
 
 static int window;
+static FILE *transcript_file;
 
 void interface::putchar(int ch) {
 	if (!window || !nostatus)
     	putc(ch==13?10:ch, stdout);
+	if (!window && transcript_file)
+		putc(ch==13?10:ch, transcript_file);
 }
 
 void interface::readline(char *dest,unsigned destSize) {
@@ -78,6 +81,8 @@ void interface::readline(char *dest,unsigned destSize) {
 	}
 
 	fgets(dest,destSize,stdin);
+	if (transcript_file)
+		fputs(dest,transcript_file);
 }
 
 int interface::readchar() {
@@ -194,6 +199,26 @@ bool interface::readSaveData(chunk *chunks,uint32_t count) {
 		fread(chunks[i].data,1,chunks[i].size,f);
 	fclose(f);
 	return true;
+}
+
+bool interface::transcript(bool flag) {
+	static char transcript_name[64];
+	if (flag) {
+		if (!transcript_name[0]) {
+			printf("Save transcript to?");
+			fgets(transcript_name,sizeof(transcript_name),stdin);
+			transcript_name[strlen(transcript_name)-1] = 0;
+		}
+		transcript_file = fopen(transcript_name,"a");
+		return transcript_file != nullptr;
+	}
+	else {
+		if (transcript_file) {
+			fclose(transcript_file);
+			transcript_file = nullptr;
+		}
+		return true;
+	}
 }
 
 char* interface::readStory(const char *name,long *sizePtr) {
