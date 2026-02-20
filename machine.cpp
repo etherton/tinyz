@@ -65,6 +65,7 @@ void machine::init(const void *data,bool debug) {
 	m_printed = 0;
 	m_stored = 0;
 	m_undoTop = 0;
+	m_dynamic[1] |= 0x1C;	// support bold, italic, fixed
 	run(m_header->initialPCAddr.getU());
 }
 
@@ -869,11 +870,11 @@ void machine::run(uint32_t pc) {
 				case _var::storew: write_mem16(uint16_t(operands[0].getU()+(operands[1].getU()<<1)),operands[2]); break;
 				case _var::storeb: write_mem8(uint16_t(operands[0].getU()+operands[1].getU()),operands[2].lo); break;
 				case _var::put_prop: objSetProperty(operands[0].getU(),operands[1].getU(),operands[2]); break;
-				case _var::sread: if (opCount != 2) fault("only two operand read opcode supported");
+				case _var::sread: if (opCount > 2) fault("only two operand read opcode supported");
 						   showStatus();
 						   if (m_header->version>=5)
-						   	ref(dest,true).setByte(read_input(operands[0].getU(),operands[1].getU()));
-							else read_input(operands[0].getU(),operands[1].getU());
+						   	ref(dest,true).setByte(read_input(operands[0].getU(),opCount==2?operands[1].getU():0));
+							else read_input(operands[0].getU(),opCount==2?operands[1].getU():0);
 							break;
 				case _var::print_char: print_char(operands[0].lo); break;
 				case _var::print_num: print_num(operands[0].getS()); break;
