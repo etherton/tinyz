@@ -608,7 +608,7 @@ routine CheckErrors [tb pb; i j] {
 	// print_num pb[1]; print " words in input.^";
 	// print_num pb; print " base addr.^";
 
-	while (i < pb[1]) {
+	for (i=0; i < pb[1]; ++i) {
 		j = pb + 2 + i * 4;
 		// print_num j; crlf;
 		// print_num j[[0]]; print " addr.^";
@@ -623,7 +623,6 @@ routine CheckErrors [tb pb; i j] {
 			if (j[[1]]==255)
 				FindSynonym(j);
 		}
-		++i;
 	}
 	rfalse;
 }
