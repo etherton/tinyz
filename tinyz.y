@@ -2027,8 +2027,8 @@ phrase_list
 	;
 
 phrase
-	: dict			{ z_dict_payload($1) |= action_bit; actions_blob->storeWord($1); }
-	| dict dict		{ z_dict_payload($1) |= action_bit; actions_blob->storeWord($1 | 0x2000); actions_blob->storeWord($2); }
+	: dict			{ /*z_dict_payload($1) |= action_bit;*/ actions_blob->storeWord($1); }
+	| dict dict		{ /*z_dict_payload($1) |= action_bit;*/ actions_blob->storeWord($1 | 0x2000); actions_blob->storeWord($2); }
 	;
 
 dict

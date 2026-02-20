@@ -4,10 +4,10 @@ constant zero = 0;
 constant true = 1;
 constant adjectiveBit = 1 << 7;
 constant nounBit = 1 << 6;
-constant verbBit = 1 << 5;	// the compiler hard-codes this for actions
-constant prepBit = 1 << 4;	// the compiler hard-codes this for actions
-constant artBit = 1 << 3;
-constant dirBit = 1 << 2;
+// constant verbBit = 1 << 5;	// the compiler hard-codes this for actions
+// constant prepBit = 1 << 4;	// the compiler hard-codes this for actions
+constant artBit = 15;
+// constant dirBit = 1 << 2;
 
 // set_text_color values
 constant cCurrent = 0;
@@ -25,16 +25,6 @@ constant cWhite = 9;
 // here as a synonym it cannot appear anywhere else (because it would never match)
 // internally synonyms are flagged with a payload of 0xFF. It's a table of words
 // pointed to by the global variable $synonyms
-synonym 'north' 'n';
-synonym 'northeast' 'ne';
-synonym 'northwest' 'nw';
-synonym 'south' 's';
-synonym 'southeast' 'se';
-synonym 'southwest' 'sw';
-synonym 'up' 'u';
-synonym 'down' 'd';
-synonym 'east' 'e';
-synonym 'west' 'w';
 synonym 'examine' 'x' 'read';
 synonym 'wait' 'z';
 synonym 'inventory' 'i';
@@ -61,12 +51,12 @@ property object adjective wordbit adjectiveBit;
 property object noun wordbit nounBit;
 property location n_to;
 property location ne_to;
-property location nw_to;
+property location e_to;
+property location se_to;
 property location s_to;
 property location sw_to;
-property location se_to;
-property location e_to;
 property location w_to;
+property location nw_to;
 property location up_to;
 property location down_to;
 
@@ -77,18 +67,27 @@ location Locations "Locations" {
 location CompassRose "Compass" {
 	n_to: `north`;
 	ne_to: `northeast`;
-	nw_to: `northwest`;
-	s_to: `south`;
+	e_to: `east`;
 	se_to: `southeast`;
+	s_to: `south`;
 	sw_to: `southwest`;
 	w_to: `west`;
-	e_to: `east`;
+	nw_to: `northwest`;
 	up_to: `upward`;
 	down_to: `downward`;
 }
 
 // set the specified bit in these words.
-wordbit dirBit 'north' 'south' 'east' 'west' 'northwest' 'northeast' 'southwest' 'southeast' 'up' 'down';
+wordbit 1 'north' 'n';
+wordbit 2 'northeast' 'ne';
+wordbit 3 'east' 'e';
+wordbit 4 'southeast' 'se';
+wordbit 5 'south' 's';
+wordbit 6 'southwest' 'sw';
+wordbit 7 'west' 'w';
+wordbit 8 'northwest' 'nw';
+wordbit 9 'up' 'u';
+wordbit 10 'down' 'd';
 wordbit artBit 'a' 'an' 'the';
 
 
@@ -362,8 +361,8 @@ routine PutOn [do ido] {
 constant isEnd = 1 << 15;			// This is the last part of the action
 constant isRoutine = 1 << 14;		// Routine (possibly after second word) marks end of phrase
 constant hasSecondWord = 1 << 13;	// This is a two word phrase, not a one word phrase.
-// constant wordMask = 8191;
-global wordMask = 8191;		// declaring as a global allows it to use smaller instructions
+constant wordMask = 8191;
+// global wordMask = 8191;		// declaring as a global allows it to use smaller instructions
 
 // going into tokenization, [0] is number of words we can store, on return [1]
 // is the number of words stored. [[1]], [[3]], etc are the word addresses of
@@ -749,10 +748,9 @@ routine DoTurn[; i] {
 
 	// Every word address in the parse buffer has been replaced with its index.
 	// The next byte contains the payload byte.
-	if (parse_buffer[[2]] &= dirBit) {
-		i = Compass(parse_buffer[[1]]);
-		if (i isnt -1)
-			return Travel(i);
+	if (isnz (parse_buffer[[2]] & 15)) {
+		i = parse_buffer[[2]] & 15;
+		return Travel(i);
 	}
 	// compute final word index, terminate list with zero
 	lw = parse_buffer[1] * 2 + 1;
