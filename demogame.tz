@@ -2,6 +2,9 @@
 // Copyright 2026, David C Etherton
 // MIT License.
 
+// This is special and sets the release number in the header (and is available as the constant as well)
+constant ReleaseNumber = 1;
+
 object Player "Player" in Grotto {
 }
 
@@ -46,6 +49,8 @@ global ifid = `UUID://42191F62-980E-46F6-B6F1-185792F494E8//`;
 
 routine main[] {
 	room = Player parent;
+	print "DemoGame for TinyZ^";
+	ReleaseInfo();
 	Look();
 	for (;;) {
 		turns = turns + DoTurn();

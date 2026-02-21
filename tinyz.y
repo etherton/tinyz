@@ -87,6 +87,7 @@
 	storyHeader the_header = { 3 };
 	debug::debug_info di;
 	bool write_debug_info;
+	int16_t release_number;
 
 	template <typename T> struct list_node {
 		list_node<T>(T a,list_node<T> *b) : car(a), cdr(b) { }
@@ -1688,6 +1689,8 @@ constant_def
 			 $2->second.ival = v;
 			 delete $4;
 			 // printf("constant = %d\n",v);
+			 if ($2->first == "ReleaseNumber")
+			 	release_number = v;
 		}
 	;
 
@@ -3205,7 +3208,6 @@ int main(int argc,char **argv) {
 	return 1; */
 
 	int zversion = 3;
-	int release_number = 0;
 	enum { R_OBJECTS=1,R_ROUTINES=2,R_GLOBALS=4,R_DICTIONARY=8,R_ACTIONS=16,R_SUMMARY=32,R_STRINGS=64,R_ALL=127};
 	int report = 0;
 	const char *help = 
@@ -3286,7 +3288,6 @@ int main(int argc,char **argv) {
 				case 'A': report |= R_ACTIONS; break;
 				} else report = R_ALL;
 				break;
-			case 'R': release_number = atoi(arg); break;
 			case 'z': zversion = (argv[0][2]-'0'); break;
 			case 'g': write_debug_info = true; break;
 		}

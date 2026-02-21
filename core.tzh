@@ -792,3 +792,8 @@ routine DebugActions[;a n] {
 	}
 	rfalse;
 }
+
+routine ReleaseInfo [; hdr] {
+   print "Release ",hdr[[1]]," compiled on ",PrintString(18,6)," by tinyzc v",PrintString(60,4),"^";
+   rfalse;
+}
