@@ -38,6 +38,7 @@ location Up_A_Tree "Up a Tree" in Locations {
 	description: "You're up a tree. The view is incredible.";
 	down_to: Forest;
 	up_to: "Climbing any higher would be dangerous.";
+	cant_go: "Letting go of the tree would be bad for your health.";
 	lit;
 }
 

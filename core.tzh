@@ -59,6 +59,7 @@ property location w_to;
 property location nw_to;
 property location up_to;
 property location down_to;
+property location cant_go;
 
 // Parent for all locations
 location Locations "Locations" {
@@ -274,8 +275,13 @@ routine Look [; i r f] {
 routine Travel [dir;r] {
 	if (isfalse BlockBefore(#leave,room,dir)) {
 		r = room.dir;
-		if (isz r)
-			print_retf "You can't go in that direction.";
+		if (isz r) {
+			r = room.cant_go;
+			if (isz r)
+				print_retf "You can't go in that direction.";
+			else
+				return call r();
+		}
 		else if (r < zero or r > $object_count)
 			r = call r();
 		// player is the first object, and cannot be a room.
