@@ -1754,6 +1754,7 @@ global_def
 opt_global_init
 	:					{ globals_blob->storeWord(0); }
 	| '=' INTLIT		{ globals_blob->storeWord($2); }
+	| '=' counted_string { globals_blob->addRelocation($2); }
 	| '=' BYTE_ARRAY '(' INTLIT ')'	{ globals_blob->addRelocation((current_global = relocatableBlob::create($4,UD_DYNAMIC,"byte array"))->index); } opt_byte_list { current_global = nullptr; }
 	| '=' WORD_ARRAY '(' INTLIT ')' { globals_blob->addRelocation((current_global = relocatableBlob::create($4,UD_DYNAMIC,"word array"))->index); } opt_word_list { current_global = nullptr; }
 	;

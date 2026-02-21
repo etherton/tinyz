@@ -42,6 +42,8 @@ location Up_A_Tree "Up a Tree" in Locations {
 	lit;
 }
 
+global ifid = `UUID://42191F62-980E-46F6-B6F1-185792F494E8//`;
+
 routine main[] {
 	room = Player parent;
 	Look();
