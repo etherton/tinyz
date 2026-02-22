@@ -65,7 +65,7 @@ void machine::init(const void *data,bool debug) {
 	m_printed = 0;
 	m_stored = 0;
 	m_undoTop = 0;
-	m_dynamic[1] |= 0x1C;	// support bold, italic, fixed
+	interface::updateHeader(m_dynamic);
 	run(m_header->initialPCAddr.getU());
 }
 

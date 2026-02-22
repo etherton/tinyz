@@ -128,6 +128,10 @@ void interface::init(int argc,char **argv) {
 	}
 }
 
+void interface::updateHeader(uint8_t *header) {
+		header[1] |= 0x1C;	// support bold, italic, fixed
+}
+
 static int window;
 static FILE *transcript_file;
 
