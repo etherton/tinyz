@@ -21,6 +21,79 @@ static bool debug_enable;
 
 extern debug::debug_info di;
 
+// map 155-223 to unicode
+static uint16_t unicode_mapping[223-155+1] = {
+0x0e4, //	a-diaeresis	ä	ae
+0x0f6, //	o-diaeresis	ö	oe
+0x0fc, //	u-diaeresis	ü	ue
+0x0c4, //	A-diaeresis	Ä	Ae
+0x0d6, //	O-diaeresis	Ö	Oe
+0x0dc, //	U-diaeresis	Ü	Ue
+0x0df, //	sz-ligature	ß	ss
+0x0bb, //	quotation	»	>> or "
+0x0ab, //	marks	«	<< or "
+0x0eb, //	e-diaeresis	ë	e
+0x0ef, //	i-diaeresis	ï	i
+0x0ff, //	y-diaeresis	ÿ	y
+0x0cb, //	E-diaeresis	Ë	E
+0x0cf, //	I-diaeresis	Ï	I
+0x0e1, //	a-acute	á	a
+0x0e9, //	e-acute	é	e
+0x0ed, //	i-acute	í	i
+0x0f3, //	o-acute	ó	o
+0x0fa, //	u-acute	ú	u
+0x0fd, //	y-acute	ý	y
+0x0c1, //	A-acute	Á	A
+0x0c9, //	E-acute	É	E
+0x0cd, //	I-acute	Í	I
+0x0d3, //	O-acute	Ó	O
+0x0da, //	U-acute	Ú	U
+0x0dd, //	Y-acute	Ý	Y
+0x0e0, //	a-grave	à	a
+0x0e8, //	e-grave	è	e
+0x0ec, //	i-grave	ì	i
+0x0f2, //	o-grave	ò	o
+0x0f9, //	u-grave	ù	u
+0x0c0, //	A-grave	À	A
+0x0c8, //	E-grave	È	E
+0x0cc, //	I-grave	Ì	I
+0x0d2, //	O-grave	Ò	O
+0x0d9, //	U-grave	Ù	U
+0x0e2, //	a-circumflex	â	a
+0x0ea, //	e-circumflex	ê	e
+0x0ee, //	i-circumflex	î	i
+0x0f4, //	o-circumflex	ô	o
+0x0fb, //	u-circumflex	û	u
+0x0c2, //	A-circumflex	Â	A
+0x0ca, //	E-circumflex	Ê	E
+0x0ce, //	I-circumflex	Î	I
+0x0d4, //	O-circumflex	Ô	O
+0x0db, //	U-circumflex	Û	U
+0x0e5, //	a-ring	å	a
+0x0c5, //	A-ring	Å	A
+0x0f8, //	o-slash	ø	o
+0x0d8, //	O-slash	Ø	O
+0x0e3, //	a-tilde	ã	a
+0x0f1, //	n-tilde	ñ	n
+0x0f5, //	o-tilde	õ	o
+0x0c3, //	A-tilde	Ã	A
+0x0d1, //	N-tilde	Ñ	N
+0x0d5, //	O-tilde	Õ	O
+0x0e6, //	ae-ligature	æ	ae
+0x0c6, //	AE-ligature	Æ	AE
+0x0e7, //	c-cedilla	ç	c
+0x0c7, //	C-cedilla	Ç	C
+0x0fe, //	Icelandic thorn	þ	th
+0x0f0, //	Icelandic eth	ð	th
+0x0de, //	Icelandic Thorn	Þ	Th
+0x0d0, //	Icelandic Eth	Ð	Th
+0x0a3, //	pound symbol	£	L
+0x153, //	oe-ligature	œ	oe
+0x152, //	OE-ligature	Œ	OE
+0x0a1, //	inverted !	¡	!
+0x0bf, //	inverted ?	¿	?
+};
+
 static void standard_mode() {
 	tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
 }
@@ -58,11 +131,23 @@ void interface::init(int argc,char **argv) {
 static int window;
 static FILE *transcript_file;
 
+void uputc(uint8_t ch,FILE *f) {
+	if (ch==13)
+		fputc(10, f);
+	else if (ch >= 155 && ch <= 223) {
+		uint16_t cp = unicode_mapping[ch - 155];
+		fputc(0xC0 | (cp >> 6),f);
+		fputc(0x80 | (cp & 63),f);
+	}
+	else
+		fputc(ch, f);
+}
+
 void interface::putchar(int ch) {
 	if (!window || !nostatus)
-    	putc(ch==13?10:ch, stdout);
+		uputc(ch, stdout);
 	if (!window && transcript_file)
-		putc(ch==13?10:ch, transcript_file);
+		uputc(ch, transcript_file);
 }
 
 void interface::readline(char *dest,unsigned destSize) {
