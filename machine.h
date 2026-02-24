@@ -48,7 +48,7 @@ public:
 
 class machine {
 public:
-	void init(const void*,bool debug);
+	void init(const void*,bool debug,bool strict);
 	void run(uint32_t pc);
 	void showStatus();
 	void updateExtents();
@@ -185,6 +185,8 @@ private:
 	}
 	static uint8_t zeroIs64(uint8_t f) { return f? f : 64; }
 	word objGetProperty(uint16_t o,uint16_t prop) const {
+		if (!m_strict && !o)
+			return byte2word(0);
 		if (!o || o>m_objCount)
 			fault("get_prop object %d out of range",o);
 		if (!prop || prop>(m_header->version<4? 31 : 63))
@@ -350,6 +352,8 @@ private:
 			: m_objectLarge->objTable[o-1].child;		
 	}
 	word objGetParent(uint16_t o) const {
+		if (!m_strict && !o)
+			return byte2word(0);
 		if (!o || o>m_objCount)
 			fault("get_parent object %d out of range",o);
 		return m_header->version < 4
@@ -491,6 +495,7 @@ private:
 	uint16_t m_outputBuffer;
 	uint8_t m_storyShift;
 	uint8_t m_debug;
+	uint8_t m_strict;
 	uint8_t m_printed;
 	uint8_t m_stored;
 	uint8_t m_windowSplit;

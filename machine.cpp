@@ -13,7 +13,7 @@
 
 debug::debug_info di;
 
-void machine::init(const void *data,bool debug) {
+void machine::init(const void *data,bool debug,bool strict) {
 	uint8_t version = *(uint8_t*)data;
 	if (version > 8 || !((1<<version) & (0b1'1011'1000))) {
 		printf("only versions 3,4,5,7,8 supported\n");
@@ -65,6 +65,7 @@ void machine::init(const void *data,bool debug) {
 	m_printed = 0;
 	m_stored = 0;
 	m_undoTop = 0;
+	m_strict = strict;
 	interface::updateHeader(m_dynamic);
 	run(m_header->initialPCAddr.getU());
 }

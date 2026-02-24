@@ -17,7 +17,7 @@ static struct termios orig_termios, raw_termios;
 static char *script_text;
 static long script_size, script_offset;
 static bool nostatus;
-static bool debug_enable;
+static bool debug_enable, strict_enable;
 
 extern debug::debug_info di;
 
@@ -125,6 +125,8 @@ void interface::init(int argc,char **argv) {
 		}
 		else if (!strcmp(argv[i],"-debug"))
 			debug_enable = true;
+		else if (!strcmp(argv[i],"-strict"))
+			strict_enable = true;
 	}
 }
 
@@ -335,6 +337,6 @@ int main(int argc,char **argv) {
 	char *story = interface::readStory(argv[1]);
 	if (story) {
 		machine *m = new machine;
-		m->init(story,debug_enable);
+		m->init(story,debug_enable,strict_enable);
 	}	
 }
