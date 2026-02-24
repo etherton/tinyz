@@ -891,6 +891,8 @@ void machine::run(uint32_t pc) {
 				case _var::call_vs2: pc = call(pc,dest,operands,opCount); break;
 				case _var::erase_window: interface::eraseWindow(operands[0].getS()); break; // erase_window
 				case _var::set_cursor: setCursor(operands[1].getU(),operands[0].getU()); break; // set_cursor line col
+				case _var::get_cursor: write_mem16(operands[0].getU(),word2word(m_cursorX));
+										write_mem16(operands[0].getU()+2,word2word(m_cursorY)); break;
 				case _var::set_text_style: flushMainWindow(); interface::setTextStyle(operands[0].lo); break; // set_text_style
 				case _var::buffer_mode: if (operands[0].notZero()) m_outputEnables |= 1; else m_outputEnables &= ~1; break; // buffer_mode
 				case _var::output_stream: setOutput(operands[0].getS(),opCount>1?operands[1].getU():0); break; // output_stream
@@ -922,6 +924,7 @@ void machine::run(uint32_t pc) {
 						operands[0].getU() >> (256 - operands[1].lo)); break;
 				case _ext::art_shift: ref(dest,true).set(operands[1].lo <= 15? operands[0].getS() << operands[1].lo :
 						operands[0].getS() >> (256 - operands[1].lo)); break;
+				case _ext::set_font: ref(dest,true) = word2word(interface::setFont(operands[0].getU())); break;
 				case _ext::save_undo:
 					if (m_undoTop + encodeDelta(0,nullptr) > sizeof(m_undoBuffer))
 						m_undoTop = 0;
@@ -937,6 +940,14 @@ void machine::run(uint32_t pc) {
 					}
 					else
 						ref(dest,true) = byte2word(0);
+					break;
+				case _ext::print_unicode:
+					interface::putchar(0xC0 | (operands[0].getU() >> 6));
+					interface::putchar(0x80 | (operands[0].getU() & 63));
+					break;
+				case _ext::check_unicode:
+					// we can print anything, but can't accept anything.
+					ref(dest,true) = word2word(1);
 					break;
 				default: fault("unimplemented EXT opcode %d (0x%x)",opcode,opcode); break;
 			}

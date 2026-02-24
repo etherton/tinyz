@@ -184,6 +184,9 @@ int interface::readchar() {
     return result;
 }
 
+uint16_t interface::setFont(uint16_t /*newFont*/) {
+	return 0;
+}
 
 void interface::setTextStyle(uint8_t style) {
 	// 0 = standard, 1=reverse_video, 2=bold, 4=italic, 8=fixed_pitch
