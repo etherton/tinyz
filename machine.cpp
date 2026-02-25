@@ -511,11 +511,13 @@ uint8_t machine::tokenise(uint16_t textAddr,uint16_t parseAddr,uint8_t offset) {
 }
 
 void machine::printTable(uint16_t zsciiAddr,uint16_t width,uint16_t height,uint16_t skip) {
+	// printf("{{print table width=%u height=%u skip=%u}}\n",width,height,skip);
 	while (height--) {
 		for (uint16_t i=0; i<width; i++)
 			print_char(read_mem8(zsciiAddr++));
 		zsciiAddr += skip;
-		print_char(13);
+		if (m_currentWindow==0)
+			print_char(13);
 	}
 }
 
