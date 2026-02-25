@@ -3505,6 +3505,12 @@ int main(int argc,char **argv) {
 			globals_blob->place();
 			object_blob->place();
 			relocatableBlob::placeAll(UD_DYNAMIC);
+			// bocfel wants static start to be at least 64 + 480 + propSize bytes
+			if (relocatableBlob::nextAddress < 64 + 480 + defPropCount * 2) {
+				auto paddingBlob = relocatableBlob::create(64 + 480 + defPropCount * 2 - relocatableBlob::nextAddress,UD_DYNAMIC);
+				printf("Dynamic memory is too small, adding %u bytes of padding\n",paddingBlob->size);
+				paddingBlob->place();
+			}
 			relocatableBlob::placeAll(UD_STATIC);
 			relocatableBlob::placeAll(UD_STATIC_ABBREVIATION);
 			relocatableBlob::deadStrip();
