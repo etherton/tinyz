@@ -18,8 +18,15 @@ location Grotto "Secluded Grotto" in Locations {
 
 location Riverbed "Dry Riverbed" in Locations {
 	description: "The river is dry here, and rocks and dead reeds litter the shoreline";
+	n_to: Riverbed2;
 	s_to: Grotto;
 	w_to: Riverbank;
+	lit;
+}
+
+location Riverbed2 "Dry Riverbed Bend" in Locations {
+	description: "The river is dry here, but bends slowly to the northwest";
+	s_to: Riverbed;
 	lit;
 }
 
@@ -34,8 +41,37 @@ location Forest "Dense Forest" in Locations {
 	description: "The forest is very thick here. One tree in particular looks very robust and amenable to climing.";
 	up_to: print "You clamber up the tree, getting pine needles everywhere.^",return Up_A_Tree;
 	e_to: Riverbank;
+	n_to: Clearing;
 	lit;
 }
+
+location Clearing "Tranquil Clearing" in Locations {
+	description: "The forest opens up a bit to a quiet clearing littered with pine needles. In the center is a strange altar.";
+	s_to: Forest;
+	lit;
+}
+
+object PrayerBook "Prayer Book" {
+	description: "It's a magical prayer book. It says the magic word is ~foobar~.";
+	noun: 'book';
+	adjective: 'magical' 'prayer';
+}
+
+object Altar "Obsidian Altar" in Clearing {
+	description: [] {
+		print "It is covered in strange runes and has a hidden shelf.^";
+		if (iszero PrayerBook parent) {
+			move PrayerBook into self parent;
+			print_ret "Peering inside the opening, you find something!";
+		}
+		else
+			rtrue;
+	}
+	noun: 'opening' 'altar';
+	adjective: 'obsidian';
+	scenery;
+}
+
 
 location Up_A_Tree "Up a Tree" in Locations {
 	description: "You're up a tree. The view is incredible.";
