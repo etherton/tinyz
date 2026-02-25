@@ -616,12 +616,15 @@ bool machine::saveGame(uint32_t &pc,int &dest) {
 }
 
 bool machine::restoreGame(uint32_t &pc,int &dest) {
+	uint8_t oldFlags = m_dynamic[0x11] & 1;
 	chunk c[4];
 	c[0].data = m_dynamic; c[0].size = m_dynamicSize;
 	c[1].data = &m_sp; c[1].size = (kStackSize + 2) * 2;
 	c[2].data = &pc; c[2].size = 4;
 	c[3].data = &dest; c[3].size = 4;
-	return interface::readSaveData(c,4); 
+	bool result =  interface::readSaveData(c,4); 
+	m_dynamic[0x11] = (m_dynamic[0x11] & ~1) | oldFlags;
+	return result;
 }
 
 void machine::run(uint32_t pc) {
