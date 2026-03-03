@@ -76,7 +76,7 @@ endboot
 ; After that, it uses language card memory 4k bank A, then 4k bank B, then 8k
 ; After that, it uses Aux language card 16k
 
-	lda #160
+	lda #$A0
 	sta PAGE2
 	jsr clr1
 	sta PAGE1
@@ -124,10 +124,10 @@ draw1	lda .test,x
 
 setpos	; input y, destroys a
 	lda .mul40,y
-	and #248
+	and #$F8
 	sta $20
 	lda .mul40,y
-	and #7
+	and #$7
 	sta $21
 	rts
 
@@ -160,3 +160,318 @@ clr1	ldy #0
 	; Normal letters have high bit set
 	; Inverse has high bit clear
 	; 
+
+znext = $4A
+zptr = $4B
+insn = $4D
+stackptr = $4E
+type_byte = $4F
+operands_hi = $50
+operands_lo = $58
+
+; retrieve next insn byte, and recompute if
+; we cross a 4k boundary. note by the time we
+; get to here, language card pages etc are set
+next_byte
+	inc zptr
+	bne +
+	lda zptr+1
+	and #$f
+	cmp #$f
+	bne +
++	ldy #0
+	lda (zptr),Y
+	rts
+
+;   0-31: 0101 (small,small) (5)
+;  32-63: 0110 (small,variable) (6)
+;  64-95: 1001 (variable,small) (9)
+; 96-127: 1010 (variable,variable) (10)
+
+dispatch_lo
+	!byte <(_2op_s_s-1),<(_2op_s_s-1),<(_2op_s_v-1),<(_2op_s_v-1),<(_2op_v_s-1),<(_2op_v_s-1),<(_2op_v_v-1),<(_2op_v_v-1)
+	!byte <(_1op_large-1),<(_1op_small-1),<(_1op_variable-1),<(_0op-1),<(_2op_var-1),<(_2op_var-1),<(_var-1),<(_var-1)
+dispatch_hi
+	!byte >(_2op_s_s-1),>(_2op_s_s-1),>(_2op_s_v-1),>(_2op_s_v-1),>(_2op_v_s-1),>(_2op_v_s-1),>(_2op_v_v-1),>(_2op_v_v-1)
+	!byte >(_1op_large-1),>(_1op_small-1),>(_1op_variable-1),>(_0op-1),>(_2op_var-1),>(_2op_var-1),>(_var-1),>(_var-1)
+
+_2op_lo
+	!byte <(z_ill-1),<(z_je-1),<(z_jg-1),<(z_dec_chk-1),<(z_inc_chk-1),<(z_jin-1),<(z_test-1)
+	!byte <(z_or-1),<(z_and-1),<(z_test_attr-1),<(z_set_attr-1),<(z_clear_attr-1),<(z_store-1),<(z_insert_obj-1),<(z_loadw-1)
+	!byte <(z_loadb-1),<(z_get_prop-1),<(z_get_prop_addr-1),<(z_get_next_prop-1),<(z_add-1),<(z_sub-1),<(z_mul-1),<(z_div-1)
+	!byte <(z_mod-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1)
+
+; if an instruction would cross a non-contiguous 4k boundary (rare), we copy the entire instruction into a temporary
+; location and execute it from there.
+next_insn
+	ldy znext
+	lda (zptr),y
+	sta zinsn
+	lsr
+	lsr
+	lsr
+	lsr
+	lda dispatch_hi,Y
+	pha
+	lda dispatch_lo,Y
+	pha
+	rts
+
+; zptr is not within 11 bytes of a 4k boundary.
+; at entry to instruction handler:
+; Y contains instruction
+; X contains operand count
+; znext contains offset from (zptr) of next insn byte.
+_2op_s_s
+	jsr operand_small
+	jsr operand_small
+	bne ._2op_common ; always taken
+_2op_s_v
+	jsr operand_small
+	jsr operand_variable
+	bne ._2op_common ; always taken
+_2op_v_s
+	jsr operand_variable
+	jsr operand_small
+	bne ._2op_common ; always taken
+_2op_v_v
+	jsr operand_variable
+	jsr operand_variable
+._2op_common
+	lda zinsn
+	and #$1F
+	tay
+	lda _2op_hi,Y
+	pha
+	lda _2op_lo,Y
+	pha
+	rts
+
+_1op_large
+	jsr operand_large
+	bne ._1op_common
+_1op_small
+	jsr operand_small
+	bne ._1op_common
+_1op_variable
+	jsr operand_variable
+._1op_common
+	lda zinsn
+	and #$f
+	lda _1op_hi,Y
+	pha
+	lda _1op_lo,Y
+	pha
+	rts
+
+_0op
+	lda zinsn
+	and #$f	; could eliminate mask if we bias the lookup addresses
+	tay
+	lda _0op_hi,Y
+	pha
+	lda _0op_lo,Y
+	pha
+	rts
+
+operand_types
+	!byte %01011111,%01011111,%01101111,%01101111,%10011111,%10011111,%10101111,%10101111
+	!byte $00111111,%01111111,%10111111,%11111111,%00000000,%00000000,%00000000,%00000000
+; opcode
+; (type byte) (type byte for call_vs2) (00=large, 01=small, 10=var, 11=omit)
+; operands
+; (store destination)
+; (branch offset)
+; (text to print)
+next_insn
+	jsr next_byte
+	sta insn
+	lsr
+	lsr
+	lsr
+	lsr
+	tay
+	ldx #0
+	lda operand_types,Y
+	bne .load_type
+	jsr next_byte
+	; TODO: call_vs2 eventually
+	; the type bytes are now in A
+.load_type
+	sta type_byte
+	bit type_byte
+	bmi .var_omit
+	bvs .small
+	jsr next_byte
+	sta operands_hi,x
+	jsr next_byte
+.next_type
+
+	sec
+	rol type_byte
+	sec
+	rol type_byte
+	bne .load_type ; always taken
+
+	; all operand handlers inx before return
+	; and so the zero flag is always clear.
+operand_large
+	lda (zptr),Y
+	iny
+	!byte $2C	; bit NNNN, skips lda #$0
+	; zero flag clear on return (x never zero)
+operand_small
+	lda #$0
+	sta operands_hi,x
+	lda (zptr),y
+	iny
+	sta operands_lo,x
+	sty znext
+	inx
+	rts
+
+operand_variable	
+	lda (zptr),Y
+	iny
+	sty znext
+	beq .read_tos
+	bmi .read_global_hi
+	cmp #$10
+	bcs .read_global_lo
+	; read local
+	tay
+	lda (frame_hi),Y
+	sta operands_hi,x
+	lda (frame_lo),Y
+	sta operands_lo,x
+	inx
+	rts
+.read_global_lo
+	asl
+	tay
+	lda (globals_lo),Y
+	sta operands_hi,X
+	iny
+	lda (globals_lo),Y
+	sta operands_lo,x
+	inx
+	rts
+.read_global_hi
+	asl
+	tay
+	lda (globals_hi),y
+	sta operands_hi,x
+	iny
+	lda (globals_hi),Y
+	sta operands_lo,X
+	inx
+	rts
+.read_tos
+	dec stackptr
+	ldy stackptr
+	lda stack_hi,Y
+	sta operands_hi,x
+	lda stack_lo,Y
+	sta operands_lo,X
+	inx
+	rts
+
+; on entry, op0/op1 contain decoded operands
+; on exit, x contains low byte of result, a contains high byte
+z_je
+	dex
+-	lda operands_lo
+	cmp operands_lo,X
+	bne .je_failed
+	lda operands_hi
+	cmp operands_hi,x
+	beq branch_passed
+.je_failed
+	dex
+	bne -
+
+branch_failed
+
+branch_passed
+
+z_jg
+	sec
+	lda operands_lo+0
+	sbc operands_hi+0
+	lda operands_lo+1
+	sbc operands_hi+1
+	beq branch_failed
+	bcs branch_passed
+	bcc branch_failed ; always taken
+
+z_jl
+	sec
+	lda operands_lo+0
+	sbc operands_hi+0
+	lda operands_lo+1
+	sbc operands_hi+1
+	bcc branch_passed
+	bcs branch_failed ; always taken	
+
+z_or
+	lda operands_lo+0
+	or operands_lo+1
+	tax
+	lda operands_hi+0
+	or operands_hi+1
+	jmp store_common
+
+z_add
+	clc
+	lda operands_lo+0
+	adc operands_lo+1
+	tax
+	lda operands_hi+0
+	adc operands_hi+1
+	jmp store_common
+
+z_sub
+	sec
+	lda operands_lo+0
+	sbc operands_lo+1
+	tax
+	lda operands_hi+0
+	sbc operands_hi+1
+	jmp store_common
+
+store_common
+	ldy znext
+	inc znext
+	lda (zptr),y
+	beq .store_tos
+	bmi .store_global_hi
+	cmp #$10
+	bcs .store_global_lo
+	; store local
+	sta (frame_hi),Y
+	txa
+	sta (frame_lo),Y
+	jmp next_insn
+.store_global_lo
+	asl
+	sta (globals_lo),y
+	txa
+	sta (globals_lo),y
+	jmp next_insn
+.store_global_hi
+	asl
+	sta (globals_hi),Y
+	txa
+	sta (globals_hi),Y
+	jmp next_insn
+.store_tos
+	ldy stackptr
+	sta stack_hi,Y
+	txa
+	sta stack_lo,y
+	inc stackptr
+	beq +
+	jmp next_insn
++ 	jsr fatal_error
+	!text "stack overflow"
+
