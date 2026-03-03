@@ -846,11 +846,15 @@ void machine::run(uint32_t pc) {
 				case _0op::save: if (m_header->version<4) { if (saveGame(pc,dest)) branch(true); }
 							else ref(dest,true) = byte2word(saveGame(pc,dest)); break;
 				case _0op::restore: if (m_header->version<4) restoreGame(pc,dest); else if (restoreGame(pc,dest)) ref(dest,true) = byte2word(2); updateExtents(); break;
-				case _0op::restart: m_sp =  m_lp = 0; 
-							memcpy(m_dynamic, m_readOnly, m_dynamicSize); 
-							updateExtents();
-							pc = m_header->initialPCAddr.getU();
-							 break;
+				case _0op::restart: {
+						m_sp =  m_lp = 0; 
+						uint8_t oldFlags = m_dynamic[0x11] & 1;
+						memcpy(m_dynamic, m_readOnly, m_dynamicSize); 
+						m_dynamic[0x11] = (m_dynamic[0x11] & ~1) | oldFlags;
+						updateExtents();
+						pc = m_header->initialPCAddr.getU();
+						break;
+					}
 				case _0op::ret_popped: if (!m_sp) fault("stack underflow in ret_popped"); pc = r_return(m_stack[--m_sp].getU()); break;
 				case _0op::pop_catch: if (m_header->version<5) { if (!m_sp) fault("stack underflow in pop"); --m_sp; }
 						else { ref(dest,true) = word2word(m_lp); } break;
