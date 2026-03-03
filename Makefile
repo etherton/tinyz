@@ -1,4 +1,4 @@
-all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3
+all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3 applez
 
 tinyzcd: opcodes.h header.h tinyz.y debug.h debug.cpp Makefile
 	bison --debug tinyz.y -v -o tinyz.debug.tab.cpp && clang++ -DDEBUG_MEM=1 -g -std=c++17 tinyz.debug.tab.cpp debug.cpp -o tinyzcd
@@ -47,3 +47,7 @@ run5: cloak.z5 Makefile tinyzterp
 	
 check:
 	./tinyzcd demogame.tz
+
+applez:
+	acme --format plain -o applez.bin applez.asm && ./makedsk applez.bin applez.dsk
+
