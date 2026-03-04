@@ -29,10 +29,10 @@ DELAY		= $FCA8
 ; lda $c086,x
 ; rom delay routine (in cycles) at $fca8 (delay in A, (26 + 27A + 5A^2)/2 cycles (0.98us per cycle)
 
-BOOTPTR 	= $26
-BOOTSLOT16	= $2B		; $60 for slot 6
-BOOTSEC 	= $3D
-BOOTTRK 	= $41
+data_ptr 	= $26
+slot_index	= $2B		; $60 for slot 6
+sector 		= $3D
+track	 	= $41
 
 PH0OFF		= $C080
 PH0ON		= $C081
@@ -46,17 +46,17 @@ PH3ON		= $C087
 	*=$800
 	!byte 16
 
-	lda BOOTPTR+1
+	lda data_ptr+1
 	cmp #$28
 	beq endboot
 
-	inc BOOTTRK
+	inc track
 
 	lda PH0OFF,x
 	lda PH1ON,x
 	lda #86
 	jsr DELAY
-	sta BOOTSEC ; A was zero after DELAY, was $10 on entry
+	sta sector ; A was zero after DELAY, was $10 on entry
 	lda PH1OFF,x
 	lda PH2ON,x
 	lda #86
@@ -131,7 +131,73 @@ setpos	; input y, destroys a
 	sta $21
 	rts
 
-clr1	ldy #0
+scroll
+	sta PAGE2
+	jsr .scroll
+	sta PAGE1
+.scroll
+	ldy #40			; 2 bytes
+	jmp (scrolltop)	; 3 bytes
+	; lines 0-7
+	lda $480-1,Y	; 6 bytes ...
+	sta $400-1,Y	; ... per line
+	lda $500-1,Y
+	sta $480-1,y
+	lda $580-1,y
+	sta $500-1,Y
+	lda $600-1,y
+	sta $580-1,y
+	lda $680-1,Y
+	sta $600-1,y
+	lda $700-1,y
+	sta $680-1,Y
+	lda $780-1,y
+	sta $700-1,Y
+	; lines 8-15
+	lda $428-1,Y
+	sta $780-1,Y
+	lda $4a8-1,Y
+	sta $428-1,Y
+	lda $528-1,y
+	sta $4a8-1,Y
+	lda $5a8-1,Y
+	sta $528-1,Y
+	lda $628-1,Y
+	sta $5a8-1,Y
+	lda $6a8-1,Y
+	sta $628-1,Y
+	lda $728-1,Y
+	sta $6a8-1,Y
+	lda $7a8-1,y
+	sta $728-1,Y
+	; lines 16-23
+	lda $450-1,Y
+	sta $728-1,Y
+	lda $4d0-1,Y
+	sta $450-1,Y
+	lda $550-1,y
+	sta $4d0-1,Y
+	lda $5d0-1,Y
+	sta $550-1,Y
+	lda $650-1,Y
+	sta $5d0-1,Y
+	lda $6d0-1,Y
+	sta $650-1,Y
+	lda $750-1,Y
+	sta $6d0-1,Y
+	lda $7a0-1,Y
+	sta $750-1,Y
+	lda #$A0
+	sta $7a0-1,Y
+	dey
+	bne +
+	jmp (scrolltop)
++	rts
+
+scrolltop !byte <(.scroll+11),>(.scroll+11)
+
+clr1	
+	ldy #0
 - 	sta $400,y
 	sta $500,y
 	sta $600,y
@@ -168,6 +234,12 @@ stackptr = $4E
 type_byte = $4F
 operands_hi = $50
 operands_lo = $58
+stringptr = $60
+globals_lo = $62	; address of globals - 32 bytes
+globals_hi = $64	; address of global 112 (index $80)
+frame_lo = $66		; address of lower half of stack (+1 = first local, +2 = second...)
+frame_hi = $68		; address of upper half of stack
+
 
 ; retrieve next insn byte, and recompute if
 ; we cross a 4k boundary. note by the time we
@@ -201,8 +273,15 @@ _2op_lo
 	!byte <(z_loadb-1),<(z_get_prop-1),<(z_get_prop_addr-1),<(z_get_next_prop-1),<(z_add-1),<(z_sub-1),<(z_mul-1),<(z_div-1)
 	!byte <(z_mod-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1)
 
+; opcode
+; (type byte) (type byte for call_vs2) (00=large, 01=small, 10=var, 11=omit)
+; (operands)
+; (store destination)
+; (branch offset)
+; (text to print)
+
 ; if an instruction would cross a non-contiguous 4k boundary (rare), we copy the entire instruction into a temporary
-; location and execute it from there.
+; location and execute it from there. (eventually)
 next_insn
 	ldy znext
 	lda (zptr),y
@@ -215,6 +294,7 @@ next_insn
 	pha
 	lda dispatch_lo,Y
 	pha
+	ldx #0
 	rts
 
 ; zptr is not within 11 bytes of a 4k boundary.
@@ -232,10 +312,12 @@ _2op_s_v
 	bne ._2op_common ; always taken
 _2op_v_s
 	jsr operand_variable
+	ldy znext
 	jsr operand_small
 	bne ._2op_common ; always taken
 _2op_v_v
 	jsr operand_variable
+	ldy znext
 	jsr operand_variable
 ._2op_common
 	lda zinsn
@@ -244,6 +326,19 @@ _2op_v_v
 	lda _2op_hi,Y
 	pha
 	lda _2op_lo,Y
+	pha
+	rts
+_2op_var
+	jsr decode_types
+	jmp ._2op_common
+_var
+	jsr decode_types
+	lda zinsn
+	and #$1F
+	tay
+	lda _var_hi,Y
+	pha
+	lda _var_lo,Y
 	pha
 	rts
 
@@ -265,56 +360,44 @@ _1op_variable
 	rts
 
 _0op
-	lda zinsn
-	and #$f	; could eliminate mask if we bias the lookup addresses
-	tay
-	lda _0op_hi,Y
+	ldy zinsn
+	lda _0op_hi-$b0,Y
 	pha
-	lda _0op_lo,Y
+	lda _0op_lo-$b0,Y
 	pha
 	rts
 
-operand_types
-	!byte %01011111,%01011111,%01101111,%01101111,%10011111,%10011111,%10101111,%10101111
-	!byte $00111111,%01111111,%10111111,%11111111,%00000000,%00000000,%00000000,%00000000
-; opcode
-; (type byte) (type byte for call_vs2) (00=large, 01=small, 10=var, 11=omit)
-; operands
-; (store destination)
-; (branch offset)
-; (text to print)
-next_insn
-	jsr next_byte
-	sta insn
-	lsr
-	lsr
-	lsr
-	lsr
-	tay
-	ldx #0
-	lda operand_types,Y
-	bne .load_type
-	jsr next_byte
-	; TODO: call_vs2 eventually
-	; the type bytes are now in A
-.load_type
-	sta type_byte
-	bit type_byte
+decode_types
+	lda (zptr),Y
+	iny
+	sty znext
+	sta ztype
+-	bit ztype
+	; large=00, small=01, variable=10, omitted=11
 	bmi .var_omit
 	bvs .small
-	jsr next_byte
-	sta operands_hi,x
-	jsr next_byte
+	jsr operand_large
+	bne .next_type	; always taken
+.small
+	jsr operand_small
+	bne .next_type	; always taken
+.var_omit
+	bvs .decode_done
+	jsr variable
+	ldy znext
 .next_type
-
+	sec 
+	rol ztype
 	sec
-	rol type_byte
-	sec
-	rol type_byte
-	bne .load_type ; always taken
+	rol ztype
+	bne -
+.decode_done
+	rts
 
-	; all operand handlers inx before return
-	; and so the zero flag is always clear.
+
+
+
+	; all operand handlers inx before return and so the zero flag is always clear.
 operand_large
 	lda (zptr),Y
 	iny
@@ -330,6 +413,8 @@ operand_small
 	inx
 	rts
 
+	; operand_variable destroys y so it needs to be reloaded from znext
+	; if there are more types to decode
 operand_variable	
 	lda (zptr),Y
 	iny
@@ -376,6 +461,23 @@ operand_variable
 	inx
 	rts
 
+z_ill
+	jsr fatal_error
+	!text "unimplemented insn",0
+
+z_dec_chk
+	jsr fatal_error
+	!text "dec_chk not impl",0
+
+z_inc_chk
+	jsr fatal_error
+	!text "inc_chk not impl",0
+
+z_jin
+	jsr fatal_error
+	!text "jin not impl",0
+
+
 ; on entry, op0/op1 contain decoded operands
 ; on exit, x contains low byte of result, a contains high byte
 z_je
@@ -397,8 +499,8 @@ branch_passed
 z_jg
 	sec
 	lda operands_lo+0
-	sbc operands_hi+0
-	lda operands_lo+1
+	sbc operands_lo+1
+	lda operands_hi+0
 	sbc operands_hi+1
 	beq branch_failed
 	bcs branch_passed
@@ -407,19 +509,38 @@ z_jg
 z_jl
 	sec
 	lda operands_lo+0
-	sbc operands_hi+0
-	lda operands_lo+1
+	sbc operands_lo+1
+	lda operands_hi+0
 	sbc operands_hi+1
 	bcc branch_passed
 	bcs branch_failed ; always taken	
 
 z_or
 	lda operands_lo+0
-	or operands_lo+1
+	ora operands_lo+1
 	tax
 	lda operands_hi+0
-	or operands_hi+1
+	ora operands_hi+1
 	jmp store_common
+
+z_and
+	lda operands_lo+0
+	and operands_lo+1
+	tax
+	lda operands_hi+0
+	and operands_hi+1
+	jmp store_common
+
+z_test 	; does op0 & op1 == op1?
+	lda operands_lo+0
+	and operands_lo+1
+	cmp operands_lo+1
+	bne branch_failed
+	lda operands_hi+0
+	and operands_hi+1
+	cmp operands_hi+1
+	bne branch_failed
+	beq branch_passed
 
 z_add
 	clc
@@ -439,7 +560,178 @@ z_sub
 	sbc operands_hi+1
 	jmp store_common
 
+z_mul
+	lda operands_hi+0
+	ora operands_hi+1
+	bmi .z_mul_signed	; is either result signed?
+	beq .z_mul_8x8		; can we use faster 8x8 mul?
+	; standard 16x16->16 unsigned
+.z_mul_signed
+	jsr fatal_error
+	!text "only mul 8x8 implemented",13,0
+
+	; https://llx.com/Neil/a2/mult.html
+.z_mul_8x8
+	lda #0
+	ldx #8
+	lsr operands_lo+1
+-	bcc +
+	clc
+	adc operands_lo+0
++	ror
+	ror mulTemp
+	dex
+	bne -
+	ldx mulTemp
+	jmp store_common
+
+z_div
+	jsr divide
+	lda operands_hi+1
+	ldx operands_lo+0
+	jmp store_common
+
+z_mod
+	jsr divide
+	lda operands_hi+2
+	ldx operands_lo+2
+	jmp store_common
+
+z_test_attr
+	jsr attr_setup
+	lda (obj_ptr),Y
+	and attr_bit
+	beq branch_failed
+	bne branch_passed
+
+z_set_attr
+	jsr attr_setup
+	lda (obj_ptr),y
+	ora attr_bit
+	sta (obj_ptr),Y
+	jmp next_insn
+
+z_clear_attr
+	jsr attr_setup
+	lda attr_bit
+	eor #$ff
+	sta attr_bit
+	lda (obj_ptr),Y
+	and attr_bit
+	sta (obj_ptr),Y
+	jmp next_next
+
+attr_bits !byte $80,$40,$20,$10,$08,$04,$02,$01
+
+	; operand+0 contains object index, operand+1 contains attribute.
+	; sets obj_ptr and attr_bit appropriately.
+attr_setup
+	jsr get_object_addr	; sets obj_ptr
+	lda operand_lo+1
+	and #$7
+	tay
+	lda attr_bits,Y
+	sta attr_bit
+	lda operand_lo+1
+	lsr
+	lsr
+	lsr
+	tay
+	rts
+
+get_object_addr
+	; compute objIndex * 9
+	lda operand_lo+0
+	sta obj_ptr+0
+	lda operand_hi+0
+	sta obj_ptr+1
+	ldy #3
+-	asl obj_ptr+0
+	rol obj_ptr+1
+	dey
+	bne -
+	clc
+	lda obj_ptr+0
+	adc operand_lo+0
+	adc obj_base
+	sta obj_ptr+0
+	lda obj_ptr+1
+	adc operand_hi+0
+	adc obj_base+1
+	sta obj_ptr
+	rts
+
+z_print_num
+	lda #$0
+	sta mulTemp
+	lda #>10000
+	ldx #<10000
+	jsr .print_digit
+	lda #>1000
+	ldx #<1000
+	jsr .print_digit
+	lda #>100
+	ldx #<100
+	jsr .print_digit
+	lda #>10
+	ldx #<10
+	jsr .print_digit
+	lda operands_lo+0	; last digit always prints even if zero
+	adc #$30
+	jsr print_char
+	jmp next_insn
+
+.print_digit
+	; store numerator
+	sta operands_hi+1
+	stx operands_lo+1
+	jsr divide
+	lda operands_lo+0
+	ora mulTemp
+	sta mulTemp
+	beq +
+	adc #$30
+	jsr print_char
++	lda operands_hi+2
+	sta operands_hi+0
+	lda operands_lo+2
+	sta operands_lo+0
+	rts
+
+z_print_char
+	lda operands_lo+0
+	jsr print_char
+	jmp next_insn
+
+	; divide operands+0 by operands+1, quotient in operands+0, remainder in operands+2
+divide
+	lda #0
+	sta operands_lo+2
+	sta operands_hi+2
+	ldx #16
+-	asl operands_lo+0
+	rol operands_hi+0
+	rol operands_lo+2
+	rol operands_hi+2
+	lda operands_lo+2
+	sec
+	sbc operands_lo+1
+	tay
+	lda operands_hi+2
+	sbc operands_hi+1
+	bcc +
+	sta operands_hi+2
+	sty operands_lo+2
+	inc operands_lo+1
++	dex
+	bne -
+	rts
+
 store_common
+	jsr store_result
+	jmp next_insn
+
+store_result
 	ldy znext
 	inc znext
 	lda (zptr),y
@@ -451,19 +743,19 @@ store_common
 	sta (frame_hi),Y
 	txa
 	sta (frame_lo),Y
-	jmp next_insn
+	rts
 .store_global_lo
 	asl
 	sta (globals_lo),y
 	txa
 	sta (globals_lo),y
-	jmp next_insn
+	rts
 .store_global_hi
 	asl
 	sta (globals_hi),Y
 	txa
 	sta (globals_hi),Y
-	jmp next_insn
+	rts
 .store_tos
 	ldy stackptr
 	sta stack_hi,Y
@@ -471,7 +763,18 @@ store_common
 	sta stack_lo,y
 	inc stackptr
 	beq +
-	jmp next_insn
+	rts
 + 	jsr fatal_error
-	!text "stack overflow"
+	!text "stack overflow",13,0
 
+fatal_error
+	pla
+	sta stringptr
+	pla
+	sta stringptr+1
+	ldy #1
+-	lda (stringptr),Y
+--	beq --		; hang forever
+	jsr print_char
+	iny
+	bne -		; always taken
