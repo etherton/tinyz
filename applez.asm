@@ -14,6 +14,9 @@ BANK64k		= $C073		; which aux bank of 64k to use (language card)
 
 DELAY		= $FCA8
 
+; bge <=> bcs
+; blt <=> bcc
+
 ; Apple 2 boot process; track 0 sector 0 is loaded at $800, and then
 ; any value up to 16 is how many total sectors will be read consecutively
 ; $26/$27 is the address to read next. The X register contains the slot number * 16.
@@ -227,6 +230,10 @@ clr1
 	; Inverse has high bit clear
 	; 
 
+mulTemp = $46
+attr_bit = $47
+ztype = $48
+zinsn = $49
 znext = $4A
 zptr = $4B
 insn = $4D
@@ -239,6 +246,8 @@ globals_lo = $62	; address of globals - 32 bytes
 globals_hi = $64	; address of global 112 (index $80)
 frame_lo = $66		; address of lower half of stack (+1 = first local, +2 = second...)
 frame_hi = $68		; address of upper half of stack
+obj_ptr = $6A
+obj_base = $6C		; 9 bytes before first object slot
 
 
 ; retrieve next insn byte, and recompute if
@@ -272,6 +281,28 @@ _2op_lo
 	!byte <(z_or-1),<(z_and-1),<(z_test_attr-1),<(z_set_attr-1),<(z_clear_attr-1),<(z_store-1),<(z_insert_obj-1),<(z_loadw-1)
 	!byte <(z_loadb-1),<(z_get_prop-1),<(z_get_prop_addr-1),<(z_get_next_prop-1),<(z_add-1),<(z_sub-1),<(z_mul-1),<(z_div-1)
 	!byte <(z_mod-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1)
+_2op_hi
+	!byte >(z_ill-1),>(z_je-1),>(z_jg-1),>(z_dec_chk-1),>(z_inc_chk-1),>(z_jin-1),>(z_test-1)
+	!byte >(z_or-1),>(z_and-1),>(z_test_attr-1),>(z_set_attr-1),>(z_clear_attr-1),>(z_store-1),>(z_insert_obj-1),>(z_loadw-1)
+	!byte >(z_loadb-1),>(z_get_prop-1),>(z_get_prop_addr-1),>(z_get_next_prop-1),>(z_add-1),>(z_sub-1),>(z_mul-1),>(z_div-1)
+	!byte >(z_mod-1),>(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1)
+
+_1op_lo
+	!byte <(z_jz-1),<(z_get_sibling-1),<(z_get_child-1),<(z_get_parent-1),<(z_get_prop_len-1),<(z_inc-1),<(z_dec-1),<(z_print_addr-1)
+	!byte <(z_ill-1),<(z_remove_obj-1),<(z_print_obj-1),<(z_ret-1),<(z_jump-1),<(z_print_paddr-1),<(z_load-1),<(z_not-1)
+_1op_hi
+	!byte >(z_jz-1),>(z_get_sibling-1),>(z_get_child-1),>(z_get_parent-1),>(z_get_prop_len-1),>(z_inc-1),>(z_dec-1),>(z_print_addr-1)
+	!byte >(z_ill-1),>(z_remove_obj-1),>(z_print_obj-1),>(z_ret-1),>(z_jump-1),>(z_print_paddr-1),>(z_load-1),>(z_not-1)
+
+_0op_lo
+	!byte <(z_rtrue-1),<(z_rfalse-1),<(z_print-1),<(z_print_ret-1),<(next_insn-1),<(z_save-1),<(z_restore-1),<(z_restart-1)
+	!byte <(z_ret_popped-1),<(z_pop-1),<(z_quit-1),<(z_new_line-1),<(z_show_status-1),<(z_ill-1),<(z_ill-1),<(z_ill-1)
+_0op_hi
+	!byte >(z_rtrue-1),>(z_rfalse-1),>(z_print-1),>(z_print_ret-1),>(next_insn-1),>(z_save-1),>(z_restore-1),>(z_restart-1)
+	!byte >(z_ret_popped-1),>(z_pop-1),>(z_quit-1),>(z_new_line-1),>(z_show_status-1),>(z_ill-1),>(z_ill-1),>(z_ill-1)
+
+_var_lo
+_var_hi
 
 ; opcode
 ; (type byte) (type byte for call_vs2) (00=large, 01=small, 10=var, 11=omit)
@@ -383,7 +414,7 @@ decode_types
 	bne .next_type	; always taken
 .var_omit
 	bvs .decode_done
-	jsr variable
+	jsr operand_variable
 	ldy znext
 .next_type
 	sec 
@@ -493,8 +524,58 @@ z_je
 	bne -
 
 branch_failed
-
+	ldy	znext
+	inc znext
+	lda (zptr),Y	
+	bmi .branch_passed
+.branch_failed
+	cmp #$40
+	bcs .short_branch_failed
+	inc znext
+.short_branch_failed
+	jmp next_insn
 branch_passed
+	ldy znext
+	inc znext
+	lda (zptr),y
+	bmi .branch_failed
+.branch_passed
+	and #$7f
+	ldx #0
+	cmp #$40
+	bcs .compute_newpc
+	cmp #$20
+	bcc .long_branch_positive
+	ora #$fc
+.long_branch_positive
+	tax
+	ldy znext
+	inc znext
+	lda (zptr),Y
+	; x contains high byte of offset, a contains low byte
+.compute_newpc
+	pha
+	clc
+	lda znext
+	adc zptr
+	sta zptr
+	bcc +
+	inc zptr+1
++	pla
+	adc zptr
+	sta zptr
+	lda zptr+1
+	adc #$00
+	sta zptr+1
+	; TODO this is shite
+	ldy #0
+	sty znext
+	jmp next_insn
+z_jump
+	lda operands_lo+0
+	ldx operands_hi+0
+	jmp .compute_newpc
+
 
 z_jg
 	sec
@@ -514,6 +595,11 @@ z_jl
 	sbc operands_hi+1
 	bcc branch_passed
 	bcs branch_failed ; always taken	
+
+z_jz
+	lda operands_lo+0
+	beq branch_passed
+	bne branch_failed ; always taken
 
 z_or
 	lda operands_lo+0
@@ -535,12 +621,13 @@ z_test 	; does op0 & op1 == op1?
 	lda operands_lo+0
 	and operands_lo+1
 	cmp operands_lo+1
-	bne branch_failed
+	bne +
 	lda operands_hi+0
 	and operands_hi+1
 	cmp operands_hi+1
-	bne branch_failed
-	beq branch_passed
+	bne +
+	jmp branch_passed
++	jmp branch_failed
 
 z_add
 	clc
@@ -601,8 +688,9 @@ z_test_attr
 	jsr attr_setup
 	lda (obj_ptr),Y
 	and attr_bit
-	beq branch_failed
-	bne branch_passed
+	beq +
+	jmp branch_passed
++	jmp branch_failed
 
 z_set_attr
 	jsr attr_setup
@@ -619,7 +707,262 @@ z_clear_attr
 	lda (obj_ptr),Y
 	and attr_bit
 	sta (obj_ptr),Y
-	jmp next_next
+	jmp next_insn
+
+z_get_sibling
+	jsr get_object_addr
+	ldy #$5 ; sibling
+z_get_common
+	lda (obj_ptr),Y
+z_get_common_zero
+	tax
+	lda #0
+	jmp store_common
+
+z_get_parent
+	; get_parent(0) is always 0.
+	lda operands_lo+0
+	beq z_get_common_zero
+	jsr get_object_addr
+	ldy #4 ; parent
+	bne z_get_common
+
+z_get_child
+	jsr get_object_addr
+	ldy #6 ; child
+	bne z_get_common
+
+z_remove_obj
+	jsr fatal_error
+	!text "z_remove_obj not impl",0
+
+;	jsr get_object_addr
+;	ldy #4 ; parent
+;	lda (obj_ptr),Y
+;	bne +
+;	jmp next_insn	; parent is zero, already removed from terminate
+;+	sta operands_lo+0
+;	jsr get_object_addr
+
+z_insert_obj
+	jsr fatal_error
+	!text "z_insert_obj not impl",0
+
+z_get_prop_addr
+	jsr get_object_addr
+	ldy #8		; property addr
+	lda (obj_ptr),Y
+	tax
+	dey
+	lda (obj_ptr),y
+	jmp store_common
+
+z_get_prop
+	jsr fatal_error
+	!text "z_get_prop not impl",0
+
+z_get_next_prop
+	jsr fatal_error
+	!text "z_get_next_prop not impl",0
+
+z_get_prop_len
+	jsr fatal_error
+	!text "z_get_prop_len",0
+
+z_print_obj
+	jsr get_object_addr
+	ldy #8
+	lda (obj_ptr),y
+	tax
+	lda (obj_ptr),Y
+	sta obj_ptr+1
+	stx obj_ptr
+	inc obj_ptr
+	bne z_print_common
+	inc obj_ptr+1
+
+	; input - obj_ptr points at string
+z_print_common
+	jsr get_mem_addr
+z_print_common_packed
+	jsr fatal_error
+	!text "z_print_common not impl",0
+
+z_print_addr
+	lda operands_lo+0
+	sta obj_ptr
+	lda operands_hi+0
+	sta obj_ptr+1
+	jmp z_print_common
+
+z_print_paddr
+	lda operands_lo+0
+	sta obj_ptr
+	lda operands_hi+0
+	sta obj_ptr+1
+	jsr get_mem_addr_packed
+	jmp z_print_common_packed
+
+z_loadb
+	clc
+	lda operands_lo+0
+	adc operands_lo+1
+	sta obj_ptr
+	lda operands_hi+0
+	adc operands_hi+1
+	sta obj_ptr+1
+	jsr get_mem_addr
+	ldy #0
+	lda (obj_ptr),y
+	tax
+	lda #0
+	jmp store_common
+
+z_loadw
+	clc
+	asl operands_lo+1
+	rol operands_hi+1
+	lda operands_lo+0
+	adc operands_lo+1
+	sta obj_ptr
+	lda operands_hi+0
+	adc operands_hi+1
+	sta obj_ptr+1
+	jsr get_mem_addr
+	ldy #1
+	lda (obj_ptr),Y
+	tax
+	dey
+	lda (obj_ptr),y
+	jmp store_common
+
+z_inc
+	lda operands_lo+0
+	beq .inc_tos
+	bmi .inc_global_hi
+	cmp #$10
+	bcs .inc_global_lo
+	; carry is clear here
+	tay
+	lda (frame_lo),Y
+	adc #$1
+	sta (frame_lo),y
+	bcc +
+	lda (frame_hi),Y
+	adc #$0
+	sta (frame_hi),Y
++	jmp next_insn
+.inc_global_lo
+	asl
+	; carry is clear here
+	tay
+	lda (globals_lo),Y
+	adc #$1
+	sta (globals_lo),Y
+	bcc +
+	iny
+	lda (globals_hi),Y
+	adc #$00
+	sta (globals_hi),Y
++	jmp next_insn
+.inc_global_hi
+	asl
+	; carry is set here (asl of negative number)
+	tay
+	lda (globals_hi),Y
+	adc #$00
+	sta (globals_hi),y
+	bcc +
+	iny
+	lda (globals_hi),Y
+	adc #$00
+	sta (globals_hi),Y
++	jmp next_insn
+.inc_tos
+	ldy stackptr
+	lda stack_lo-1,Y
+	clc
+	adc #$01
+	sta stack_lo-1,Y
+	bcc +
+	lda stack_hi-1,Y
+	adc #$00
+	sta stack_hi-1,Y
++	jmp next_insn
+
+z_dec
+	jsr fatal_error
+	!text "z_dec not impl",0
+
+z_not
+	lda operands_lo+0
+	eor #$ff
+	tax
+	lda operands_hi+0
+	eor #$ff
+	jmp store_common
+
+z_load
+	jsr fatal_error
+	!text "z_load not impl",0
+
+z_store
+	jsr fatal_error
+	!text "z_store not impl",0
+
+
+
+
+z_print
+	jsr z_print_inline_common
+	jmp next_insn
+
+z_print_ret
+	jsr z_print_inline_common
+	lda #$0D
+	jsr print_char
+z_rtrue
+	ldx #1
+	!byte $2C ; bit NNNN skips the next insn
+z_rfalse
+	ldx #0
+	lda #0
+.z_ret_common
+	; TODO
+z_ret
+	ldx operands_lo+0
+	lda operands_hi+0
+	jmp .z_ret_common
+
+z_print_inline_common
+	rts ; TODO
+
+z_save
+	jsr fatal_error
+	!text "z_save not impl",0
+
+z_restore
+	jsr fatal_error
+	!text "z_restore not impl",0
+
+z_restart
+	jsr fatal_error
+	!text "z_restart not impl",0
+
+z_ret_popped
+	jsr fatal_error
+	!text "z_ret_popped not impl",0
+
+z_pop
+	jsr fatal_error
+	!text "z_pop not impl",0
+
+z_quit
+	jsr fatal_error
+	!text "z_quit not impl",0
+
+
+
 
 attr_bits !byte $80,$40,$20,$10,$08,$04,$02,$01
 
@@ -627,23 +970,24 @@ attr_bits !byte $80,$40,$20,$10,$08,$04,$02,$01
 	; sets obj_ptr and attr_bit appropriately.
 attr_setup
 	jsr get_object_addr	; sets obj_ptr
-	lda operand_lo+1
+	lda operands_lo+1
 	and #$7
 	tay
 	lda attr_bits,Y
 	sta attr_bit
-	lda operand_lo+1
+	lda operands_lo+1
 	lsr
 	lsr
 	lsr
 	tay
 	rts
 
+	; operand+0 contains object number; return y=0
 get_object_addr
 	; compute objIndex * 9
-	lda operand_lo+0
+	lda operands_lo+0
 	sta obj_ptr+0
-	lda operand_hi+0
+	lda operands_hi+0
 	sta obj_ptr+1
 	ldy #3
 -	asl obj_ptr+0
@@ -652,13 +996,17 @@ get_object_addr
 	bne -
 	clc
 	lda obj_ptr+0
-	adc operand_lo+0
+	adc operands_lo+0
 	adc obj_base
 	sta obj_ptr+0
 	lda obj_ptr+1
-	adc operand_hi+0
+	adc operands_hi+0
 	adc obj_base+1
 	sta obj_ptr
+	rts
+
+get_mem_addr
+get_mem_addr_packed
 	rts
 
 z_print_num
@@ -698,9 +1046,16 @@ z_print_num
 	sta operands_lo+0
 	rts
 
+z_new_line
+	lda #13
+	!byte $2C ; skip lda zp
 z_print_char
 	lda operands_lo+0
 	jsr print_char
+	jmp next_insn
+
+z_show_status
+	; TODO: print obj name, score, and moves in top window.
 	jmp next_insn
 
 	; divide operands+0 by operands+1, quotient in operands+0, remainder in operands+2
@@ -731,7 +1086,9 @@ store_common
 	jsr store_result
 	jmp next_insn
 
+	; incoming: x is low byte, a is high byte of result to store
 store_result
+	pha
 	ldy znext
 	inc znext
 	lda (zptr),y
@@ -740,18 +1097,23 @@ store_result
 	cmp #$10
 	bcs .store_global_lo
 	; store local
+	pla
 	sta (frame_hi),Y
 	txa
 	sta (frame_lo),Y
 	rts
 .store_global_lo
 	asl
+	tay
+	pla
 	sta (globals_lo),y
 	txa
 	sta (globals_lo),y
 	rts
 .store_global_hi
 	asl
+	tay
+	pla
 	sta (globals_hi),Y
 	txa
 	sta (globals_hi),Y
@@ -778,3 +1140,10 @@ fatal_error
 	jsr print_char
 	iny
 	bne -		; always taken
+
+print_char
+	rts
+
+	!align 255, 0
+stack_lo !fill 256
+stack_hi !fill 256
