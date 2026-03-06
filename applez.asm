@@ -46,6 +46,27 @@ PH2ON		= $C085
 PH3OFF		= $C086
 PH3ON		= $C087
 
+; WE locations must be accessed twice
+BANKA_RAMRD_WP	= $C080
+BANKA_ROMRD_WE	= $C081
+BANKA_ROMRD_WP	= $C082
+BANKA_RAMRD_WE	= $C083
+
+BANKB_RAMRD_WP	= $C088
+BANKB_ROMRD_WE	= $C089
+BANKB_ROMRD_WP	= $C08A
+BANKB_RAMRD_WE	= $C08B
+
+BANK16K_0		= $C084
+BANK16K_1		= $C085
+BANK16K_2		= $C086
+BANK16K_3		= $C087
+
+BANK16K_4		= $C08C
+BANK16K_5		= $C08D
+BANK16K_6		= $C08E
+BANK16K_7		= $C08F
+
 	*=$800
 	!byte 16
 
@@ -149,6 +170,8 @@ setpos	; input x, destroys a
 	sta $21
 	rts
 
+; FAST_SCROLL = 1
+
 !ifdef FAST_SCROLL {
 scroll
 	sta PAGE2
@@ -214,6 +237,9 @@ scroll
 	bmi +
 	jmp (scrolltop)
 +	rts
+
+scrolltop !byte <(.scroll+11),>(.scroll+11)
+
 } else {
 scroll
 	ldx #0
@@ -238,7 +264,7 @@ scroll
 	sta ($20),Y
 	dey
 	bpl -
-	
+
 	sta PAGE1
 	ldy #39
 -	lda ($22),Y
@@ -265,8 +291,6 @@ scroll
 	bpl -
 	rts
 }
-
-; scrolltop !byte <(.scroll+11),>(.scroll+11)
 
 clr1	
 	ldy #0
@@ -371,7 +395,15 @@ _0op_hi
 	!byte >(z_ret_popped-1),>(z_pop-1),>(z_quit-1),>(z_new_line-1),>(z_show_status-1),>(z_ill-1),>(z_ill-1),>(z_ill-1)
 
 _var_lo
+	!byte <(z_call_vs-1),<(z_storew-1),<(z_storeb-1),<(z_put_prop-1),<(z_sread-1),<(z_print_char-1),<(z_print_num-1),<(z_random-1)
+	!byte <(z_push-1),<(z_pull-1),<(z_split_window-1),<(z_set_window-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1)
+	!byte <(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_output_stream-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1)
+	!byte <(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1)
 _var_hi
+	!byte >(z_call_vs-1),>(z_storew-1),>(z_storeb-1),>(z_put_prop-1),>(z_sread-1),>(z_print_char-1),>(z_print_num-1),>(z_random-1)
+	!byte >(z_push-1),>(z_pull-1),>(z_split_window-1),>(z_set_window-1),>(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1)
+	!byte >(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_output_stream-1),>(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1)
+	!byte >(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1)
 
 ; opcode
 ; (type byte) (type byte for call_vs2) (00=large, 01=small, 10=var, 11=omit)
@@ -872,6 +904,8 @@ z_print_paddr
 	jsr get_mem_addr_packed
 	jmp z_print_common_packed
 
+	; loads must be in contiguous dynamic+static memory
+	; stores must be in contiguous dynamic memory
 z_loadb
 	clc
 	lda operands_lo+0
@@ -887,6 +921,20 @@ z_loadb
 	lda #0
 	jmp store_common
 
+z_storeb
+	clc
+	lda operands_lo+0
+	adc operands_lo+1
+	sta obj_ptr
+	lda operands_hi+0
+	adc operands_hi+1
+	sta obj_ptr+1
+	jsr get_mem_addr	
+	ldy #0
+	lda operands_lo+2
+	sta (obj_ptr),Y
+	jmp next_insn
+
 z_loadw
 	clc
 	asl operands_lo+1
@@ -898,12 +946,32 @@ z_loadw
 	adc operands_hi+1
 	sta obj_ptr+1
 	jsr get_mem_addr
+	; TODO: if this crosses a 4k boundary we need multiple calls
 	ldy #1
 	lda (obj_ptr),Y
 	tax
 	dey
 	lda (obj_ptr),y
 	jmp store_common
+
+z_storew
+	clc
+	asl operands_lo+1
+	rol operands_hi+1
+	lda operands_lo+0
+	adc operands_lo+1
+	sta obj_ptr
+	lda operands_hi+0
+	adc operands_hi+1
+	sta obj_ptr+1
+	jsr get_mem_addr
+	; TODO: if this crosses a 4k boundary we need multiple calls
+	ldy #1
+	lda operands_lo+2
+	sta (obj_ptr),Y
+	dey
+	lda operands_hi+2
+	sta (obj_ptr),Y
 
 z_inc
 	lda operands_lo+0
@@ -979,9 +1047,6 @@ z_store
 	jsr fatal_error
 	!text "z_store not impl",0
 
-
-
-
 z_print
 	jsr z_print_inline_common
 	jmp next_insn
@@ -1023,15 +1088,29 @@ z_ret_popped
 	!text "z_ret_popped not impl",0
 
 z_pop
-	jsr fatal_error
-	!text "z_pop not impl",0
+	dec stackptr
+	jmp next_insn
+
+z_push
+	ldy stackptr
+	inc stackptr
+	lda operands_lo+0
+	sta stack_lo,Y
+	lda operands_hi+0
+	sta stack_hi,Y
+	jmp next_insn
+
+z_pull
+	dec stackptr
+	ldy stackptr
+	lda stack_lo,Y
+	tax
+	lda stack_hi,Y
+	jmp store_common
 
 z_quit
 	jsr fatal_error
 	!text "z_quit not impl",0
-
-
-
 
 attr_bits !byte $80,$40,$20,$10,$08,$04,$02,$01
 
@@ -1078,6 +1157,7 @@ get_mem_addr
 get_mem_addr_packed
 	rts
 
+; print number in operands+0
 z_print_num
 	lda #$0
 	sta mulTemp
@@ -1212,6 +1292,14 @@ fatal_error
 
 print_char
 	rts
+
+	; each 4k in the story file is mapped to a byte in this table
+	; maximum story size is 512k, so 128 slots are needed
+	; 0-15 is main memory and language card (12=4k a, 13=4kb, 14/15=8k)
+	; 16-31 is aux memory and language card
+	; 32-35 is Saturn bank 0
+	; 36-39 is Saturn bank 1, etc
+tlb 	!fill 128
 
 	!align 255, 0
 stack_lo !fill 256
