@@ -1,4 +1,6 @@
 
+
+
 _80STOREOFF	= $C000
 _80STOREON	= $C001
 RAMRDOFF	= $C002 ; read enable main memory
@@ -94,6 +96,12 @@ endboot
 	sta AUXCHARSET
 	sta _80STOREON
 
+dest_ptr	= $20
+src_ptr		= $22
+xsave		= $24
+ysave		= $25
+cursor_x	= $26
+
 ; Memory is broken up into 4k blocks, up to 512k
 ; It typically starts at $2000 and counts up to $BFFF
 ; After that, it uses Aux main memory starting at $2000 (interpreter code is shadowed)
@@ -102,6 +110,13 @@ endboot
 
 	lda #$A0
 	jsr clear
+
+	ldx #23
+	jsr setpos
+	lda #0
+	sta cursor_x
+
+	jmp zentry
 
 xpos = $80
 	lda #0
@@ -142,7 +157,7 @@ draw	; $20 is base row, a is column; destroys x,y, carry set on return
 	inx
 
 	sta PAGE2
-	sta ($20),y
+	sta (dest_ptr),y
 
 draw1	
 	lda .test,x
@@ -151,7 +166,7 @@ draw1
 	inx
 
 	sta PAGE1
-	sta ($20),y
+	sta (dest_ptr),y
 
 	iny
 	bne -
@@ -161,14 +176,15 @@ draw1
 setpos	; input x, destroys a
 	lda .mul40,x
 	and #$F8
-	sta $20
+	sta dest_ptr
 	lda .mul40,x
 	and #$7
-	sta $21
+	sta dest_ptr+1
 	rts
 
 ; FAST_SCROLL = 1
 
+; scroll returns with negative flag always set, so bmi is always taken.
 !ifdef FAST_SCROLL {
 scroll
 	sta PAGE2
@@ -238,52 +254,55 @@ scroll
 scrolltop !byte <(.scroll+11),>(.scroll+11)
 
 } else {
+
 scroll
 	ldx #0
 	lda .mul40,X
 	and #$F8
-	sta $20
+	sta dest_ptr
 	lda .mul40,X
 	and #$7
-	sta $21
+	sta dest_ptr+1
 .scroll1
 	inx
 	lda .mul40,X
 	and #$F8
-	sta $22
+	sta src_ptr
 	lda .mul40,X
 	and #$7
-	sta $23
+	sta src_ptr+1
 
 	sta PAGE2
 	ldy #39
--	lda ($22),Y
-	sta ($20),Y
+-	lda (src_ptr),Y
+	sta (dest_ptr),Y
 	dey
 	bpl -
 
 	sta PAGE1
 	ldy #39
--	lda ($22),Y
-	sta ($20),Y
+-	lda (src_ptr),Y
+	sta (dest_ptr),Y
 	dey
 	bpl -
 
-	lda $22
-	sta $20
-	lda $23
-	sta $21	
+	lda src_ptr
+	sta dest_ptr
+	lda src_ptr+1
+	sta dest_ptr+1
 	cpx #23
 	bne .scroll1
+	lda #$D0
+	sta dest_ptr
 	lda #$A0
 	sta PAGE2
 	ldy #39
--	sta $7D0,y
+-	sta (dest_ptr),y
 	dey
 	bpl -
 	sta PAGE1
 	ldy #39
-- 	sta $7D0,Y
+- 	sta (dest_ptr),Y
 	dey
 	bpl -
 	rts
@@ -302,6 +321,38 @@ clear
 	iny
 	bne -
 	rts
+
+print_char
+	sty ysave
+	stx xsave
+	cmp #13
+	beq .print_char_nl
+	tax
+	lda cursor_x
+	inc cursor_x
+	lsr
+	tay
+	bcc .print_char_even
+.print_char_odd
+	sta PAGE1
+	txa
+	sta (dest_ptr),y
+	cpy #39
+	bne .print_char_done
+.print_char_nl
+	ldy #0
+	sty cursor_x
+	jsr scroll
+	bmi .print_char_done ; always taken
+.print_char_even
+	sta PAGE2
+	txa
+	sta (dest_ptr),y
+.print_char_done
+	ldx xsave
+	ldy ysave
+	rts
+
 
 .mul40
 	!byte 	$04, $84, $05, $85, $06, $86, $07, $87
@@ -328,8 +379,9 @@ mulTemp = $46
 attr_bit = $47
 ztype = $48
 zinsn = $49
-zptr = $4A			; actual cpu address in memory of current insn	
-zpc = $4C			; upper two bytes of offset in story (zptr contains lowest byte)
+zpc_hi = $4B		; upper two bytes of offset in story (big-endian)
+zpc_mid = $4B
+zptr = $4C			; actual cpu address in memory of current insn (little-endian)
 stackptr = $4F
 operands_hi = $50
 operands_lo = $58
@@ -413,7 +465,59 @@ output_enables = $72
 
 } // endif
 
+HEADER = $2000
+;  +0 version
+;  +1 flags
+;  +2 pad0
+;  +4 high memory address (big-endian)
+;  +6 initial PC address (big-endian)
+;  +8 dictionary
+; +10 object table (defaults, etc)
+; +12 globals
+; +14 static memory address
 
+zentry
+	; set up initial pc
+	lda HEADER+7
+	sta zptr
+	lda HEADER+6
+	sta zpc_mid
+	clc
+	adc #>HEADER
+	sta zptr+1
+	lda #0
+	sta zpc_hi
+	sta stackptr
+
+	; set up object pointer
+	lda HEADER+11
+!ifdef Z4PLUS {
+	adc (126 - 14)
+} else {
+	adc #(62 - 9)		; skip defaults, and objects are 1-based
+}
+	sta obj_ptr
+	lda HEADER+10
+	adc #>HEADER
+	sta obj_ptr+1
+
+	; set up globals; globals_lo+32 is address of first global
+	lda HEADER+13
+	adc #$20
+	sta globals_lo
+	lda HEADER+12
+	adc #>HEADER
+	sta globals_lo+1
+
+	; globals_hi is the address of global 112
+	lda HEADER+13
+	adc #$E0
+	sta globals_hi
+	lda HEADER+12
+	adc #>HEADER
+	sta globals_hi+1
+
+	jmp next_insn
 
 dispatch +table16 _2op_s_s,_2op_s_s,_2op_s_v,_2op_s_v,_2op_v_s,_2op_v_s,_2op_v_v,_2op_v_v,_1op_large,_1op_small,_1op_variable,_0op,_2op_var,_2op_var,_vop,_vop
 
@@ -436,8 +540,8 @@ _var +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_prin
 ; zero and minus flags set based on instruction byte.
 ; this version requires 65C02 in apple 2e 
 !macro next_insn_byte {
-	+skip_insn_byte
 	lda (zptr)
+	+skip_insn_byte
 }
 
 ; opcode
@@ -462,18 +566,22 @@ next_insn
 ; Y contains instruction
 ; X contains operand count
 _2op_s_s
+	ldx #0
 	jsr operand_small
 	jsr operand_small
 	bne ._2op_common ; always taken
 _2op_s_v
+	ldx #0
 	jsr operand_small
 	jsr operand_variable
 	bne ._2op_common ; always taken
 _2op_v_s
+	ldx #0
 	jsr operand_variable
 	jsr operand_small
 	bne ._2op_common ; always taken
 _2op_v_v
+	ldx #0
 	jsr operand_variable
 	jsr operand_variable
 ._2op_common
@@ -510,6 +618,7 @@ _0op
 decode_types
 	+next_insn_byte
 	sta ztype
+	ldx #0
 -	bit ztype
 	; large=00, small=01, variable=10, omitted=11
 	bmi .var_omit
@@ -527,7 +636,7 @@ decode_types
 	rol ztype
 	sec
 	rol ztype
-	bne -
+	bne -			; always taken
 .decode_done
 	rts
 
@@ -548,6 +657,7 @@ operand_small
 	; if there are more types to decode
 operand_variable	
 	+next_insn_byte
+	cmp #$00
 	beq .read_tos
 	bmi .read_global_hi
 	cmp #$10
@@ -623,6 +733,7 @@ z_je
 
 branch_failed
 	+next_insn_byte
+	cmp #$00
 	bmi .branch_passed
 .branch_failed
 	cmp #$40
@@ -632,6 +743,7 @@ branch_failed
 	jmp next_insn
 branch_passed
 	+next_insn_byte
+	cmp #$00
 	bmi .branch_failed
 .branch_passed
 	and #$7f
@@ -900,10 +1012,10 @@ z_loadb
 	sta obj_ptr
 	lda operands_hi+0
 	adc operands_hi+1
+	adc #>HEADER
 	sta obj_ptr+1
-	jsr get_mem_addr
-	ldy #0
-	lda (obj_ptr),y
+	; ldy #0
+	lda (obj_ptr)
 	tax
 	lda #0
 	jmp store_common
@@ -915,11 +1027,11 @@ z_storeb
 	sta obj_ptr
 	lda operands_hi+0
 	adc operands_hi+1
+	adc #>HEADER
 	sta obj_ptr+1
-	jsr get_mem_addr	
-	ldy #0
+	; ldy #0
 	lda operands_lo+2
-	sta (obj_ptr),Y
+	sta (obj_ptr)
 	jmp next_insn
 
 z_loadw
@@ -931,8 +1043,8 @@ z_loadw
 	sta obj_ptr
 	lda operands_hi+0
 	adc operands_hi+1
+	adc #>HEADER
 	sta obj_ptr+1
-	jsr get_mem_addr
 	; TODO: if this crosses a 4k boundary we need multiple calls
 	ldy #1
 	lda (obj_ptr),Y
@@ -950,8 +1062,8 @@ z_storew
 	sta obj_ptr
 	lda operands_hi+0
 	adc operands_hi+1
+	adc #>HEADER
 	sta obj_ptr+1
-	jsr get_mem_addr
 	; TODO: if this crosses a 4k boundary we need multiple calls
 	ldy #1
 	lda operands_lo+2
@@ -1199,6 +1311,11 @@ get_object_addr
 	rts
 
 get_mem_addr
+	lda obj_ptr+1
+	adc #>HEADER
+	sta obj_ptr+1
+	rts
+
 get_mem_addr_packed
 	rts
 
@@ -1334,9 +1451,6 @@ fatal_error
 	jsr print_char
 	iny
 	bne -		; always taken
-
-print_char
-	rts
 
 	; each 4k in the story file is mapped to a byte in this table
 	; maximum story size is 512k, so 128 slots are needed
