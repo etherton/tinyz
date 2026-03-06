@@ -101,12 +101,9 @@ endboot
 ; After that, it uses Aux language card 16k
 
 	lda #$A0
-	sta PAGE2
-	jsr clr1
-	sta PAGE1
-	jsr clr1
+	jsr clear
 
-	xpos = $80
+xpos = $80
 	lda #0
 	sta xpos
 	ldx #23
@@ -292,7 +289,11 @@ scroll
 	rts
 }
 
-clr1	
+clear
+	sta PAGE2
+	jsr .clear
+	sta PAGE1
+.clear	
 	ldy #0
 - 	sta $400,y
 	sta $500,y
@@ -359,6 +360,7 @@ output_enables = $72
 	!word t0,t1,t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t12,t13,t14,t15,t16,t17,t18,t19,t20,t21,t22,t23,t24,t25,t26,t27,t28,t29,t30,t31
 }
 
+; these versions don't save the arg count. only je and call_vs really care.
 !macro dispatch16 label {
 	asl
 	tax
@@ -454,7 +456,6 @@ next_insn
 	lsr
 	lsr
 	lsr
-	ldx #0
 	+dispatch16 dispatch
 
 ; at entry to instruction handler:
@@ -503,6 +504,7 @@ _1op_variable
 
 _0op
 	lda zinsn
+	and #$f
 	+dispatch16 _0op
 
 decode_types
