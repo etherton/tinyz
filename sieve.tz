@@ -1,0 +1,38 @@
+object dummy "Zieve of Eratosthenes" {
+}
+
+global room = 1;
+global score;
+global turns = 16;
+global scratch;
+
+global marked = byte_array(256);
+
+global start;
+global end;
+
+routine Sieve [; i j k]  {
+	for (score=2; score<=16; ++score) {
+		if (iszero marked[score])
+			for (j=score*score; j<256; j=j+score)
+				marked[j] = 1;
+		show_status;
+	}
+		
+	print "All primes between 2 and 255: ";
+	for (i=2; i<256; ++i)
+		if (iszero marked[i]) {
+			print_num(i);
+			print ", ";
+			++k;
+		}
+	print_ret "done. Found ",k," primes total.";
+}
+
+routine main [] {
+	start = start[[2]];
+	Sieve();
+	end = end[[2]];
+	print "Elapsed time is ",(end - start)," jiffies.^";
+	quit;
+}

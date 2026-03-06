@@ -327,11 +327,9 @@ mulTemp = $46
 attr_bit = $47
 ztype = $48
 zinsn = $49
-znext = $4A
-zptr = $4B
-insn = $4D
-stackptr = $4E
-type_byte = $4F
+zptr = $4A			; actual cpu address in memory of current insn	
+zpc = $4C			; upper two bytes of offset in story (zptr contains lowest byte)
+stackptr = $4F
 operands_hi = $50
 operands_lo = $58
 stringptr = $60
@@ -341,69 +339,104 @@ frame_lo = $66		; address of lower half of stack (+1 = first local, +2 = second.
 frame_hi = $68		; address of upper half of stack
 obj_ptr = $6A
 obj_base = $6C		; 9 bytes before first object slot
-
-
-; retrieve next insn byte, and recompute if
-; we cross a 4k boundary. note by the time we
-; get to here, language card pages etc are set
-next_byte
-	inc zptr
-	bne +
-	lda zptr+1
-	and #$f
-	cmp #$f
-	bne +
-+	ldy #0
-	lda (zptr),Y
-	rts
+window_split = $6E
+window_current = $6F
+output_table = $70
+output_enables = $72
 
 ;   0-31: 0101 (small,small) (5)
 ;  32-63: 0110 (small,variable) (6)
 ;  64-95: 1001 (variable,small) (9)
 ; 96-127: 1010 (variable,variable) (10)
 
-dispatch_lo
-	!byte <(_2op_s_s-1),<(_2op_s_s-1),<(_2op_s_v-1),<(_2op_s_v-1),<(_2op_v_s-1),<(_2op_v_s-1),<(_2op_v_v-1),<(_2op_v_v-1)
-	!byte <(_1op_large-1),<(_1op_small-1),<(_1op_variable-1),<(_0op-1),<(_2op_var-1),<(_2op_var-1),<(_var-1),<(_var-1)
-dispatch_hi
-	!byte >(_2op_s_s-1),>(_2op_s_s-1),>(_2op_s_v-1),>(_2op_s_v-1),>(_2op_v_s-1),>(_2op_v_s-1),>(_2op_v_v-1),>(_2op_v_v-1)
-	!byte >(_1op_large-1),>(_1op_small-1),>(_1op_variable-1),>(_0op-1),>(_2op_var-1),>(_2op_var-1),>(_var-1),>(_var-1)
+!ifdef TARGET_65C02 {
 
-_2op_lo
-	!byte <(z_ill-1),<(z_je-1),<(z_jg-1),<(z_dec_chk-1),<(z_inc_chk-1),<(z_jin-1),<(z_test-1)
-	!byte <(z_or-1),<(z_and-1),<(z_test_attr-1),<(z_set_attr-1),<(z_clear_attr-1),<(z_store-1),<(z_insert_obj-1),<(z_loadw-1)
-	!byte <(z_loadb-1),<(z_get_prop-1),<(z_get_prop_addr-1),<(z_get_next_prop-1),<(z_add-1),<(z_sub-1),<(z_mul-1),<(z_div-1)
-	!byte <(z_mod-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1)
-_2op_hi
-	!byte >(z_ill-1),>(z_je-1),>(z_jg-1),>(z_dec_chk-1),>(z_inc_chk-1),>(z_jin-1),>(z_test-1)
-	!byte >(z_or-1),>(z_and-1),>(z_test_attr-1),>(z_set_attr-1),>(z_clear_attr-1),>(z_store-1),>(z_insert_obj-1),>(z_loadw-1)
-	!byte >(z_loadb-1),>(z_get_prop-1),>(z_get_prop_addr-1),>(z_get_next_prop-1),>(z_add-1),>(z_sub-1),>(z_mul-1),>(z_div-1)
-	!byte >(z_mod-1),>(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1)
+!macro table16 t0,t1,t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t12,t13,t14,t15 {
+	!word t0,t1,t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t12,t13,t14,t15
+}
 
-_1op_lo
-	!byte <(z_jz-1),<(z_get_sibling-1),<(z_get_child-1),<(z_get_parent-1),<(z_get_prop_len-1),<(z_inc-1),<(z_dec-1),<(z_print_addr-1)
-	!byte <(z_ill-1),<(z_remove_obj-1),<(z_print_obj-1),<(z_ret-1),<(z_jump-1),<(z_print_paddr-1),<(z_load-1),<(z_not-1)
-_1op_hi
-	!byte >(z_jz-1),>(z_get_sibling-1),>(z_get_child-1),>(z_get_parent-1),>(z_get_prop_len-1),>(z_inc-1),>(z_dec-1),>(z_print_addr-1)
-	!byte >(z_ill-1),>(z_remove_obj-1),>(z_print_obj-1),>(z_ret-1),>(z_jump-1),>(z_print_paddr-1),>(z_load-1),>(z_not-1)
+!macro table32 t0,t1,t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t12,t13,t14,t15,t16,t17,t18,t19,t20,t21,t22,t23,t24,t25,t26,t27,t28,t29,t30,t31 {
+	!word t0,t1,t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t12,t13,t14,t15,t16,t17,t18,t19,t20,t21,t22,t23,t24,t25,t26,t27,t28,t29,t30,t31
+}
 
-_0op_lo
-	!byte <(z_rtrue-1),<(z_rfalse-1),<(z_print-1),<(z_print_ret-1),<(next_insn-1),<(z_save-1),<(z_restore-1),<(z_restart-1)
-	!byte <(z_ret_popped-1),<(z_pop-1),<(z_quit-1),<(z_new_line-1),<(z_show_status-1),<(z_ill-1),<(z_ill-1),<(z_ill-1)
-_0op_hi
-	!byte >(z_rtrue-1),>(z_rfalse-1),>(z_print-1),>(z_print_ret-1),>(next_insn-1),>(z_save-1),>(z_restore-1),>(z_restart-1)
-	!byte >(z_ret_popped-1),>(z_pop-1),>(z_quit-1),>(z_new_line-1),>(z_show_status-1),>(z_ill-1),>(z_ill-1),>(z_ill-1)
+!macro dispatch16 label {
+	asl
+	tax
+	jmp (label,x)
+}
 
-_var_lo
-	!byte <(z_call_vs-1),<(z_storew-1),<(z_storeb-1),<(z_put_prop-1),<(z_sread-1),<(z_print_char-1),<(z_print_num-1),<(z_random-1)
-	!byte <(z_push-1),<(z_pull-1),<(z_split_window-1),<(z_set_window-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1)
-	!byte <(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_output_stream-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1)
-	!byte <(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1),<(z_ill-1)
-_var_hi
-	!byte >(z_call_vs-1),>(z_storew-1),>(z_storeb-1),>(z_put_prop-1),>(z_sread-1),>(z_print_char-1),>(z_print_num-1),>(z_random-1)
-	!byte >(z_push-1),>(z_pull-1),>(z_split_window-1),>(z_set_window-1),>(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1)
-	!byte >(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_output_stream-1),>(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1)
-	!byte >(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1),>(z_ill-1)
+!macro dispatch32 label {
+	asl
+	tax
+	jmp (label,x)
+}
+
+} else {
+
+!macro table16 t0,t1,t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t12,t13,t14,t15 {
+	!byte <(t0-1),<(t1-1),<(t2-1),<(t3-1),<(t4-1),<(t5-1),<(t6-1),<(t7-1)
+	!byte <(t8-1),<(t9-1),<(t10-1),<(t11-1),<(t12-1),<(t13-1),<(t14-1),<(t15-1)
+	!byte >(t0-1),>(t1-1),>(t2-1),>(t3-1),>(t4-1),>(t5-1),>(t6-1),>(t7-1)
+	!byte >(t8-1),>(t9-1),>(t10-1),>(t11-1),>(t12-1),>(t13-1),>(t14-1),>(t15-1)
+}
+
+!macro table32 t0,t1,t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t12,t13,t14,t15,t16,t17,t18,t19,t20,t21,t22,t23,t24,t25,t26,t27,t28,t29,t30,t31 {
+	!byte <(t0-1),<(t1-1),<(t2-1),<(t3-1),<(t4-1),<(t5-1),<(t6-1),<(t7-1)
+	!byte <(t8-1),<(t9-1),<(t10-1),<(t11-1),<(t12-1),<(t13-1),<(t14-1),<(t15-1)
+	!byte <(t16-1),<(t17-1),<(t18-1),<(t19-1),<(t20-1),<(t21-1),<(t22-1),<(t23-1)
+	!byte <(t24-1),<(t25-1),<(t26-1),<(t27-1),<(t28-1),<(t29-1),<(t30-1),<(t31-1)
+	!byte >(t0-1),>(t1-1),>(t2-1),>(t3-1),>(t4-1),>(t5-1),>(t6-1),>(t7-1)
+	!byte >(t8-1),>(t9-1),>(t10-1),>(t11-1),>(t12-1),>(t13-1),>(t14-1),>(t15-1)
+	!byte >(t16-1),>(t17-1),>(t18-1),>(t19-1),>(t20-1),>(t21-1),>(t22-1),>(t23-1)
+	!byte >(t24-1),>(t25-1),>(t26-1),>(t27-1),>(t28-1),>(t29-1),>(t30-1),>(t31-1)
+}
+
+!macro dispatch16 label {
+	tay
+	lda label+16,Y
+	pha
+	lda label,Y
+	pha
+	rts
+}
+
+!macro dispatch32 label {
+	tay
+	lda label+32,y
+	pha
+	lda label,Y
+	pha
+	rts
+}
+
+} // endif
+
+
+
+dispatch +table16 _2op_s_s,_2op_s_s,_2op_s_v,_2op_s_v,_2op_v_s,_2op_v_s,_2op_v_v,_2op_v_v,_1op_large,_1op_small,_1op_variable,_0op,_2op_var,_2op_var,_vop,_vop
+
+_2op +table32 z_ill,z_je,z_jl,z_jg,z_dec_chk,z_inc_chk,z_jin,z_test,z_or,z_and,z_test_attr,z_set_attr,z_clear_attr,z_store,z_insert_obj,z_loadw,z_loadb,z_get_prop,z_get_prop_addr,z_get_next_prop,z_add,z_sub,z_mul,z_div,z_mod,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
+
+_1op +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_inc,z_dec,z_print_addr,z_ill,z_remove_obj,z_print_obj,z_ret,z_jump,z_print_paddr,z_load,z_not
+
+_op0 +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,z_ill,z_ill,z_ill
+
+_var +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
+
+!macro skip_insn_byte {
+	inc zptr
+	bne +
+	inc zptr+1
++
+}
+
+; returns next instruction byte in A; destroys Y
+; zero and minus flags set based on instruction byte.
+; this version requires 65C02 in apple 2e 
+!macro next_insn_byte {
+	+skip_insn_byte
+	lda (zptr)
+}
 
 ; opcode
 ; (type byte) (type byte for call_vs2) (00=large, 01=small, 10=var, 11=omit)
@@ -415,25 +448,18 @@ _var_hi
 ; if an instruction would cross a non-contiguous 4k boundary (rare), we copy the entire instruction into a temporary
 ; location and execute it from there. (eventually)
 next_insn
-	ldy znext
-	lda (zptr),y
+	+next_insn_byte
 	sta zinsn
 	lsr
 	lsr
 	lsr
 	lsr
-	lda dispatch_hi,Y
-	pha
-	lda dispatch_lo,Y
-	pha
 	ldx #0
-	rts
+	+dispatch16 dispatch
 
-; zptr is not within 11 bytes of a 4k boundary.
 ; at entry to instruction handler:
 ; Y contains instruction
 ; X contains operand count
-; znext contains offset from (zptr) of next insn byte.
 _2op_s_s
 	jsr operand_small
 	jsr operand_small
@@ -444,65 +470,43 @@ _2op_s_v
 	bne ._2op_common ; always taken
 _2op_v_s
 	jsr operand_variable
-	ldy znext
 	jsr operand_small
 	bne ._2op_common ; always taken
 _2op_v_v
 	jsr operand_variable
-	ldy znext
 	jsr operand_variable
 ._2op_common
 	lda zinsn
 	and #$1F
-	tay
-	lda _2op_hi,Y
-	pha
-	lda _2op_lo,Y
-	pha
-	rts
+	+dispatch32 _2op
 _2op_var
 	jsr decode_types
 	jmp ._2op_common
-_var
+_vop
 	jsr decode_types
 	lda zinsn
 	and #$1F
-	tay
-	lda _var_hi,Y
-	pha
-	lda _var_lo,Y
-	pha
-	rts
+	+dispatch32 _var
 
 _1op_large
 	jsr operand_large
-	bne ._1op_common
+	bne ._1op_common ; always taken
 _1op_small
 	jsr operand_small
-	bne ._1op_common
+	bne ._1op_common ; always taken
 _1op_variable
 	jsr operand_variable
 ._1op_common
 	lda zinsn
 	and #$f
-	lda _1op_hi,Y
-	pha
-	lda _1op_lo,Y
-	pha
-	rts
+	+dispatch16 _1op
 
 _0op
-	ldy zinsn
-	lda _0op_hi-$b0,Y
-	pha
-	lda _0op_lo-$b0,Y
-	pha
-	rts
+	lda zinsn
+	+dispatch16 _0op
 
 decode_types
-	lda (zptr),Y
-	iny
-	sty znext
+	+next_insn_byte
 	sta ztype
 -	bit ztype
 	; large=00, small=01, variable=10, omitted=11
@@ -516,7 +520,6 @@ decode_types
 .var_omit
 	bvs .decode_done
 	jsr operand_variable
-	ldy znext
 .next_type
 	sec 
 	rol ztype
@@ -526,31 +529,23 @@ decode_types
 .decode_done
 	rts
 
-
-
-
 	; all operand handlers inx before return and so the zero flag is always clear.
 operand_large
-	lda (zptr),Y
-	iny
+	+next_insn_byte
 	!byte $2C	; bit NNNN, skips lda #$0
 	; zero flag clear on return (x never zero)
 operand_small
 	lda #$0
 	sta operands_hi,x
-	lda (zptr),y
-	iny
+	+next_insn_byte
 	sta operands_lo,x
-	sty znext
 	inx
 	rts
 
 	; operand_variable destroys y so it needs to be reloaded from znext
 	; if there are more types to decode
 operand_variable	
-	lda (zptr),Y
-	iny
-	sty znext
+	+next_insn_byte
 	beq .read_tos
 	bmi .read_global_hi
 	cmp #$10
@@ -625,20 +620,16 @@ z_je
 	bne -
 
 branch_failed
-	ldy	znext
-	inc znext
-	lda (zptr),Y	
+	+next_insn_byte
 	bmi .branch_passed
 .branch_failed
 	cmp #$40
 	bcs .short_branch_failed
-	inc znext
+	+skip_insn_byte
 .short_branch_failed
 	jmp next_insn
 branch_passed
-	ldy znext
-	inc znext
-	lda (zptr),y
+	+next_insn_byte
 	bmi .branch_failed
 .branch_passed
 	and #$7f
@@ -650,27 +641,17 @@ branch_passed
 	ora #$fc
 .long_branch_positive
 	tax
-	ldy znext
-	inc znext
-	lda (zptr),Y
+	+next_insn_byte
 	; x contains high byte of offset, a contains low byte
 .compute_newpc
-	pha
-	clc
-	lda znext
 	adc zptr
 	sta zptr
-	bcc +
-	inc zptr+1
-+	pla
-	adc zptr
-	sta zptr
-	lda zptr+1
+	txa
+	adc zptr+1
+	sta zptr+1
+
 	adc #$00
 	sta zptr+1
-	; TODO this is shite
-	ldy #0
-	sty znext
 	jmp next_insn
 z_jump
 	lda operands_lo+0
@@ -862,6 +843,10 @@ z_get_prop
 	jsr fatal_error
 	!text "z_get_prop not impl",0
 
+z_put_prop
+	jsr fatal_error
+	!text "z_put_prop not impl",0
+
 z_get_next_prop
 	jsr fatal_error
 	!text "z_get_next_prop not impl",0
@@ -972,6 +957,15 @@ z_storew
 	dey
 	lda operands_hi+2
 	sta (obj_ptr),Y
+	jmp next_insn
+
+z_random
+	jsr fatal_error
+	!text "z_random not impl",0
+
+z_sread
+	jsr fatal_error
+	!text "z_sread not impl",0
 
 z_inc
 	lda operands_lo+0
@@ -1068,6 +1062,11 @@ z_ret
 	lda operands_hi+0
 	jmp .z_ret_common
 
+	; all call instructions route through here, x=1..7
+z_call_vs
+	jsr fatal_error
+	!text "z_call_vs not impl",0
+
 z_print_inline_common
 	rts ; TODO
 
@@ -1084,8 +1083,11 @@ z_restart
 	!text "z_restart not impl",0
 
 z_ret_popped
-	jsr fatal_error
-	!text "z_ret_popped not impl",0
+	dec stackptr
+	ldy stackptr
+	ldx stack_lo,Y
+	lda stack_hi,Y
+	jmp .z_ret_common
 
 z_pop
 	dec stackptr
@@ -1108,6 +1110,47 @@ z_pull
 	lda stack_hi,Y
 	jmp store_common
 
+z_set_window
+	lda operands_lo+0
+	sta window_current
+	jmp next_insn
+
+z_split_window
+	lda operands_lo+0
+	sta window_split
+-	jmp next_insn
+
+z_output_stream
+	lda operands_lo+0
+	beq -
+	bpl .output_enable
+	tay
+	lda #$ff
+	clc
+-	rol 
+	iny
+	bne -
+	and output_enables
+	sta output_enables
+	jmp next_insn
+.output_enable
+	cmp #3
+	bne +
+	ldx operands_lo+0
+	stx output_table
+	ldx operands_hi+0
+	stx output_table+1
+	inc output_table
+	bne +
+	inc output_table+1
++	tay
+	lda #0
+	sec
+-	rol
+	dey
+	bne -
+	jmp next_insn
+
 z_quit
 	jsr fatal_error
 	!text "z_quit not impl",0
@@ -1115,7 +1158,7 @@ z_quit
 attr_bits !byte $80,$40,$20,$10,$08,$04,$02,$01
 
 	; operand+0 contains object index, operand+1 contains attribute.
-	; sets obj_ptr and attr_bit appropriately.
+	; sets obj_ptr and attr_bit appropriately, y contains attribute byte index
 attr_setup
 	jsr get_object_addr	; sets obj_ptr
 	lda operands_lo+1
@@ -1238,9 +1281,7 @@ store_common
 	; incoming: x is low byte, a is high byte of result to store
 store_result
 	pha
-	ldy znext
-	inc znext
-	lda (zptr),y
+	+next_insn_byte
 	beq .store_tos
 	bmi .store_global_hi
 	cmp #$10
@@ -1257,6 +1298,7 @@ store_result
 	pla
 	sta (globals_lo),y
 	txa
+	iny
 	sta (globals_lo),y
 	rts
 .store_global_hi
@@ -1265,6 +1307,7 @@ store_result
 	pla
 	sta (globals_hi),Y
 	txa
+	iny
 	sta (globals_hi),Y
 	rts
 .store_tos
@@ -1300,7 +1343,14 @@ print_char
 	; 32-35 is Saturn bank 0
 	; 36-39 is Saturn bank 1, etc
 tlb 	!fill 128
+	; another idea - map first 64k of memory to $4000-$BFFF
+	; except that even/odd bytes are in different banks. this means
+	; all memory is contiguuous but you're constantly fussing with banks
 
+	; stack is split into lower and upper bytes so we can treat the Y register as a stack pointer.
 	!align 255, 0
 stack_lo !fill 256
 stack_hi !fill 256
+
+	; round interpreter up to next 4k boundary for alignment (we start at 2k)
+	!align 4095, 0

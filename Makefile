@@ -49,5 +49,6 @@ check:
 	./tinyzcd demogame.tz
 
 applez:
-	acme --format plain -o applez.bin applez.asm && ./makedsk applez.bin applez.dsk
+	acme --format plain --cpu 65c02 -o applez.bin applez.asm
+	./makedsk applez.bin sieve.z3 -o applez.dsk
 
