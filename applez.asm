@@ -327,6 +327,7 @@ print_char
 	stx xsave
 	cmp #13
 	beq .print_char_nl
+	ora #$80
 	tax
 	lda cursor_x
 	inc cursor_x
@@ -359,7 +360,7 @@ print_char
 	!byte	$2C, $AC, $2D, $AD, $2E, $AE, $2F, $AF
 	!byte	$54, $D4, $55, $D5, $56, $D6, $57, $D7
 
-	!convtab "apple2e.convtab"
+	;;; !convtab "apple2e.convtab"
 .test	!text "This is an example string."
 	!byte 0
 	
@@ -382,7 +383,6 @@ zinsn = $49
 zpc_hi = $4B		; upper two bytes of offset in story (big-endian)
 zpc_mid = $4B
 zptr = $4C			; actual cpu address in memory of current insn (little-endian)
-stackptr = $4F
 operands_hi = $50
 operands_lo = $58
 stringptr = $60
@@ -390,12 +390,17 @@ globals_lo = $62	; address of globals - 32 bytes
 globals_hi = $64	; address of global 112 (index $80)
 frame_lo = $66		; address of lower half of stack (+1 = first local, +2 = second...)
 frame_hi = $68		; address of upper half of stack
-obj_ptr = $6A
-obj_base = $6C		; 9 bytes before first object slot
-window_split = $6E
-window_current = $6F
-output_table = $70
-output_enables = $72
+obj_hi = $6A
+obj_mid = $6B
+obj_ptr = $6C
+obj_base = $6E		; 9 bytes before first object slot
+window_split = $70
+window_current = $71
+output_table = $72
+output_enables = $73
+zshift = $74		; current shift value for ZSCII
+stackptr = $78
+frameptr = $79
 
 ;   0-31: 0101 (small,small) (5)
 ;  32-63: 0110 (small,variable) (6)
@@ -532,12 +537,17 @@ _var +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_prin
 !macro skip_insn_byte {
 	inc zptr
 	bne +
-	inc zptr+1
+	jsr update_zpc
 +
 }
 
-; returns next instruction byte in A; destroys Y
-; zero and minus flags set based on instruction byte.
+update_zpc
+	inc zptr+1
+	inc zpc_mid
+	; TODO: update page mappings etc
+	rts
+
+; returns next instruction byte in A;
 ; this version requires 65C02 in apple 2e 
 !macro next_insn_byte {
 	lda (zptr)
@@ -969,39 +979,119 @@ z_get_prop_len
 	jsr fatal_error
 	!text "z_get_prop_len",0
 
+!macro z_print_string zp {
+-	lda (zp)
+	php		; remember if negative
+	and #$7C
+	lsr
+	lsr
+	jsr printz
+	lda (zp)
+	and #$3
+	sta xsave
+	inc zp
+	bne +
+	inc zp+1
++	lda (zp)
+	asl
+	rol xsave
+	asl
+	rol xsave
+	asl
+	rol xsave
+	lda xsave
+	jsr printz
+	lda (zp)
+	inc zp
+	bne +
+	inc zp+1
++	and #$1F
+	jsr printz
+	plp
+	bpl -
+}
+
 z_print_obj
 	jsr get_object_addr
 	ldy #8
-	lda (obj_ptr),y
+	lda (obj_ptr),y	; low byte
 	tax
-	lda (obj_ptr),Y
+	dey
+	lda (obj_ptr),Y ; high byte
 	sta obj_ptr+1
 	stx obj_ptr
 	inc obj_ptr
 	bne z_print_common
 	inc obj_ptr+1
 
-	; input - obj_ptr points at string
+	; obj_ptr contains address in dynamic/static memory
 z_print_common
-	jsr get_mem_addr
-z_print_common_packed
-	jsr fatal_error
-	!text "z_print_common not impl",0
+	+z_print_string obj_ptr
+	jmp next_insn
 
 z_print_addr
 	lda operands_lo+0
 	sta obj_ptr
 	lda operands_hi+0
+	clc
+	adc #>HEADER
 	sta obj_ptr+1
-	jmp z_print_common
+	bne z_print_common	; always taken
+
+!macro get_mem_addr_packed hi,mid,ptr {
+	lda operands_lo
+	sta ptr
+	lda operands_hi
+	sta mid
+	lda #0
+	sta hi
+	asl ptr
+	rol mid
+	rol hi
+!ifdef Z4PLUS {
+	asl ptr
+	rol mid
+	rol hi
+}
+	; carry always clear because zpc_hi cannot overflow
+	lda mid
+	adc #>HEADER
+	sta ptr+1
+}
 
 z_print_paddr
-	lda operands_lo+0
-	sta obj_ptr
-	lda operands_hi+0
-	sta obj_ptr+1
-	jsr get_mem_addr_packed
-	jmp z_print_common_packed
+	+get_mem_addr_packed obj_hi,obj_mid,obj_ptr
+	+z_print_string obj_ptr
+	jmp next_insn
+
+printz
+	cmp #4
+	beq .print_shift_1
+	cmp #5
+	beq .print_shift_2
+	cmp #6
+	bcs .print_tabled
+	; TODO: abbreviations
+	; print a space
+	lda #$FF
+	sta zshift
+	lda #32
+	jmp print_char
+.print_tabled
+	adc zshift ; zshift is one less because carray always set
+	tay
+	lda #$FF
+	sta zshift
+	lda zalphabet-6,Y
+	jmp print_char
+.print_shift_1
+	lda #25
+	sta zshift
+	rts
+.print_shift_2
+	lda #(25+26)
+	sta zshift
+	rts
 
 	; loads must be in contiguous dynamic+static memory
 	; stores must be in contiguous dynamic memory
@@ -1176,13 +1266,35 @@ z_ret
 	lda operands_hi+0
 	jmp .z_ret_common
 
-	; all call instructions route through here, x=1..7
-z_call_vs
-	jsr fatal_error
-	!text "z_call_vs not impl",0
-
 z_print_inline_common
-	rts ; TODO
+	+z_print_string zptr 
+	rts
+
+	; all call instructions route through here, x=1..7
+	
+z_call_vs
+	lda operands_lo+0
+	ora operands_hi+0
+	bne +
+	ldx #0
+	; call to zero returns zero immediately
+	jmp store_common
+
++	ldy stackptr
+	lda zpc_mid
+	sta stack_hi,Y
+	lda zptr
+	sta stack_lo,Y
+
+	lda zpc_hi
+	sta stack_lo+1,Y
+	tya		; store load pc
+	sta stack_hi+1,Y
+
+	sty frameptr
+
+	+get_mem_addr_packed zpc_hi,zpc_mid,zptr
+	jmp next_insn
 
 z_save
 	jsr fatal_error
@@ -1308,15 +1420,6 @@ get_object_addr
 	adc operands_hi+0
 	adc obj_base+1
 	sta obj_ptr
-	rts
-
-get_mem_addr
-	lda obj_ptr+1
-	adc #>HEADER
-	sta obj_ptr+1
-	rts
-
-get_mem_addr_packed
 	rts
 
 ; print number in operands+0
@@ -1462,6 +1565,12 @@ tlb 	!fill 128
 	; another idea - map first 64k of memory to $4000-$BFFF
 	; except that even/odd bytes are in different banks. this means
 	; all memory is contiguuous but you're constantly fussing with banks
+
+	; on V5 the version in the story is copied over this
+zalphabet
+	!text "abcdefghijklmnopqrstuvwxyz"
+	!text "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	!text "0123456789.,!?_#\"/\\-:()"
 
 	; stack is split into lower and upper bytes so we can treat the Y register as a stack pointer.
 	!align 255, 0
