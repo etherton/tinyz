@@ -150,6 +150,7 @@ void uputc(uint8_t ch,FILE *f) {
 }
 
 void interface::putchar(int ch) {
+	// 0=main window, 1=status line
 	if (!window || !nostatus)
 		uputc(ch, stdout);
 	if (!window && transcript_file)
