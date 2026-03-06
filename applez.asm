@@ -85,15 +85,29 @@ endboot
 	sta PAGE1
 	jsr clr1
 
+	xpos = $80
 	lda #0
-
--	tay
+	sta xpos
+	ldx #23
 	jsr setpos
-	tya
+
+-	jsr scroll
+	lda xpos
 	jsr draw
-	adc #0
-	cmp #24
+	;lda #40
+	;jsr DELAY
+	inc xpos
+	lda xpos
+	cmp #50
 	bne -
+--	dec xpos
+	beq -
+	jsr scroll
+	lda xpos
+	jsr draw
+	;lda #40
+	;jsr DELAY
+	jmp --
 
 -	jmp -
 
@@ -112,7 +126,8 @@ draw	; $20 is base row, a is column; destroys x,y, carry set on return
 	sta PAGE2
 	sta ($20),y
 
-draw1	lda .test,x
+draw1	
+	lda .test,x
 	cmp #0
 	beq +
 	inx
@@ -125,79 +140,133 @@ draw1	lda .test,x
 +	pla
 	rts
 
-setpos	; input y, destroys a
-	lda .mul40,y
+setpos	; input x, destroys a
+	lda .mul40,x
 	and #$F8
 	sta $20
-	lda .mul40,y
+	lda .mul40,x
 	and #$7
 	sta $21
 	rts
 
+!ifdef FAST_SCROLL {
 scroll
 	sta PAGE2
 	jsr .scroll
 	sta PAGE1
 .scroll
-	ldy #40			; 2 bytes
+	ldy #39			; 2 bytes
 	jmp (scrolltop)	; 3 bytes
 	; lines 0-7
-	lda $480-1,Y	; 6 bytes ...
-	sta $400-1,Y	; ... per line
-	lda $500-1,Y
-	sta $480-1,y
-	lda $580-1,y
-	sta $500-1,Y
-	lda $600-1,y
-	sta $580-1,y
-	lda $680-1,Y
-	sta $600-1,y
-	lda $700-1,y
-	sta $680-1,Y
-	lda $780-1,y
-	sta $700-1,Y
+	lda $480,Y	; 6 bytes ...
+	 sta $400,Y	; ... per line
+	lda $500,Y
+	 sta $480,y
+	lda $580,y
+	 sta $500,Y
+	lda $600,y
+	 sta $580,y
+	lda $680,Y
+	 sta $600,y
+	lda $700,y
+	 sta $680,Y
+	lda $780,y
+	 sta $700,Y
+
 	; lines 8-15
-	lda $428-1,Y
-	sta $780-1,Y
-	lda $4a8-1,Y
-	sta $428-1,Y
-	lda $528-1,y
-	sta $4a8-1,Y
-	lda $5a8-1,Y
-	sta $528-1,Y
-	lda $628-1,Y
-	sta $5a8-1,Y
-	lda $6a8-1,Y
-	sta $628-1,Y
-	lda $728-1,Y
-	sta $6a8-1,Y
-	lda $7a8-1,y
-	sta $728-1,Y
+	lda $428,Y
+	 sta $780,Y
+	lda $4a8,Y
+	 sta $428,Y
+	lda $528,y
+	 sta $4a8,Y
+	lda $5a8,Y
+	 sta $528,Y
+	lda $628,Y
+	 sta $5a8,Y
+	lda $6a8,Y
+	 sta $628,Y
+	lda $728,Y
+	 sta $6a8,Y
+	lda $7a8,y
+	 sta $728,Y
+
 	; lines 16-23
-	lda $450-1,Y
-	sta $728-1,Y
-	lda $4d0-1,Y
-	sta $450-1,Y
-	lda $550-1,y
-	sta $4d0-1,Y
-	lda $5d0-1,Y
-	sta $550-1,Y
-	lda $650-1,Y
-	sta $5d0-1,Y
-	lda $6d0-1,Y
-	sta $650-1,Y
-	lda $750-1,Y
-	sta $6d0-1,Y
-	lda $7a0-1,Y
-	sta $750-1,Y
+	lda $450,Y
+	 sta $7a8,Y
+	lda $4d0,Y
+	 sta $450,Y
+	lda $550,y
+	 sta $4d0,Y
+	lda $5d0,Y
+	 sta $550,Y
+	lda $650,Y
+	 sta $5d0,Y
+	lda $6d0,Y
+	 sta $650,Y
+	lda $750,Y
+	 sta $6d0,Y
+	lda $7d0,Y
+	 sta $750,Y
 	lda #$A0
-	sta $7a0-1,Y
+	 sta $7d0,Y
 	dey
-	bne +
+	bmi +
 	jmp (scrolltop)
 +	rts
+} else {
+scroll
+	ldx #0
+	lda .mul40,X
+	and #$F8
+	sta $20
+	lda .mul40,X
+	and #$7
+	sta $21
+.scroll1
+	inx
+	lda .mul40,X
+	and #$F8
+	sta $22
+	lda .mul40,X
+	and #$7
+	sta $23
 
-scrolltop !byte <(.scroll+11),>(.scroll+11)
+	sta PAGE2
+	ldy #39
+-	lda ($22),Y
+	sta ($20),Y
+	dey
+	bpl -
+	
+	sta PAGE1
+	ldy #39
+-	lda ($22),Y
+	sta ($20),Y
+	dey
+	bpl -
+
+	lda $22
+	sta $20
+	lda $23
+	sta $21	
+	cpx #23
+	bne .scroll1
+	lda #$A0
+	sta PAGE2
+	ldy #39
+-	sta $7D0,y
+	dey
+	bpl -
+	sta PAGE1
+	ldy #39
+- 	sta $7D0,Y
+	dey
+	bpl -
+	rts
+}
+
+; scrolltop !byte <(.scroll+11),>(.scroll+11)
 
 clr1	
 	ldy #0
