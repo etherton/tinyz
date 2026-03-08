@@ -104,6 +104,7 @@ xsave		= $24
 ysave		= $25
 cursor_x	= $26
 temp		= $27
+ysave2		= $28
 
 ; Memory is broken up into 4k blocks, up to 512k
 ; It typically starts at $2000 and counts up to $BFFF
@@ -331,6 +332,7 @@ clear
 	bpl -
 	rts
 
+	; destroys A
 print_char
 	sty ysave
 	stx xsave
@@ -543,13 +545,13 @@ zentry
 
 dispatch +table16 _2op_s_s,_2op_s_s,_2op_s_v,_2op_s_v,_2op_v_s,_2op_v_s,_2op_v_v,_2op_v_v,_1op_large,_1op_small,_1op_variable,_0op,_2op_var,_2op_var,_vop,_vop
 
-_2op +table32 z_ill,z_je,z_jl,z_jg,z_dec_chk,z_inc_chk,z_jin,z_test,z_or,z_and,z_test_attr,z_set_attr,z_clear_attr,z_store,z_insert_obj,z_loadw,z_loadb,z_get_prop,z_get_prop_addr,z_get_next_prop,z_add,z_sub,z_mul,z_div,z_mod,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
+_2opTbl +table32 z_ill,z_je,z_jl,z_jg,z_dec_chk,z_inc_chk,z_jin,z_test,z_or,z_and,z_test_attr,z_set_attr,z_clear_attr,z_store,z_insert_obj,z_loadw,z_loadb,z_get_prop,z_get_prop_addr,z_get_next_prop,z_add,z_sub,z_mul,z_div,z_mod,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
 
-_1op +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_inc,z_dec,z_print_addr,z_ill,z_remove_obj,z_print_obj,z_ret,z_jump,z_print_paddr,z_load,z_not
+_1opTbl +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_inc,z_dec,z_print_addr,z_ill,z_remove_obj,z_print_obj,z_ret,z_jump,z_print_paddr,z_load,z_not
 
-_op0 +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,z_ill,z_ill,z_ill
+_0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,z_ill,z_ill,z_ill
 
-_var +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
+_varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
 
 update_zpc
 	inc zpc_mid
@@ -573,23 +575,14 @@ update_zptr
 ; if an instruction would cross a non-contiguous 4k boundary (rare), we copy the entire instruction into a temporary
 ; location and execute it from there. (eventually)
 next_insn
-	pha
-	tya
-	pha
-	txa
-	pha
+!ifdef DEBUG_TRACE {
 	lda zpc_mid
 	jsr print_hex_byte
 	lda zptr
 	jsr print_hex_byte
 	lda #13
 	jsr print_char
-	pla
-	tax
-	pla
-	tay
-	pla
-
+}
 	+next_insn_byte
 	sta zinsn
 	lsr
@@ -623,7 +616,7 @@ _2op_v_v
 ._2op_common
 	lda zinsn
 	and #$1F
-	+dispatch32 _2op
+	+dispatch32 _2opTbl
 _2op_var
 	jsr decode_types
 	jmp ._2op_common
@@ -631,7 +624,7 @@ _vop
 	jsr decode_types
 	lda zinsn
 	and #$1F
-	+dispatch32 _var
+	+dispatch32 _varTbl
 
 _1op_large
 	ldx #0
@@ -647,12 +640,13 @@ _1op_variable
 ._1op_common
 	lda zinsn
 	and #$f
-	+dispatch16 _1op
+	+dispatch16 _1opTbl
 
 _0op
 	lda zinsn
 	and #$f
-	+dispatch16 _0op
+	+bp
+	+dispatch16 _0opTbl
 
 decode_types
 	+next_insn_byte
@@ -689,12 +683,29 @@ operand_small
 	sta operands_hi,x
 	+next_insn_byte
 	sta operands_lo,x
+
+!ifdef DEBUG_TRACE {
+	jsr debug_print
+	!text "operand ",0
+	txa
+	jsr print_hex_byte
+	jsr debug_print
+	!text " is inline value ",0
+	jsr print_operand
+}
 	inx
 	rts
 
 	; operand_variable destroys y so it needs to be reloaded from znext
 	; if there are more types to decode
 operand_variable	
+!ifdef DEBUG_TRACE {
+	jsr debug_print
+	!text "operand ",0
+	txa
+	jsr print_hex_byte
+}
+
 	+next_insn_byte
 	cmp #$00
 	beq .read_tos
@@ -704,24 +715,47 @@ operand_variable
 	adc frameptr
 	tay
 	lda stack_hi,Y
-	sta operands_hi,Y
+	sta operands_hi,x
 	lda stack_lo,Y
-	sta operands_lo,y
+	sta operands_lo,x
+
+!ifdef DEBUG_TRACE {
+	jsr debug_print
+	!text " is local ",0
+	tya
+	clc
+	sbc frameptr
+	jsr print_hex_byte
+	lda #'='
+	jsr print_char
+	jsr print_operand
+}
+
 	inx
 	rts
-	; TODO - globals could be two 256 byte blobs
-	; like stack is. we'd need to copy the data out
-	; of the story and back in again before saves.
-	; this does waste 480 bytes permanently even if
-	; the story used fewer globals.
+
 .read_global
 	tay
 	lda globals_hi,Y
 	sta operands_hi,X
 	lda globals_lo,Y
 	sta operands_lo,x
+
+!ifdef DEBUG_TRACE {
+	jsr debug_print
+	!text " is global ",0
+	tya
+	sec
+	sbc #$10
+	jsr print_hex_byte
+	lda #'='
+	jsr print_char
+	jsr print_operand
+}
+
 	inx
 	rts
+
 .read_tos
 	dec stackptr
 	ldy stackptr
@@ -729,8 +763,25 @@ operand_variable
 	sta operands_hi,x
 	lda stack_lo,Y
 	sta operands_lo,X
+
+!ifdef DEBUG_TRACE {
+	jsr debug_print
+	!text " is TOS=",0
+	jsr print_operand
+}
+
 	inx
 	rts
+
+!ifdef DEBUG_TRACE {
+print_operand
+	lda operands_hi,X
+	jsr print_hex_byte
+	lda operands_lo,X
+	jsr print_hex_byte
+	lda #$d
+	jmp print_char
+}
 
 z_ill
 	jsr fatal_error
@@ -1290,6 +1341,7 @@ z_sread
 	!text "z_sread not impl",0
 
 z_inc
+	+bp
 	lda operands_lo+0
 	beq .inc_tos
 	cmp #$10
@@ -1544,22 +1596,22 @@ get_object_addr
 	sta obj_ptr
 	rts
 
-hexdigits !text "0123456789abcdef"
-
 print_hex_byte
 	pha
 	lsr
 	lsr
 	lsr
 	lsr
-	tay
-	lda hexdigits,Y
-	jsr print_char
+	jsr print_hex_digit
 	pla
 	and #$f
-	tay
-	lda hexdigits,Y
-	jmp print_char
+print_hex_digit
+	clc
+	adc #$30
+	cmp #$3A
+	bcc +
+	adc #$6	; carry is always set
++	jmp print_char
 
 ; print number in operands+0
 z_print_num
@@ -1653,7 +1705,10 @@ store_result
 	+next_insn_byte
 store_result_2
 	cmp #$00
-	beq .store_tos
+	;beq .store_tos
+	bne +
+	jmp .store_tos
++
 	cmp #$10
 	bcs .store_global
 	; store local
@@ -1663,6 +1718,23 @@ store_result_2
 	sta stack_hi,Y
 	txa
 	sta stack_lo,y
+
+!ifdef DEBUG_TRACE {
+	jsr debug_print
+	!text "store ",0
+	lda stack_hi,y
+	jsr print_hex_byte
+	lda stack_lo,Y
+	jsr print_hex_byte
+	jsr debug_print
+	!text " to local ",0
+	tya
+	clc	; need to subtract an additional 1 to get local index back
+	sbc frameptr
+	jsr print_hex_byte
+	lda #$d
+	jsr print_char
+}
 	rts
 .store_global
 	tay
@@ -1670,6 +1742,23 @@ store_result_2
 	sta globals_hi,y
 	txa
 	sta globals_lo,y
+
+!ifdef DEBUG_TRACE {
+	jsr debug_print
+	!text "store ",0
+	lda globals_hi,y
+	jsr print_hex_byte
+	lda globals_lo,Y
+	jsr print_hex_byte
+	jsr debug_print
+	!text " to global ",0
+	tya
+	sec
+	sbc #$10
+	jsr print_hex_byte
+	lda #$d
+	jsr print_char
+}
 	rts
 .store_tos
 	ldy stackptr
@@ -1679,6 +1768,17 @@ store_result_2
 	sta stack_lo,y
 	inc stackptr
 	beq +
+
+!ifdef DEBUG_TRACE {
+	jsr debug_print
+	!text "store ",0
+	lda stack_hi,y
+	jsr print_hex_byte
+	lda stack_lo,Y
+	jsr print_hex_byte
+	jsr debug_print
+	!text " to TOS",13,0
+}
 	rts
 + 	jsr fatal_error
 	!text "stack overflow",13,0
@@ -1694,6 +1794,27 @@ fatal_error
 	jsr print_char
 	iny
 	bne -		; always taken
+
+!ifdef DEBUG_TRACE {
+	; destroys A
+debug_print
+	pla
+	sta stringptr
+	pla
+	sta stringptr+1
+-	inc stringptr
+	bne +
+	inc stringptr+1
++	lda (stringptr)
+	beq +
+	jsr print_char
+	jmp -
++	lda stringptr+1
+	pha
+	lda stringptr
+	pha
+	rts
+}
 
 	; each 4k in the story file is mapped to a byte in this table
 	; maximum story size is 512k, so 128 slots are needed
