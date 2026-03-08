@@ -391,8 +391,6 @@ zptr = $4C			; actual cpu address in memory of current insn (little-endian)
 operands_hi = $50
 operands_lo = $58
 stringptr = $60
-globals_lo = $62	; address of globals - 32 bytes
-globals_hi = $64	; address of global 112 (index $80)
 obj_hi = $6A
 obj_mid = $6B
 obj_ptr = $6C
@@ -484,18 +482,47 @@ HEADER = $2000
 ; +12 globals
 ; +14 static memory address
 
+
+!macro skip_insn_byte {
+	inc zptr
+	bne +
+	jsr update_zpc
++
+}
+; returns next instruction byte in A;
+; this version requires 65C02 in apple 2e 
+!macro next_insn_byte {
+	lda (zptr)
+	+skip_insn_byte
+}
+
 zentry
+	; copy globals into our own shadow storage
+	+bp
+	lda HEADER+13
+	sta zptr
+	lda HEADER+12
+	sta zpc_mid
+	lda #0
+	sta zpc_hi
+	ldy #16
+	jsr update_zptr
+-	+next_insn_byte
+	sta globals_hi,y
+	+next_insn_byte
+	sta globals_lo,Y
+	iny
+	bne -
+
 	; set up initial pc
 	lda HEADER+7
 	sta zptr
 	lda HEADER+6
 	sta zpc_mid
-	clc
-	adc #>HEADER
-	sta zptr+1
 	lda #0
 	sta zpc_hi
 	sta stackptr
+	jsr update_zptr
 
 	; set up object pointer
 	lda HEADER+11
@@ -509,22 +536,6 @@ zentry
 	adc #>HEADER
 	sta obj_ptr+1
 
-	; set up globals; globals_lo+32 is address of first global
-	lda HEADER+13
-	adc #$20
-	sta globals_lo
-	lda HEADER+12
-	adc #>HEADER
-	sta globals_lo+1
-
-	; globals_hi is the address of global 112
-	lda HEADER+13
-	adc #$E0
-	sta globals_hi
-	lda HEADER+12
-	adc #>HEADER
-	sta globals_hi+1
-
 	jmp next_insn
 
 dispatch +table16 _2op_s_s,_2op_s_s,_2op_s_v,_2op_s_v,_2op_v_s,_2op_v_s,_2op_v_v,_2op_v_v,_1op_large,_1op_small,_1op_variable,_0op,_2op_var,_2op_var,_vop,_vop
@@ -536,13 +547,6 @@ _1op +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_inc,z
 _op0 +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,z_ill,z_ill,z_ill
 
 _var +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
-
-!macro skip_insn_byte {
-	inc zptr
-	bne +
-	jsr update_zpc
-+
-}
 
 update_zpc
 	inc zpc_mid
@@ -556,13 +560,6 @@ update_zptr
 	sta zptr+1
 	rts
 
-; returns next instruction byte in A;
-; this version requires 65C02 in apple 2e 
-!macro next_insn_byte {
-	lda (zptr)
-	+skip_insn_byte
-}
-
 ; opcode
 ; (type byte) (type byte for call_vs2) (00=large, 01=small, 10=var, 11=omit)
 ; (operands)
@@ -573,7 +570,6 @@ update_zptr
 ; if an instruction would cross a non-contiguous 4k boundary (rare), we copy the entire instruction into a temporary
 ; location and execute it from there. (eventually)
 next_insn
-
 	pha
 	tya
 	pha
@@ -582,6 +578,10 @@ next_insn
 	lda zpc_mid
 	jsr print_hex_byte
 	lda zptr
+	cmp #$A0
+	bne +
+	+bp
++
 	jsr print_hex_byte
 	lda #13
 	jsr print_char
@@ -696,9 +696,8 @@ operand_variable
 	+next_insn_byte
 	cmp #$00
 	beq .read_tos
-	bmi .read_global_hi
 	cmp #$10
-	bcs .read_global_lo
+	bcs .read_global
 	; read local
 	adc frameptr
 	tay
@@ -713,24 +712,12 @@ operand_variable
 	; of the story and back in again before saves.
 	; this does waste 480 bytes permanently even if
 	; the story used fewer globals.
-.read_global_lo
-	asl
+.read_global
 	tay
-	lda (globals_lo),Y
+	lda globals_hi,Y
 	sta operands_hi,X
-	iny
-	lda (globals_lo),Y
+	lda globals_lo,Y
 	sta operands_lo,x
-	inx
-	rts
-.read_global_hi
-	asl
-	tay
-	lda (globals_hi),y
-	sta operands_hi,x
-	iny
-	lda (globals_hi),Y
-	sta operands_lo,X
 	inx
 	rts
 .read_tos
@@ -1295,9 +1282,8 @@ z_sread
 z_inc
 	lda operands_lo+0
 	beq .inc_tos
-	bmi .inc_global_hi
 	cmp #$10
-	bcs .inc_global_lo
+	bcs .inc_global
 	; carry is clear here
 	adc frameptr
 	txa
@@ -1305,31 +1291,11 @@ z_inc
 	bne +
 	inc stack_hi,X
 +	jmp next_insn
-.inc_global_lo
-	asl
-	; carry is clear here
-	tay
-	lda (globals_lo),Y
-	adc #$1
-	sta (globals_lo),Y
-	bcc +
-	iny
-	lda (globals_hi),Y
-	adc #$00
-	sta (globals_hi),Y
-+	jmp next_insn
-.inc_global_hi
-	asl
-	; carry is set here (asl of negative number)
-	tay
-	lda (globals_hi),Y
-	adc #$00
-	sta (globals_hi),y
-	bcc +
-	iny
-	lda (globals_hi),Y
-	adc #$00
-	sta (globals_hi),Y
+.inc_global
+	tax
+	inc globals_lo,x
+	bne +
+	inc globals_hi,x
 +	jmp next_insn
 .inc_tos
 	ldx stackptr
@@ -1678,9 +1644,8 @@ store_result
 store_result_2
 	cmp #$00
 	beq .store_tos
-	bmi .store_global_hi
 	cmp #$10
-	bcs .store_global_lo
+	bcs .store_global
 	; store local
 	adc frameptr
 	tay
@@ -1689,26 +1654,16 @@ store_result_2
 	txa
 	sta stack_lo,y
 	rts
-.store_global_lo
-	asl
+.store_global
 	tay
 	pla
-	sta (globals_lo),y
+	sta globals_hi,y
 	txa
-	iny
-	sta (globals_lo),y
-	rts
-.store_global_hi
-	asl
-	tay
-	pla
-	sta (globals_hi),Y
-	txa
-	iny
-	sta (globals_hi),Y
+	sta globals_lo,y
 	rts
 .store_tos
 	ldy stackptr
+	pla
 	sta stack_hi,Y
 	txa
 	sta stack_lo,y
@@ -1749,8 +1704,13 @@ zalphabet
 
 	; stack is split into lower and upper bytes so we can treat the Y register as a stack pointer.
 	!align 255, 0
-stack_lo !fill 256
-stack_hi !fill 256
+stack_lo	!fill 256
+stack_hi	!fill 256
+
+	; we could have the current frame's locals here as well, but then we have to copy out to the
+	; stack on any call or return. first 16 bytes of each could be used for something else
+globals_lo	!fill 256
+globals_hi	!fill 256
 
 	; round interpreter up to next 4k boundary for alignment (we start at 2k)
 	!align 4095, 0
