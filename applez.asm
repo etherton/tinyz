@@ -264,6 +264,7 @@ scroll
 	and #$7
 	sta dest_ptr+1
 .scroll1
+	; X points at src_ptr, the line being copied upward (dest_ptr is line before)
 	inx
 	lda .mul40,X
 	and #$F8
@@ -286,14 +287,15 @@ scroll
 	dey
 	bpl -
 
+	; current src line is next dest line
 	lda src_ptr
 	sta dest_ptr
 	lda src_ptr+1
 	sta dest_ptr+1
+
 	cpx #23
 	bne .scroll1
-	lda #$D0
-	sta dest_ptr
+
 	lda #$A0
 	sta PAGE2
 	ldy #39
@@ -380,7 +382,7 @@ mulTemp = $46
 attr_bit = $47
 ztype = $48
 zinsn = $49
-zpc_hi = $4B		; upper two bytes of offset in story (big-endian)
+zpc_hi = $4A		; upper two bytes of offset in story (big-endian)
 zpc_mid = $4B
 zptr = $4C			; actual cpu address in memory of current insn (little-endian)
 operands_hi = $50
@@ -388,8 +390,6 @@ operands_lo = $58
 stringptr = $60
 globals_lo = $62	; address of globals - 32 bytes
 globals_hi = $64	; address of global 112 (index $80)
-frame_lo = $66		; address of lower half of stack (+1 = first local, +2 = second...)
-frame_hi = $68		; address of upper half of stack
 obj_hi = $6A
 obj_mid = $6B
 obj_ptr = $6C
@@ -542,9 +542,15 @@ _var +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_prin
 }
 
 update_zpc
-	inc zptr+1
 	inc zpc_mid
-	; TODO: update page mappings etc
+	bne update_zptr
+	inc zpc_hi
+update_zptr
+	clc
+	lda zpc_mid
+	; TODO: this needs to go through a table lookup and set up page banks
+	adc #>HEADER
+	sta zptr+1
 	rts
 
 ; returns next instruction byte in A;
@@ -564,6 +570,24 @@ update_zpc
 ; if an instruction would cross a non-contiguous 4k boundary (rare), we copy the entire instruction into a temporary
 ; location and execute it from there. (eventually)
 next_insn
+
+	pha
+	tya
+	pha
+	txa
+	pha
+	lda zpc_mid
+	jsr print_hex_byte
+	lda zptr
+	jsr print_hex_byte
+	lda #13
+	jsr print_char
+	pla
+	tax
+	pla
+	tay
+	pla
+
 	+next_insn_byte
 	sta zinsn
 	lsr
@@ -673,11 +697,12 @@ operand_variable
 	cmp #$10
 	bcs .read_global_lo
 	; read local
+	adc frameptr
 	tay
-	lda (frame_hi),Y
-	sta operands_hi,x
-	lda (frame_lo),Y
-	sta operands_lo,x
+	lda stack_hi,Y
+	sta operands_hi,Y
+	lda stack_lo,Y
+	sta operands_lo,y
 	inx
 	rts
 .read_global_lo
@@ -726,6 +751,27 @@ z_jin
 	jsr fatal_error
 	!text "jin not impl",0
 
+z_print_ret
+	jsr z_print_inline_common
+	lda #$0D
+	jsr print_char
+z_rtrue
+	ldx #1
+	!byte $2C ; bit NNNN skips the next insn
+z_rfalse
+	ldx #0
+	lda #0
+.z_ret_common
+	; TODO
+z_ret
+	ldx operands_lo+0
+	lda operands_hi+0
+	jmp .z_ret_common
+
+z_jump
+	lda operands_lo+0
+	ldx operands_hi+0
+	jmp .compute_newpc
 
 ; on entry, op0/op1 contain decoded operands
 ; on exit, x contains low byte of result, a contains high byte
@@ -740,6 +786,28 @@ z_je
 .je_failed
 	dex
 	bne -
+	jmp branch_failed
+
+.branch_short
+	and #$3F
+	beq z_rfalse
+	cmp #$1
+	beq z_rtrue
+	ldx #0
+.compute_newpc
+	clc
+	adc zptr
+	adc #$FE
+	sta zptr
+	txa
+	adc zpc_mid
+	adc #$FF
+	sta zpc_mid
+	lda zpc_hi
+	adc #$FF
+	sta zpc_hi
+	jsr update_zptr
+	jmp next_insn
 
 branch_failed
 	+next_insn_byte
@@ -759,7 +827,7 @@ branch_passed
 	and #$7f
 	ldx #0
 	cmp #$40
-	bcs .compute_newpc
+	bcs .branch_short
 	cmp #$20
 	bcc .long_branch_positive
 	ora #$fc
@@ -767,45 +835,62 @@ branch_passed
 	tax
 	+next_insn_byte
 	; x contains high byte of offset, a contains low byte
-.compute_newpc
-	adc zptr
-	sta zptr
-	txa
-	adc zptr+1
-	sta zptr+1
-
-	adc #$00
-	sta zptr+1
-	jmp next_insn
-z_jump
-	lda operands_lo+0
-	ldx operands_hi+0
+	; compute pc = pc + offset - 2
 	jmp .compute_newpc
 
-
-z_jg
-	sec
-	lda operands_lo+0
-	sbc operands_lo+1
-	lda operands_hi+0
-	sbc operands_hi+1
-	beq branch_failed
-	bcs branch_passed
-	bcc branch_failed ; always taken
+; http://6502.org/tutorials/compare_beyond.html
+; Example 6.3: a 16-bit signed comparison that branches to LABEL4 if NUM1 < NUM2 (similar to Example 4.1.1 in Section 4.1)
+;
+;           SEC
+;           LDA NUM1H  ; compare high bytes
+;           SBC NUM2H
+;           BVC LABEL1 ; the equality comparison is in the Z flag here
+;           EOR #$80   ; the Z flag is affected here
+;    LABEL1 BMI LABEL4 ; if NUM1H < NUM2H then NUM1 < NUM2
+;           BVC LABEL2 ; the Z flag was affected only if V is 1
+;           EOR #$80   ; restore the Z flag to the value it had after SBC NUM2H
+;    LABEL2 BNE LABEL3 ; if NUM1H <> NUM2H then NUM1 > NUM2 (so NUM1 >= NUM2)
+;           LDA NUM1L  ; compare low bytes
+;           SBC NUM2L
+;           BCC LABEL4 ; if NUM1L < NUM2L then NUM1 < NUM2
+;    LABEL3
 
 z_jl
 	sec
-	lda operands_lo+0
-	sbc operands_lo+1
 	lda operands_hi+0
 	sbc operands_hi+1
+	bvc +
+	eor #$80
++	bmi branch_passed ; op0_h < op1_h?
+	bvc +
+	eor #$80
++	bne branch_failed	; if op0_h != op1_h then op0 > op1
+	lda operands_lo+0
+	sbc operands_lo+1
 	bcc branch_passed
-	bcs branch_failed ; always taken	
+	bcs branch_failed	; always taken
+
+; same as above but with operands reversed
+z_jg
+	sec
+	lda operands_hi+1
+	sbc operands_hi+0
+	bvc +
+	eor #$80
++	bmi branch_passed ; op1_h < op0_h?
+	bvc +
+	eor #$80
++	bne branch_failed	; if op1_h != op0_h then op1 > op0
+	lda operands_lo+1
+	sbc operands_lo+0
+	bcc branch_passed
+	bcs branch_failed	; always taken
 
 z_jz
 	lda operands_lo+0
-	beq branch_passed
-	bne branch_failed ; always taken
+	ora operands_hi+0
+	bne branch_failed
+	beq branch_passed	; always taken
 
 z_or
 	lda operands_lo+0
@@ -1039,9 +1124,9 @@ z_print_addr
 	bne z_print_common	; always taken
 
 !macro get_mem_addr_packed hi,mid,ptr {
-	lda operands_lo
+	lda operands_lo+0
 	sta ptr
-	lda operands_hi
+	lda operands_hi+0
 	sta mid
 	lda #0
 	sta hi
@@ -1052,6 +1137,11 @@ z_print_addr
 	asl ptr
 	rol mid
 	rol hi
+!ifdef Z8 {
+	asl ptr
+	rol mid
+	rol hi
+}
 }
 	; carry always clear because zpc_hi cannot overflow
 	lda mid
@@ -1178,14 +1268,11 @@ z_inc
 	cmp #$10
 	bcs .inc_global_lo
 	; carry is clear here
-	tay
-	lda (frame_lo),Y
-	adc #$1
-	sta (frame_lo),y
-	bcc +
-	lda (frame_hi),Y
-	adc #$0
-	sta (frame_hi),Y
+	adc frameptr
+	txa
+	inc stack_lo,X
+	bne +
+	inc stack_hi,X
 +	jmp next_insn
 .inc_global_lo
 	asl
@@ -1214,15 +1301,10 @@ z_inc
 	sta (globals_hi),Y
 +	jmp next_insn
 .inc_tos
-	ldy stackptr
-	lda stack_lo-1,Y
-	clc
-	adc #$01
-	sta stack_lo-1,Y
-	bcc +
-	lda stack_hi-1,Y
-	adc #$00
-	sta stack_hi-1,Y
+	ldx stackptr
+	inc stack_lo-1,X
+	bne +
+	inc stack_hi-1,X
 +	jmp next_insn
 
 z_dec
@@ -1241,30 +1323,10 @@ z_load
 	jsr fatal_error
 	!text "z_load not impl",0
 
-z_store
-	jsr fatal_error
-	!text "z_store not impl",0
-
 z_print
+	lda $c00e
 	jsr z_print_inline_common
 	jmp next_insn
-
-z_print_ret
-	jsr z_print_inline_common
-	lda #$0D
-	jsr print_char
-z_rtrue
-	ldx #1
-	!byte $2C ; bit NNNN skips the next insn
-z_rfalse
-	ldx #0
-	lda #0
-.z_ret_common
-	; TODO
-z_ret
-	ldx operands_lo+0
-	lda operands_hi+0
-	jmp .z_ret_common
 
 z_print_inline_common
 	+z_print_string zptr 
@@ -1294,7 +1356,16 @@ z_call_vs
 	sty frameptr
 
 	+get_mem_addr_packed zpc_hi,zpc_mid,zptr
-	jmp next_insn
+	+next_insn_byte
+	asl
+	adc zptr
+	sta zptr
+	bcc +
+	inc zptr+1
+	inc zpc_mid
+	bne +
+	inc zpc_hi
++	jmp next_insn
 
 z_save
 	jsr fatal_error
@@ -1422,6 +1493,23 @@ get_object_addr
 	sta obj_ptr
 	rts
 
+hexdigits !text "0123456789abcdef"
+
+print_hex_byte
+	pha
+	lsr
+	lsr
+	lsr
+	lsr
+	tay
+	lda hexdigits,Y
+	jsr print_char
+	pla
+	and #$f
+	tay
+	lda hexdigits,Y
+	jmp print_char
+
 ; print number in operands+0
 z_print_num
 	lda #$0
@@ -1496,6 +1584,13 @@ divide
 	bne -
 	rts
 
+z_store
+	lda operands_hi+1
+	pha
+	ldx operands_lo+1
+	jsr store_result_2
+	jmp next_insn
+
 store_common
 	jsr store_result
 	jmp next_insn
@@ -1504,15 +1599,19 @@ store_common
 store_result
 	pha
 	+next_insn_byte
+store_result_2
+	cmp #$00
 	beq .store_tos
 	bmi .store_global_hi
 	cmp #$10
 	bcs .store_global_lo
 	; store local
+	adc frameptr
+	tay
 	pla
-	sta (frame_hi),Y
+	sta stack_hi,Y
 	txa
-	sta (frame_lo),Y
+	sta stack_lo,y
 	rts
 .store_global_lo
 	asl
