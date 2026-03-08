@@ -1,5 +1,7 @@
 
-
+!macro bp {
+	lda $c00e
+}
 
 _80STOREOFF	= $C000
 _80STOREON	= $C001
@@ -101,6 +103,7 @@ src_ptr		= $22
 xsave		= $24
 ysave		= $25
 cursor_x	= $26
+temp		= $27
 
 ; Memory is broken up into 4k blocks, up to 512k
 ; It typically starts at $2000 and counts up to $BFFF
@@ -399,8 +402,8 @@ window_current = $71
 output_table = $72
 output_enables = $73
 zshift = $74		; current shift value for ZSCII
-stackptr = $78
-frameptr = $79
+stackptr = $78		; one past top of stack
+frameptr = $79		; one before first local (since locals are one-based)
 
 ;   0-31: 0101 (small,small) (5)
 ;  32-63: 0110 (small,variable) (6)
@@ -497,7 +500,7 @@ zentry
 	; set up object pointer
 	lda HEADER+11
 !ifdef Z4PLUS {
-	adc (126 - 14)
+	adc #(126 - 14)
 } else {
 	adc #(62 - 9)		; skip defaults, and objects are 1-based
 }
@@ -705,6 +708,11 @@ operand_variable
 	sta operands_lo,y
 	inx
 	rts
+	; TODO - globals could be two 256 byte blobs
+	; like stack is. we'd need to copy the data out
+	; of the story and back in again before saves.
+	; this does waste 480 bytes permanently even if
+	; the story used fewer globals.
 .read_global_lo
 	asl
 	tay
@@ -761,8 +769,29 @@ z_rtrue
 z_rfalse
 	ldx #0
 	lda #0
+	; frame+0 is lower 16 bits of current PC
+	; frame+1 is upper 8 bits of current PC and previous frameptr
+	; frame+2 is location to store result, and operand count in V5+ (frame+2 is new frameptr)
 .z_ret_common
-	; TODO
+	pha
+	ldy frameptr
+	dey
+	dey
+	sty stackptr
+	lda stack_lo,Y
+	sta zptr
+	lda stack_hi,Y
+	sta zpc_mid
+	lda stack_lo+1,Y
+	sta zpc_hi
+	lda stack_hi+1,Y
+	sta frameptr
+	lda stack_lo+2,Y
+	jsr update_zptr
+	; TODO: On V4+, might be a non-storing call
+	jsr store_result_2
+	jmp next_insn
+
 z_ret
 	ldx operands_lo+0
 	lda operands_hi+0
@@ -811,8 +840,8 @@ z_je
 
 branch_failed
 	+next_insn_byte
-	cmp #$00
-	bmi .branch_passed
+	cmp #$80
+	bcc .branch_passed
 .branch_failed
 	cmp #$40
 	bcs .short_branch_failed
@@ -821,8 +850,8 @@ branch_failed
 	jmp next_insn
 branch_passed
 	+next_insn_byte
-	cmp #$00
-	bmi .branch_failed
+	cmp #$80
+	bcc .branch_failed
 .branch_passed
 	and #$7f
 	ldx #0
@@ -1123,6 +1152,7 @@ z_print_addr
 	sta obj_ptr+1
 	bne z_print_common	; always taken
 
+	; stores a packed address in operands+0 in four zp slots
 !macro get_mem_addr_packed hi,mid,ptr {
 	lda operands_lo+0
 	sta ptr
@@ -1186,6 +1216,7 @@ printz
 	; loads must be in contiguous dynamic+static memory
 	; stores must be in contiguous dynamic memory
 z_loadb
+	+bp
 	clc
 	lda operands_lo+0
 	adc operands_lo+1
@@ -1324,7 +1355,7 @@ z_load
 	!text "z_load not impl",0
 
 z_print
-	lda $c00e
+	+bp
 	jsr z_print_inline_common
 	jmp next_insn
 
@@ -1342,7 +1373,18 @@ z_call_vs
 	; call to zero returns zero immediately
 	jmp store_common
 
-+	ldy stackptr
+	; compute larger of local count and parameter count (x)
+	; new frame starts at stackptr
+	; frame+0 is lower 16 bits of current PC
+	; frame+1 is upper 8 bits of current PC and previous frameptr
+	; frame+2 is location to store result, and operand count in V5+ (frame+2 is new frameptr)
+	; frame+3 is the first parameter / local variable
+	; new stack ptr is just past last local
++	+next_insn_byte		; get storage location
+	stx		xsave		; operand count
+	tax					; local count
+
+	ldy stackptr
 	lda zpc_mid
 	sta stack_hi,Y
 	lda zptr
@@ -1350,21 +1392,55 @@ z_call_vs
 
 	lda zpc_hi
 	sta stack_lo+1,Y
-	tya		; store load pc
+	lda frameptr
 	sta stack_hi+1,Y
 
+	; location to store result
+	txa
+	sta stack_lo+2,y
+
+	iny
+	iny
 	sty frameptr
+	iny
 
 	+get_mem_addr_packed zpc_hi,zpc_mid,zptr
 	+next_insn_byte
-	asl
-	adc zptr
-	sta zptr
+	; get local count in A
+	sta temp
+!ifdef Z4PLUS {
+	; zero out the locals
+} else {
+	; copy local values
+	cmp #$0
+	beq +
+-	+next_insn_byte	; local high byte
+	sta stack_hi,y
+	+next_insn_byte	; local low byte
+	sta stack_lo,Y
+	iny
+	dec temp
+	bne -
++	sty stackptr
+}
+	; now copy incoming parameters past 0
+	dec xsave
+	beq +
+	ldx #1
+	ldy frameptr
+.copyparam
+	lda operands_lo,x
+	sta stack_lo+1,Y
+	lda operands_hi,X
+	sta stack_hi+1,Y
+	inx
+	iny
+	dec xsave
+	bne .copyparam
+	; new sp is larger of operand count and local count
+	cpy stackptr
 	bcc +
-	inc zptr+1
-	inc zpc_mid
-	bne +
-	inc zpc_hi
+	sty stackptr
 +	jmp next_insn
 
 z_save
