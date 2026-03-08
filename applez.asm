@@ -104,7 +104,6 @@ xsave		= $24
 ysave		= $25
 cursor_x	= $26
 temp		= $27
-ysave2		= $28
 
 ; Memory is broken up into 4k blocks, up to 512k
 ; It typically starts at $2000 and counts up to $BFFF
@@ -645,7 +644,6 @@ _1op_variable
 _0op
 	lda zinsn
 	and #$f
-	+bp
 	+dispatch16 _0opTbl
 
 decode_types
@@ -1143,6 +1141,8 @@ z_get_prop_len
 	!text "z_get_prop_len",0
 
 !macro z_print_string zp {
+	lda #$FF
+	sta zshift
 -	lda (zp)
 	php		; remember if negative
 	and #$7C
@@ -1258,7 +1258,7 @@ printz
 	sta zshift
 	rts
 .print_shift_2
-	lda #(25+26)
+	lda #(25+24)
 	sta zshift
 	rts
 
@@ -1341,14 +1341,13 @@ z_sread
 	!text "z_sread not impl",0
 
 z_inc
-	+bp
 	lda operands_lo+0
 	beq .inc_tos
 	cmp #$10
 	bcs .inc_global
 	; carry is clear here
 	adc frameptr
-	txa
+	tax
 	inc stack_lo,X
 	bne +
 	inc stack_hi,X
@@ -1831,7 +1830,7 @@ tlb 	!fill 128
 zalphabet
 	!text "abcdefghijklmnopqrstuvwxyz"
 	!text "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	!text "0123456789.,!?_#\"/\\-:()"
+	!text "0123456789.,!?_#'",34,"/",92,"-:()"
 
 	; stack is split into lower and upper bytes so we can treat the Y register as a stack pointer.
 	!align 255, 0
