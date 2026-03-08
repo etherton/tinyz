@@ -581,10 +581,6 @@ next_insn
 	lda zpc_mid
 	jsr print_hex_byte
 	lda zptr
-	;cmp #$ba
-	;bne +
-	;+bp
-;+	
 	jsr print_hex_byte
 	lda #13
 	jsr print_char
@@ -983,8 +979,8 @@ z_mul
 .z_mul_8x8
 	lda #0
 	ldx #8
-	lsr operands_lo+1
--	bcc +
+-	lsr operands_lo+1
+	bcc +
 	clc
 	adc operands_lo+0
 +	ror
@@ -1643,6 +1639,7 @@ z_store
 	lda operands_hi+1
 	sta temp
 	ldx operands_lo+1
+	lda operands_lo+0
 	jsr store_result_2
 	jmp next_insn
 
