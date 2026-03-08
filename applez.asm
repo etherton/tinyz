@@ -1,6 +1,6 @@
 
 !macro bp {
-	lda $c00e
+	bit $c00e
 }
 
 _80STOREOFF	= $C000
@@ -318,13 +318,17 @@ clear
 	jsr .clear
 	sta PAGE1
 .clear	
-	ldy #0
+	ldy #$77
 - 	sta $400,y
+	sta $480,y
 	sta $500,y
+	sta $580,Y
 	sta $600,y
+	sta $680,y
 	sta $700,y
-	iny
-	bne -
+	sta $780,y
+	dey
+	bpl -
 	rts
 
 print_char
@@ -498,7 +502,6 @@ HEADER = $2000
 
 zentry
 	; copy globals into our own shadow storage
-	+bp
 	lda HEADER+13
 	sta zptr
 	lda HEADER+12
@@ -578,10 +581,10 @@ next_insn
 	lda zpc_mid
 	jsr print_hex_byte
 	lda zptr
-	cmp #$A0
-	bne +
-	+bp
-+
+	;cmp #$ba
+	;bne +
+	;+bp
+;+	
 	jsr print_hex_byte
 	lda #13
 	jsr print_char
@@ -635,12 +638,15 @@ _vop
 	+dispatch32 _var
 
 _1op_large
+	ldx #0
 	jsr operand_large
 	bne ._1op_common ; always taken
 _1op_small
+	ldx #0
 	jsr operand_small
 	bne ._1op_common ; always taken
 _1op_variable
+	ldx #0
 	jsr operand_variable
 ._1op_common
 	lda zinsn
@@ -760,7 +766,7 @@ z_rfalse
 	; frame+1 is upper 8 bits of current PC and previous frameptr
 	; frame+2 is location to store result, and operand count in V5+ (frame+2 is new frameptr)
 .z_ret_common
-	pha
+	sta temp
 	ldy frameptr
 	dey
 	dey
@@ -813,16 +819,25 @@ z_je
 .compute_newpc
 	clc
 	adc zptr
-	adc #$FE
 	sta zptr
 	txa
 	adc zpc_mid
-	adc #$FF
 	sta zpc_mid
-	lda zpc_hi
-	adc #$FF
+	bcc +
+	inc zpc_hi
+	clc
++	lda #$FE
+	adc zptr
+	sta zptr
+	bcs +
+	lda #$FF
+	adc zpc_mid
+	sta zpc_mid
+	bcs +
+	lda #$FF
+	adc zpc_hi
 	sta zpc_hi
-	jsr update_zptr
++	jsr update_zptr
 	jmp next_insn
 
 branch_failed
@@ -1185,7 +1200,7 @@ printz
 	lda #32
 	jmp print_char
 .print_tabled
-	adc zshift ; zshift is one less because carray always set
+	adc zshift ; zshift is one less because carry always set
 	tay
 	lda #$FF
 	sta zshift
@@ -1203,7 +1218,6 @@ printz
 	; loads must be in contiguous dynamic+static memory
 	; stores must be in contiguous dynamic memory
 z_loadb
-	+bp
 	clc
 	lda operands_lo+0
 	adc operands_lo+1
@@ -1321,7 +1335,6 @@ z_load
 	!text "z_load not impl",0
 
 z_print
-	+bp
 	jsr z_print_inline_common
 	jmp next_insn
 
@@ -1628,7 +1641,7 @@ divide
 
 z_store
 	lda operands_hi+1
-	pha
+	sta temp
 	ldx operands_lo+1
 	jsr store_result_2
 	jmp next_insn
@@ -1639,7 +1652,7 @@ store_common
 
 	; incoming: x is low byte, a is high byte of result to store
 store_result
-	pha
+	sta temp
 	+next_insn_byte
 store_result_2
 	cmp #$00
@@ -1649,21 +1662,21 @@ store_result_2
 	; store local
 	adc frameptr
 	tay
-	pla
+	lda temp
 	sta stack_hi,Y
 	txa
 	sta stack_lo,y
 	rts
 .store_global
 	tay
-	pla
+	lda temp
 	sta globals_hi,y
 	txa
 	sta globals_lo,y
 	rts
 .store_tos
 	ldy stackptr
-	pla
+	lda 	temp
 	sta stack_hi,Y
 	txa
 	sta stack_lo,y
