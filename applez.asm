@@ -105,7 +105,8 @@ ysave		= $25
 cursor_x	= $26
 temp		= $27
 window_split = $28
-vblprev = $29
+vblprev = 	$29
+top_cursor_x = $2A
 
 ; Memory is broken up into 4k blocks, up to 512k
 ; It typically starts at $2000 and counts up to $BFFF
@@ -120,7 +121,12 @@ vblprev = $29
 	jsr setpos
 	lda #0
 	sta cursor_x
+	sta top_cursor_x
 
+print_char = $00
+
+	lda #$4C
+	sta print_char
 	jmp zentry
 
 xpos = $80
@@ -334,7 +340,7 @@ clear
 	rts
 
 	; destroys A
-print_char
+print_char_lower
 	sty ysave
 	stx xsave
 	cmp #13
@@ -365,6 +371,48 @@ print_char
 	ldx xsave
 	ldy ysave
 	rts
+
+clear_status_line
+	lda #32
+	ldy #39
+	sta PAGE2
+-	sta $400,Y
+	dey
+	bpl -
+	ldy #39
+	sta PAGE1
+-	sta $400,y
+	dey
+	bpl -
+	rts
+
+	; destroys a
+print_char_upper
+	sty ysave
+	stx xsave
+	cmp #$40
+	bcc .notupper
+	cmp #$60
+	bcs .notupper
+	and #$1F
+.notupper
+	tax
+	lda top_cursor_x
+	inc top_cursor_x
+	lsr
+	tay
+	bcc .upper_even
+.upper_odd
+	sta PAGE1
+-	txa
+	sta $400,Y
+	ldx xsave
+	ldy ysave
+	rts
+.upper_even
+	sta PAGE2
+	jmp -
+
 
 
 .mul40
@@ -529,22 +577,25 @@ zentry
 	sta stackptr
 	jsr update_zptr
 
-	; set up object pointer
+	; set up 1-based object table address
+	clc
 	lda HEADER+11
 !ifdef Z4PLUS {
 	adc #(126 - 14)
 } else {
 	adc #(62 - 9)		; skip defaults, and objects are 1-based
 }
-	sta obj_ptr
+	sta obj_base
+
 	lda HEADER+10
 	adc #>HEADER
-	sta obj_ptr+1
+	sta obj_base+1
+
 	lda #1
 	sta window_split
 	sta vblprev
 
-	jmp next_insn
+	jmp default_print_char
 
 dispatch +table16 _2op_s_s,_2op_s_s,_2op_s_v,_2op_s_v,_2op_v_s,_2op_v_s,_2op_v_v,_2op_v_v,_1op_large,_1op_small,_1op_variable,_0op,_2op_var,_2op_var,_vop,_vop
 
@@ -574,6 +625,12 @@ update_zptr
 ; (store destination)
 ; (branch offset)
 ; (text to print)
+
+default_print_char
+	lda #<print_char_lower
+	sta print_char+1
+	lda #>print_char_lower
+	sta print_char+2
 
 ; if an instruction would cross a non-contiguous 4k boundary (rare), we copy the entire instruction into a temporary
 ; location and execute it from there. (eventually)
@@ -1199,22 +1256,32 @@ z_get_prop_len
 }
 
 z_print_obj
+	jsr print_obj
+	jmp next_insn
+
+print_obj
 	jsr get_object_addr
-	ldy #8
-	lda (obj_ptr),y	; low byte
+	ldy #7
+	lda (obj_ptr),y	; high byte
 	tax
-	dey
-	lda (obj_ptr),Y ; high byte
+	iny
+	lda (obj_ptr),Y ; low byte
+	clc
+	adc #$01
+	sta obj_ptr
+	txa
+	adc #>HEADER
 	sta obj_ptr+1
-	stx obj_ptr
-	inc obj_ptr
-	bne z_print_common
-	inc obj_ptr+1
+print_obj_ptr
+	+z_print_string obj_ptr
+	rts
 
 	; obj_ptr contains address in dynamic/static memory
 z_print_common
-	+z_print_string obj_ptr
+	jsr print_obj_ptr
 	jmp next_insn
+
+
 
 z_print_addr
 	lda operands_lo+0
@@ -1254,7 +1321,7 @@ z_print_addr
 
 z_print_paddr
 	+get_mem_addr_packed obj_hi,obj_mid,obj_ptr
-	+z_print_string obj_ptr
+	jsr print_obj_ptr
 	jmp next_insn
 
 printz
@@ -1603,22 +1670,33 @@ get_object_addr
 	sta obj_ptr+0
 	lda operands_hi+0
 	sta obj_ptr+1
-	ldy #3
--	asl obj_ptr+0
+
+	; objIndex * 8
+	asl obj_ptr+0
 	rol obj_ptr+1
-	dey
-	bne -
-	clc
+	asl obj_ptr+0
+	rol obj_ptr+1
+	asl obj_ptr+0
+	rol obj_ptr+1
+
+	; finish objIndex * 9 computation (carry is always clear)
 	lda obj_ptr+0
 	adc operands_lo+0
-	adc obj_base
 	sta obj_ptr+0
 	lda obj_ptr+1
 	adc operands_hi+0
+	sta obj_ptr+1
+
+	; convert to final memory address
+	lda obj_ptr+0
+	adc obj_base
+	sta obj_ptr+0
+	lda obj_ptr+1
 	adc obj_base+1
-	sta obj_ptr
+	sta obj_ptr+1
 	rts
 
+!ifdef DEBUG_TRACE {
 print_hex_byte
 	pha
 	lsr
@@ -1635,6 +1713,7 @@ print_hex_digit
 	bcc +
 	adc #$6	; carry is always set
 +	jmp print_char
+}
 
 ; print number in operands+0
 !macro process_digit value {
@@ -1670,6 +1749,10 @@ print_hex_digit
 }
 
 z_print_num
+	jsr print_num 
+	jmp next_insn
+
+print_num
 	lda #0
 	sta mulTemp
 	+process_digit 10000
@@ -1679,8 +1762,7 @@ z_print_num
 	lda operands_lo+0
 	clc
 	adc #$30
-	jsr print_char ; last digit always prints even if it's zero
-	jmp next_insn
+	jmp print_char ; last digit always prints even if it's zero
 
 z_new_line
 	lda #13
@@ -1691,8 +1773,38 @@ z_print_char
 	jmp next_insn
 
 z_show_status
-	; TODO: print obj name, score, and moves in top window.
-	jmp next_insn
+	jsr clear_status_line
+	lda #<print_char_upper
+	sta print_char+1
+	lda #>print_char_upper
+	sta print_char+2
+	lda #0
+	sta top_cursor_x
+
+	lda globals_lo+16
+	sta operands_lo+0
+	lda globals_hi+16
+	sta operands_hi+0
+	jsr print_obj
+
+	lda #70
+	sta top_cursor_x
+
+	; global 1 is score
+	lda globals_lo+17
+	sta operands_lo+0
+	lda globals_hi+17
+	sta operands_hi+0
+	jsr print_num
+	lda #'/'
+	jsr print_char
+	lda globals_lo+18
+	sta operands_lo+0
+	lda globals_hi+18
+	sta operands_hi+0
+	jsr print_num
+
+	jmp default_print_char
 
 	; divide operands+0 by operands+1, quotient in operands+0, remainder in operands+2
 divide
