@@ -685,6 +685,7 @@ decode_types
 	rol ztype
 	bne -			; always taken
 .decode_done
+	stx xsave		; je and call_vs need arg count
 	rts
 
 	; all operand handlers inx before return and so the zero flag is always clear.
@@ -1423,7 +1424,7 @@ z_call_vs
 	; frame+3 is the first parameter / local variable
 	; new stack ptr is just past last local
 +	+next_insn_byte		; get storage location
-	stx		xsave		; operand count
+	; stx		xsave		; operand count
 	tax					; local count
 
 	ldy stackptr
