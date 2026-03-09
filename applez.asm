@@ -104,6 +104,7 @@ xsave		= $24
 ysave		= $25
 cursor_x	= $26
 temp		= $27
+window_split = $28
 
 ; Memory is broken up into 4k blocks, up to 512k
 ; It typically starts at $2000 and counts up to $BFFF
@@ -259,7 +260,7 @@ scrolltop !byte <(.scroll+11),>(.scroll+11)
 } else {
 
 scroll
-	ldx #0
+	ldx window_split
 	lda .mul40,X
 	and #$F8
 	sta dest_ptr
@@ -400,7 +401,6 @@ obj_hi = $6A
 obj_mid = $6B
 obj_ptr = $6C
 obj_base = $6E		; 9 bytes before first object slot
-window_split = $70
 window_current = $71
 output_table = $72
 output_enables = $73
@@ -539,6 +539,8 @@ zentry
 	lda HEADER+10
 	adc #>HEADER
 	sta obj_ptr+1
+	lda #1
+	sta window_split
 
 	jmp next_insn
 
@@ -1258,7 +1260,7 @@ printz
 	sta zshift
 	rts
 .print_shift_2
-	lda #(25+24)
+	lda #(25+25)
 	sta zshift
 	rts
 
@@ -1613,42 +1615,50 @@ print_hex_digit
 +	jmp print_char
 
 ; print number in operands+0
-z_print_num
-	lda #$0
-	sta mulTemp
-	lda #>10000
-	ldx #<10000
-	jsr .print_digit
-	lda #>1000
-	ldx #<1000
-	jsr .print_digit
-	lda #>100
-	ldx #<100
-	jsr .print_digit
-	lda #>10
-	ldx #<10
-	jsr .print_digit
-	lda operands_lo+0	; last digit always prints even if zero
-	adc #$30
-	jsr print_char
-	jmp next_insn
-
-.print_digit
-	; store numerator
-	sta operands_hi+1
-	stx operands_lo+1
-	jsr divide
+!macro process_digit value {
+	ldx #0
+	lda operands_hi+0
+.top
+	cmp #>value
+	bcc .done 
+	bne .sub
 	lda operands_lo+0
+	cmp #<value
+	bcc .done
+.sub
+	sec
+	lda operands_lo+0
+	sbc #<value
+	sta operands_lo+0
+	lda operands_hi+0
+	sbc #>value
+	sta operands_hi+0
+	inx
+	bne .top
+.done
+	txa
 	ora mulTemp
+	beq .noprint
 	sta mulTemp
-	beq +
+	txa
+	clc
 	adc #$30
 	jsr print_char
-+	lda operands_hi+2
-	sta operands_hi+0
-	lda operands_lo+2
-	sta operands_lo+0
-	rts
+.noprint
+}
+
+z_print_num
+	lda #0
+	sta mulTemp
+	+process_digit 10000
+	+process_digit 1000
+	+process_digit 100
+	+process_digit 10
+	lda operands_lo+0
+	clc
+	adc #$30
+	jsr print_char ; last digit always prints even if it's zero
+	jmp next_insn
 
 z_new_line
 	lda #13
@@ -1830,7 +1840,7 @@ tlb 	!fill 128
 zalphabet
 	!text "abcdefghijklmnopqrstuvwxyz"
 	!text "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	!text "0123456789.,!?_#'",34,"/",92,"-:()"
+	!text 13,"0123456789.,!?_#'",34,"/",92,"-:()"
 
 	; stack is split into lower and upper bytes so we can treat the Y register as a stack pointer.
 	!align 255, 0
