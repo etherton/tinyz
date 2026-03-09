@@ -12,8 +12,10 @@ RAMWRTON	= $C005 ; write enable aux memory
 _80COLON	= $C00D
 AUXCHARSET	= $C00F
 
+!if COLUMNS=80 {
 PAGE1		= $C054
 PAGE2		= $C055
+}
 BANK64k		= $C073		; which aux bank of 64k to use (language card)
 
 DELAY		= $FCA8
@@ -94,9 +96,11 @@ BANK16K_7		= $C08F
 	jmp $C65C
 
 endboot
+!if COLUMNS=80 {
 	sta _80COLON
-	sta AUXCHARSET
 	sta _80STOREON
+}
+	sta AUXCHARSET
 
 dest_ptr	= $20
 src_ptr		= $22
@@ -129,61 +133,6 @@ print_char = $00
 	sta print_char
 	jmp zentry
 
-xpos = $80
-	lda #0
-	sta xpos
-	ldx #23
-	jsr setpos
-
--	jsr scroll
-	lda xpos
-	jsr draw
-	;lda #40
-	;jsr DELAY
-	inc xpos
-	lda xpos
-	cmp #50
-	bne -
---	dec xpos
-	beq -
-	jsr scroll
-	lda xpos
-	jsr draw
-	;lda #40
-	;jsr DELAY
-	jmp --
-
--	jmp -
-
-draw	; $20 is base row, a is column; destroys x,y, carry set on return
-	pha
-	ldx #0
-	lsr
-	tay
-	bcs draw1
-	
--	lda .test,x
-	cmp #0
-	beq +
-	inx
-
-	sta PAGE2
-	sta (dest_ptr),y
-
-draw1	
-	lda .test,x
-	cmp #0
-	beq +
-	inx
-
-	sta PAGE1
-	sta (dest_ptr),y
-
-	iny
-	bne -
-+	pla
-	rts
-
 setpos	; input x, destroys a
 	lda .mul40,x
 	and #$F8
@@ -198,9 +147,11 @@ setpos	; input x, destroys a
 ; scroll returns with negative flag always set, so bmi is always taken.
 !ifdef FAST_SCROLL {
 scroll
+!if COLUMNS=80 {
 	sta PAGE2
 	jsr .scroll
 	sta PAGE1
+}
 .scroll
 	ldy #39			; 2 bytes
 	jmp (scrolltop)	; 3 bytes
@@ -284,6 +235,7 @@ scroll
 	and #$7
 	sta src_ptr+1
 
+!if (COLUMNS=80) {
 	sta PAGE2
 	ldy #39
 -	lda (src_ptr),Y
@@ -292,6 +244,7 @@ scroll
 	bpl -
 
 	sta PAGE1
+}
 	ldy #39
 -	lda (src_ptr),Y
 	sta (dest_ptr),Y
@@ -308,12 +261,14 @@ scroll
 	bne .scroll1
 
 	lda #$A0
+!if COLUMNS=80 {
 	sta PAGE2
 	ldy #39
 -	sta (dest_ptr),y
 	dey
 	bpl -
 	sta PAGE1
+}
 	ldy #39
 - 	sta (dest_ptr),Y
 	dey
@@ -322,9 +277,11 @@ scroll
 }
 
 clear
+!if COLUMNS=80 {
 	sta PAGE2
 	jsr .clear
 	sta PAGE1
+}
 .clear	
 	ldy #$77
 - 	sta $400,y
@@ -342,10 +299,13 @@ clear
 	; destroys A
 print_char_lower
 	sty ysave
+!if COLUMNS=80 {
 	stx xsave
+}
 	cmp #13
 	beq .print_char_nl
 	ora #$80
+!if COLUMNS=80 {
 	tax
 	lda cursor_x
 	inc cursor_x
@@ -356,31 +316,42 @@ print_char_lower
 	sta PAGE1
 	txa
 	sta (dest_ptr),y
+} else {
+	ldy cursor_x
+	inc cursor_x
+	sta (dest_ptr),Y
+}
 	cpy #39
 	bne .print_char_done
 .print_char_nl
 	ldy #0
 	sty cursor_x
 	jsr scroll
+!if COLUMNS=80 {
 	bmi .print_char_done ; always taken
 .print_char_even
 	sta PAGE2
 	txa
 	sta (dest_ptr),y
+}
 .print_char_done
+!if COLUMNS=80 {
 	ldx xsave
+}
 	ldy ysave
 	rts
 
 clear_status_line
 	lda #32
 	ldy #39
+!if COLUMNS=80 {
 	sta PAGE2
 -	sta $400,Y
 	dey
 	bpl -
 	ldy #39
 	sta PAGE1
+}
 -	sta $400,y
 	dey
 	bpl -
@@ -389,13 +360,16 @@ clear_status_line
 	; destroys a
 print_char_upper
 	sty ysave
+!if COLUMNS=80 {
 	stx xsave
+}
 	cmp #$40
 	bcc .notupper
 	cmp #$60
 	bcs .notupper
 	and #$1F
 .notupper
+!if COLUMNS=80 {
 	tax
 	lda top_cursor_x
 	inc top_cursor_x
@@ -412,7 +386,13 @@ print_char_upper
 .upper_even
 	sta PAGE2
 	jmp -
-
+} else {
+	ldy top_cursor_x
+	inc top_cursor_x
+	sta $400,y
+	ldy ysave
+	rts
+}
 
 
 .mul40
@@ -1787,7 +1767,7 @@ z_show_status
 	sta operands_hi+0
 	jsr print_obj
 
-	lda #70
+	lda #(COLUMNS-8)
 	sta top_cursor_x
 
 	; global 1 is score
