@@ -1,9 +1,14 @@
+// 88 jiffies on VICE / Ozmoo
+
 object dummy "Zieve of Eratosthenes" {
 }
 
+constant maxPrimeSqrt = 16;
+constant maxPrime = maxPrimeSqrt * maxPrimeSqrt;
+
 global room = 1;
 global score;
-global turns = 16;
+global turns = maxPrimeSqrt;
 global scratch;
 
 global marked = byte_array(256);
@@ -12,21 +17,21 @@ global start;
 global end;
 
 routine Sieve [; i j k]  {
-	for (score=2; score<=16; ++score) {
+	for (score=2; score<=maxPrimeSqrt; ++score) {
 		if (iszero marked[score])
-			for (j=score*score; j<256; j=j+score)
+			for (j=score*score; j<maxPrime; j=j+score)
 				marked[j] = 1;
 		show_status;
 	}
 		
-	print "All primes between 2 and 255: ";
-	for (i=2; i<256; ++i)
+	// print "All primes between 2 and 255: ";
+	for (i=2; i<maxPrime; ++i)
 		if (iszero marked[i]) {
-			print_num(i);
-			print ", ";
+			// print_num(i);
+			// print ", ";
 			++k;
 		}
-	print_ret "done. Found ",k," primes total.";
+	print_ret "done. Found ",k," primes total. ";
 }
 
 routine main [] {
