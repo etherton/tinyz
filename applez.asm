@@ -1065,7 +1065,7 @@ z_mul
 
 z_div
 	jsr divide
-	lda operands_hi+1
+	lda operands_hi+0
 	ldx operands_lo+0
 	jmp store_common
 
