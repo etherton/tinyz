@@ -105,6 +105,7 @@ ysave		= $25
 cursor_x	= $26
 temp		= $27
 window_split = $28
+vblprev = $29
 
 ; Memory is broken up into 4k blocks, up to 512k
 ; It typically starts at $2000 and counts up to $BFFF
@@ -541,6 +542,7 @@ zentry
 	sta obj_ptr+1
 	lda #1
 	sta window_split
+	sta vblprev
 
 	jmp next_insn
 
@@ -576,6 +578,18 @@ update_zptr
 ; if an instruction would cross a non-contiguous 4k boundary (rare), we copy the entire instruction into a temporary
 ; location and execute it from there. (eventually)
 next_insn
+	lda $c019
+	bpl +			; not in vbl
+	ldx vblprev
+	bmi ++			; didn't just enter vbl
+	sta vblprev
+	inc $2005
+	bne ++
+	inc $2004
+	bne ++
++	sta vblprev
+++
+
 !ifdef DEBUG_TRACE {
 	lda zpc_mid
 	jsr print_hex_byte
