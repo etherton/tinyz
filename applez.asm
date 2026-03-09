@@ -601,8 +601,14 @@ next_insn
 	lsr
 	lsr
 	lsr
+!ifdef TARGET_65C02 {
+	and #$FE
+	tax
+	jmp (dispatch,x)
+} else {
 	lsr
 	+dispatch16 dispatch
+}
 
 ; at entry to instruction handler:
 ; Y contains instruction
