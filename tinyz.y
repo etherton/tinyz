@@ -2769,9 +2769,10 @@ void disassemble(uint16_t blob) {
 		else
 			types |= 0xFF;
 		if (insn==SHORT_JUMP)
-			pc++, printf("%06x jump %zx\n",offs,addr + pc - base + pc[-1] - 2);
+			pc++, printf("%06x jump %zx [%02x %02x]\n",offs,addr + pc - base + pc[-1] - 2,pc[-2],pc[-1]);
 		else if (insn==LONG_JUMP)
-			pc+=2, printf("%06x jump %zx\n",offs,addr + pc - base + int16_t((pc[-2] << 8) | pc[-1]) - 2);
+			pc+=2, printf("%06x jump %zx [%02x %02x %02x]\n",offs,addr + pc - base + int16_t((pc[-2] << 8) | pc[-1]) - 2,
+				pc[-3],pc[-2],pc[-1]);
 		else {
 			printf("%06x %s",offs,opcode_names[insn]);
 			// make sure call address is shifted properly
