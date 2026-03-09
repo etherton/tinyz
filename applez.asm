@@ -582,11 +582,9 @@ next_insn
 	bpl +			; not in vbl
 	ldx vblprev
 	bmi ++			; didn't just enter vbl
-	sta vblprev
 	inc $2005
-	bne ++
+	bne +
 	inc $2004
-	bne ++
 +	sta vblprev
 ++
 
@@ -629,12 +627,14 @@ _2op_v_v
 	jsr operand_variable
 	jsr operand_variable
 ._2op_common
+	stx xsave
+._2op_common_2
 	lda zinsn
 	and #$1F
 	+dispatch32 _2opTbl
 _2op_var
 	jsr decode_types
-	jmp ._2op_common
+	jmp ._2op_common_2
 _vop
 	jsr decode_types
 	lda zinsn
@@ -860,6 +860,7 @@ z_jump
 ; on entry, op0/op1 contain decoded operands
 ; on exit, x contains low byte of result, a contains high byte
 z_je
+	ldx xsave
 	dex
 -	lda operands_lo
 	cmp operands_lo,X
