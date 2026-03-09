@@ -341,22 +341,6 @@ print_char_lower
 	ldy ysave
 	rts
 
-clear_status_line
-	lda #32
-	ldy #39
-!if COLUMNS=80 {
-	sta PAGE2
--	sta $400,Y
-	dey
-	bpl -
-	ldy #39
-	sta PAGE1
-}
--	sta $400,y
-	dey
-	bpl -
-	rts
-
 	; destroys a
 print_char_upper
 	sty ysave
@@ -1753,7 +1737,6 @@ z_print_char
 	jmp next_insn
 
 z_show_status
-	jsr clear_status_line
 	lda #<print_char_upper
 	sta print_char+1
 	lda #>print_char_upper
@@ -1767,8 +1750,11 @@ z_show_status
 	sta operands_hi+0
 	jsr print_obj
 
-	lda #(COLUMNS-8)
-	sta top_cursor_x
+-	lda #32
+	jsr print_char_upper
+	lda top_cursor_x
+	cmp #(COLUMNS-8)
+	bcc -
 
 	; global 1 is score
 	lda globals_lo+17
@@ -1784,7 +1770,14 @@ z_show_status
 	sta operands_hi+0
 	jsr print_num
 
-	jmp default_print_char
+-	lda top_cursor_x
+	cmp #(COLUMNS)
+	bcs +
+	lda #32
+	jsr print_char_upper
+	jmp -
+
++	jmp default_print_char
 
 	; divide operands+0 by operands+1, quotient in operands+0, remainder in operands+2
 divide
