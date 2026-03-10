@@ -724,6 +724,7 @@ operand_variable
 	+next_insn_byte
 	cmp #$00
 	beq .read_tos
+!ifndef FRAME_USES_GLOBALS {
 	cmp #$10
 	bcs .read_global
 	; read local
@@ -750,6 +751,7 @@ operand_variable
 	rts
 
 .read_global
+}
 	tay
 	lda globals_hi,Y
 	sta operands_hi,X
@@ -1391,6 +1393,7 @@ z_sread
 z_inc
 	lda operands_lo+0
 	beq .inc_tos
+!ifndef FRAME_USES_GLOBALS {
 	cmp #$10
 	bcs .inc_global
 	; carry is clear here
@@ -1401,6 +1404,7 @@ z_inc
 	inc stack_hi,X
 +	jmp next_insn
 .inc_global
+}
 	tax
 	inc globals_lo,x
 	bne +
@@ -1438,7 +1442,12 @@ z_print_inline_common
 	rts
 
 	; all call instructions route through here, x=1..7
-	
+	; the current frame's locals are kept in globals array to simplify decode logic
+	; this means that when making a call, we need to copy as many variables as the
+	; caller uses onto the stack before resetting them for the caller. likewise, on
+	; return we need to copy the caller's variables back from the stack to the
+	; current frame. this increases the cost of call_vs / ret slightly in favor
+	; of improving the access speed of any local or global variable.
 z_call_vs
 	lda operands_lo+0
 	ora operands_hi+0
@@ -1828,10 +1837,8 @@ store_result
 	+next_insn_byte
 store_result_2
 	cmp #$00
-	;beq .store_tos
-	bne +
-	jmp .store_tos
-+
+	beq .store_tos
+!ifndef FRAME_USES_GLOBALS {
 	cmp #$10
 	bcs .store_global
 	; store local
@@ -1860,6 +1867,7 @@ store_result_2
 }
 	rts
 .store_global
+}
 	tay
 	lda temp
 	sta globals_hi,y
