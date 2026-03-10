@@ -1436,8 +1436,37 @@ z_inc
 +	jmp next_insn
 
 z_dec
-	jsr fatal_error
-	!text "z_dec not impl",0
+	lda operands_lo+0
+	beq .dec_tos
+!ifndef FRAME_USES_GLOBALS {
+	cmp #$10
+	bcs .dec_global
+	; carry is clear here
+	adc frameptr
+	tax
+	dec stack_lo,X
+	lda #$ff
+	cmp stack_lo,X
+	bne +
+	dec stack_hi,X
++	jmp next_insn
+.dec_global
+}
+	tax
+	dec globals_lo,x
+	lda #$ff
+	cmp globals_lo,X
+	bne +
+	dec globals_hi,x
++	jmp next_insn
+.dec_tos
+	ldx stackptr
+	dec stack_lo-1,X
+	lda stack_lo-1,X
+	cmp #$FF
+	bne +
+	dec stack_hi-1,X
++	jmp next_insn
 
 z_not
 	lda operands_lo+0
