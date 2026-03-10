@@ -434,9 +434,11 @@ obj_base = $6E		; 9 bytes before first object slot
 window_current = $71
 output_table = $72
 output_enables = $73
-zshift = $74		; current shift value for ZSCII
+zshift = $74		; one less than current shift value for ZSCII ($ff for none)
+abbrev = $75		; $FF if not halfway through abbreviation, else 0/32/64
 stackptr = $78		; one past top of stack
 frameptr = $79		; one before first local (since locals are one-based)
+abbrev_ptr = $7A
 
 ;   0-31: 0101 (small,small) (5)
 ;  32-63: 0110 (small,variable) (6)
@@ -575,6 +577,12 @@ zentry
 	lda #1
 	sta window_split
 	sta vblprev
+
+	lda HEADER+25
+	sta abbrev_ptr
+	lda HEADER+24
+	adc #>HEADER
+	sta abbrev_ptr+1
 
 	jmp default_print_char
 
@@ -1208,6 +1216,7 @@ z_get_prop_len
 !macro z_print_string hi,mid,zp {
 	lda #$FF
 	sta zshift
+	sta abbrev
 -	lda (zp)
 	php		; remember if negative
 	and #$7C
@@ -1312,12 +1321,16 @@ z_print_paddr
 
 	; destroys A,Y
 printz
+	ldy abbrev
+	bpl .print_abbrev
 	cmp #6
 	bcs .print_tabled
+	cmp #5
+	beq .print_shift_2
 	cmp #4
 	beq .print_shift_1
-	cmp #5
-	beq .print_shift_2	; TODO: abbreviations
+	cmp #1
+	bcs .abbrev
 	; print a space
 	lda #$FF
 	sta zshift
@@ -1336,6 +1349,35 @@ printz
 .print_shift_2
 	lda #(25+25)
 	sta zshift
+	rts
+.abbrev
+	sbc #1		; carry always set
+	asl
+	asl
+	asl
+	asl
+	asl
+	sta abbrev	; 0/32/64
+	rts
+.print_abbrev
+	clc
+	adc abbrev
+	asl
+	tay
+	lda (abbrev_ptr),Y
+	sta obj_mid
+	iny
+	lda (abbrev_ptr),Y
+	sta obj_ptr
+	; abbreviations are word addresses
+	asl obj_ptr
+	rol obj_mid
+	lda obj_mid
+	adc #>HEADER
+	sta obj_ptr+1
+	+z_print_string obj_hi,obj_mid,obj_ptr
+	lda #$ff
+	sta zshift	; abbreviation might have had padding character
 	rts
 
 	; loads must be in contiguous dynamic+static memory
