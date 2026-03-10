@@ -42,6 +42,7 @@ data_ptr 	= $26
 slot_index	= $2B		; $60 for slot 6
 sector 		= $3D
 track	 	= $41
+trackbit	= $42
 
 PH0OFF		= $C080
 PH0ON		= $C081
@@ -77,10 +78,21 @@ BANK16K_7		= $C08F
 	!byte 16
 
 	lda data_ptr+1
-	cmp #$28
+	cmp #$38
 	beq endboot
 
+	lda track
+	and #1
+	asl
+	asl
+	sta trackbit	; trackbit is 0 if track was even, 4 if track was odd
 	inc track
+
+	; if original track was even, do PH0OFF, PH1ON, delay, PH1OFF, PH2ON delay PH2OFF
+	; if original track was odd, do PH2OFF, PH3ON, delay, PH3OFF, PH0ON delay PH0OFF
+	txa
+	eor trackbit
+	tax
 
 	lda PH0OFF,x
 	lda PH1ON,x
@@ -88,10 +100,17 @@ BANK16K_7		= $C08F
 	jsr DELAY
 	sta sector ; A was zero after DELAY, was $10 on entry
 	lda PH1OFF,x
-	lda PH2ON,x
+
+	txa
+	eor #4
+	tax
+
+	lda PH0ON,x
 	lda #86
 	jsr DELAY
-	lda PH2OFF,x
+	lda PH0OFF,x
+
+	ldx slot_index
 
 	jmp $C65C
 
@@ -905,21 +924,20 @@ z_je
 	txa
 	adc zpc_mid
 	sta zpc_mid
-	bcc +
-	inc zpc_hi
-	clc
-+	lda #$FE
+	lda zpc_hi
+	adc #0
+	sta zpc_hi
+	lda #$FE
 	adc zptr
 	sta zptr
 	bcs +
 	lda #$FF
 	adc zpc_mid
 	sta zpc_mid
-	bcs +
 	lda #$FF
 	adc zpc_hi
 	sta zpc_hi
-+	jsr update_zptr
+	jsr update_zptr
 	jmp next_insn
 
 branch_failed
@@ -1915,6 +1933,14 @@ store_result_2
 	!text "stack overflow",13,0
 
 fatal_error
+	lda zpc_hi
+	jsr print_hex_byte
+	lda zpc_mid
+	jsr print_hex_byte
+	lda zptr
+	jsr print_hex_byte
+	lda #':'
+	jsr print_char
 	pla
 	sta stringptr
 	pla
