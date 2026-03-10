@@ -11,7 +11,7 @@ int main(int argc,char **argv) {
 	int offset = 0;
 	for (int i=1; i<argc; i++) {
 		if (!strcmp(argv[i],"-o")) {
-			FILE *o = fopen(argv[i+1],"w");
+			FILE *o = fopen(argv[i+1],"wb");
 			if (!o)
 				return 2;
 			for (int track=0; track<35; track++) {
@@ -20,16 +20,20 @@ int main(int argc,char **argv) {
 				}
 			}
 			fclose(o);
+			printf("Wrote '%s'\n",argv[i+1]);
 			return 0;
 		}
 		else {
-			FILE *f = fopen(argv[i],"r");
+			FILE *f = fopen(argv[i],"rb");
 			if (!f)
 				return 1;
 			fseek(f,0,SEEK_END);
 			int size = ftell(f);
 			fseek(f,0,SEEK_SET);
-			fread(in + offset,size,1,f);
+			if (fread(in + offset,1,size,f) != size) {
+				fprintf(stderr,"short read\n");
+				return 1;
+			}
 			printf("Section '%s' offset %d size %d\n",argv[i],offset,size);
 			offset += size;
 			fclose(f);
