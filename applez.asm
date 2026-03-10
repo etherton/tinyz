@@ -278,26 +278,6 @@ scroll
 	rts
 }
 
-clear
-!if COLUMNS=80 {
-	sta PAGE2
-	jsr .clear
-	sta PAGE1
-}
-.clear	
-	ldy #$77
-- 	sta $400,y
-	sta $480,y
-	sta $500,y
-	sta $580,Y
-	sta $600,y
-	sta $680,y
-	sta $700,y
-	sta $780,y
-	dey
-	bpl -
-	rts
-
 	; destroys A
 print_char_lower
 	sty ysave
@@ -343,6 +323,26 @@ print_char_lower
 	ldy ysave
 	rts
 
+clear
+!if COLUMNS=80 {
+	sta PAGE2
+	jsr .clear
+	sta PAGE1
+}
+.clear	
+	ldy #$77
+- 	sta $400,y
+	sta $480,y
+	sta $500,y
+	sta $580,Y
+	sta $600,y
+	sta $680,y
+	sta $700,y
+	sta $780,y
+	dey
+	bpl -
+	rts
+
 	; destroys a
 print_char_upper
 	sty ysave
@@ -385,10 +385,6 @@ print_char_upper
 	!byte 	$04, $84, $05, $85, $06, $86, $07, $87
 	!byte	$2C, $AC, $2D, $AD, $2E, $AE, $2F, $AF
 	!byte	$54, $D4, $55, $D5, $56, $D6, $57, $D7
-
-	;;; !convtab "apple2e.convtab"
-.test	!text "This is an example string."
-	!byte 0
 	
 	; 0-31 @,Inverse capital letters
 	; 32-63 Inverse ascii punctuation
@@ -563,28 +559,6 @@ zentry
 
 	jmp default_print_char
 
-dispatch +table16 _2op_s_s,_2op_s_s,_2op_s_v,_2op_s_v,_2op_v_s,_2op_v_s,_2op_v_v,_2op_v_v,_1op_large,_1op_small,_1op_variable,_0op,_2op_var,_2op_var,_vop,_vop
-
-_2opTbl +table32 z_ill,z_je,z_jl,z_jg,z_dec_chk,z_inc_chk,z_jin,z_test,z_or,z_and,z_test_attr,z_set_attr,z_clear_attr,z_store,z_insert_obj,z_loadw,z_loadb,z_get_prop,z_get_prop_addr,z_get_next_prop,z_add,z_sub,z_mul,z_div,z_mod,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
-
-_1opTbl +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_inc,z_dec,z_print_addr,z_ill,z_remove_obj,z_print_obj,z_ret,z_jump,z_print_paddr,z_load,z_not
-
-_0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,z_ill,z_ill,z_ill
-
-_varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
-
-update_zpc
-	inc zpc_mid
-	bne update_zptr
-	inc zpc_hi
-update_zptr
-	clc
-	lda zpc_mid
-	; TODO: this needs to go through a table lookup and set up page banks
-	adc #>HEADER
-	sta zptr+1
-	rts
-
 ; opcode
 ; (type byte) (type byte for call_vs2) (00=large, 01=small, 10=var, 11=omit)
 ; (operands)
@@ -592,14 +566,11 @@ update_zptr
 ; (branch offset)
 ; (text to print)
 
-default_print_char
-	lda #<print_char_lower
-	sta print_char+1
-	lda #>print_char_lower
-	sta print_char+2
+
 
 ; if an instruction would cross a non-contiguous 4k boundary (rare), we copy the entire instruction into a temporary
 ; location and execute it from there. (eventually)
+	; !align 255,0
 next_insn
 	lda $c019
 	bpl +			; not in vbl
@@ -827,6 +798,23 @@ print_operand
 	jmp print_char
 }
 
+	; preserves A/X/Y
+update_zpc
+	inc zptr+1
+	inc zpc_mid
+	bne +
+	inc zpc_hi
++	rts
+
+	; destroys A
+update_zptr
+	clc
+	lda zpc_mid
+	; TODO: this needs to go through a table lookup and set up page banks
+	adc #>HEADER
+	sta zptr+1
+	rts
+
 z_ill
 	jsr fatal_error
 	!text "unimplemented insn",0
@@ -868,10 +856,10 @@ z_rfalse
 	sta zpc_mid
 	lda stack_lo+1,Y
 	sta zpc_hi
+	jsr update_zptr
 	lda stack_hi+1,Y
 	sta frameptr
 	lda stack_lo+2,Y
-	jsr update_zptr
 	; TODO: On V4+, might be a non-storing call
 	jsr store_result_2
 	jmp next_insn
@@ -1187,7 +1175,7 @@ z_get_prop_len
 	jsr fatal_error
 	!text "z_get_prop_len",0
 
-!macro z_print_string zp {
+!macro z_print_string hi,mid,zp {
 	lda #$FF
 	sta zshift
 -	lda (zp)
@@ -1202,6 +1190,9 @@ z_get_prop_len
 	inc zp
 	bne +
 	inc zp+1
+	inc mid
+	bne +
+	inc hi
 +	lda (zp)
 	asl
 	rol xsave
@@ -1215,6 +1206,9 @@ z_get_prop_len
 	inc zp
 	bne +
 	inc zp+1
+	inc mid
+	bne +
+	inc hi
 +	and #$1F
 	jsr printz
 	plp
@@ -1239,15 +1233,8 @@ print_obj
 	adc #>HEADER
 	sta obj_ptr+1
 print_obj_ptr
-	+z_print_string obj_ptr
+	+z_print_string obj_hi,obj_mid,obj_ptr
 	rts
-
-	; obj_ptr contains address in dynamic/static memory
-z_print_common
-	jsr print_obj_ptr
-	jmp next_insn
-
-
 
 z_print_addr
 	lda operands_lo+0
@@ -1256,7 +1243,10 @@ z_print_addr
 	clc
 	adc #>HEADER
 	sta obj_ptr+1
-	bne z_print_common	; always taken
+	; obj_ptr contains address in dynamic/static memory
+z_print_common
+	jsr print_obj_ptr
+	jmp next_insn
 
 	; stores a packed address in operands+0 in four zp slots
 !macro get_mem_addr_packed hi,mid,ptr {
@@ -1290,6 +1280,7 @@ z_print_paddr
 	jsr print_obj_ptr
 	jmp next_insn
 
+	; destroys A,Y
 printz
 	cmp #4
 	beq .print_shift_1
@@ -1443,7 +1434,7 @@ z_print
 	jmp next_insn
 
 z_print_inline_common
-	+z_print_string zptr 
+	+z_print_string zpc_hi,zpc_mid,zptr 
 	rts
 
 	; all call instructions route through here, x=1..7
@@ -1699,16 +1690,21 @@ z_print_num
 	jsr print_num 
 	jmp next_insn
 
-dec2hex 
-	!byte $00,$01,$02,$03,$04,$05,$06,$07,$08,$09,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
-	!byte $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49
-	!byte $50,$51,$52,$53,$54,$55,$56,$57,$58,$59,$60,$61,$62,$63,$64,$65,$66,$67,$68,$69,$70,$71,$72,$73,$74
-	!byte $75,$76,$77,$78,$79,$80,$81,$82,$83,$84,$85,$86,$87,$88,$89,$90,$91,$92,$93,$94,$95,$96,$97,$98,$99
-
 print_num
 	lda #0
 	sta mulTemp
-	+process_digit 10000
+	bit operands_hi+0
+	bpl +
+	lda #'-'
+	jsr print_char
+	sec
+	lda #0
+	sbc operands_lo+0
+	sta operands_lo+0
+	lda #0
+	sbc operands_hi+0
+	sta operands_hi+0
++	+process_digit 10000
 	+process_digit 1000
 	+process_digit 100	
 	ldy operands_lo+0
@@ -1778,13 +1774,18 @@ z_show_status
 
 -	lda top_cursor_x
 	cmp #(COLUMNS)
-	bcs +
+	bcs default_print_char
 	lda #32
 	jsr print_char_upper
 	jmp -
 
-+	jmp default_print_char
-
+default_print_char
+	lda #<print_char_lower
+	sta print_char+1
+	lda #>print_char_lower
+	sta print_char+2
+	jmp next_insn	
+	
 	; divide operands+0 by operands+1, quotient in operands+0, remainder in operands+2
 divide
 	lda #0
@@ -1944,16 +1945,36 @@ debug_print
 	; 16-31 is aux memory and language card
 	; 32-35 is Saturn bank 0
 	; 36-39 is Saturn bank 1, etc
-tlb 	!fill 128
+; tlb 	!fill 128
 	; another idea - map first 64k of memory to $4000-$BFFF
 	; except that even/odd bytes are in different banks. this means
 	; all memory is contiguuous but you're constantly fussing with banks
+
+	!align 255, 256 - 100 - 26 - 26 - 25
+dec2hex 
+	!byte $00,$01,$02,$03,$04,$05,$06,$07,$08,$09,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
+	!byte $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49
+	!byte $50,$51,$52,$53,$54,$55,$56,$57,$58,$59,$60,$61,$62,$63,$64,$65,$66,$67,$68,$69,$70,$71,$72,$73,$74
+	!byte $75,$76,$77,$78,$79,$80,$81,$82,$83,$84,$85,$86,$87,$88,$89,$90,$91,$92,$93,$94,$95,$96,$97,$98,$99
 
 	; on V5 the version in the story is copied over this
 zalphabet
 	!text "abcdefghijklmnopqrstuvwxyz"
 	!text "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	!text 13,"0123456789.,!?_#'",34,"/",92,"-:()"
+
+	!align 255, 0
+dispatch +table16 _2op_s_s,_2op_s_s,_2op_s_v,_2op_s_v,_2op_v_s,_2op_v_s,_2op_v_v,_2op_v_v,_1op_large,_1op_small,_1op_variable,_0op,_2op_var,_2op_var,_vop,_vop
+
+_2opTbl +table32 z_ill,z_je,z_jl,z_jg,z_dec_chk,z_inc_chk,z_jin,z_test,z_or,z_and,z_test_attr,z_set_attr,z_clear_attr,z_store,z_insert_obj,z_loadw,z_loadb,z_get_prop,z_get_prop_addr,z_get_next_prop,z_add,z_sub,z_mul,z_div,z_mod,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
+
+_1opTbl +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_inc,z_dec,z_print_addr,z_ill,z_remove_obj,z_print_obj,z_ret,z_jump,z_print_paddr,z_load,z_not
+
+_0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,z_ill,z_ill,z_ill
+
+_varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
+
+	; 32 bytes remain here
 
 	; stack is split into lower and upper bytes so we can treat the Y register as a stack pointer.
 	!align 255, 0

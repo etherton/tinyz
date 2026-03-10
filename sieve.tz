@@ -1,5 +1,5 @@
 // 113 jiffies on VICE / Ozmoo
-// 45 jiffies on Virtual ][ (either 40 or 80 columns)
+// 43 jiffies on Virtual ][ (either 40 or 80 columns)
 
 object dummy "Zieve of Eratosthenes" {
 }
@@ -25,6 +25,9 @@ routine Sieve [; i j k]  {
 		show_status;
 	}
 		
+	// i = -12345;
+	// print "Test ",i,"^";
+
 	print "All primes between 2 and 255: ";
 	for (i=2; i<maxPrime; ++i)
 		if (iszero marked[i]) {
