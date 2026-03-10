@@ -30,6 +30,7 @@ int main(int argc,char **argv) {
 			int size = ftell(f);
 			fseek(f,0,SEEK_SET);
 			fread(in + offset,size,1,f);
+			printf("Section '%s' offset %d size %d\n",argv[i],offset,size);
 			offset += size;
 			fclose(f);
 		}
