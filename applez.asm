@@ -602,12 +602,14 @@ next_insn
 ++
 
 !ifdef DEBUG_TRACE {
+	lda #13
+	jsr print_char
+	lda zpc_hi
+	jsr print_hex_byte
 	lda zpc_mid
 	jsr print_hex_byte
 	lda zptr
 	jsr print_hex_byte
-	lda #13
-	jsr print_char
 }
 	+next_insn_byte
 	sta zinsn
@@ -720,11 +722,11 @@ operand_small
 
 !ifdef DEBUG_TRACE {
 	jsr debug_print
-	!text "operand ",0
+	!text " op ",0
 	txa
 	jsr print_hex_byte
 	jsr debug_print
-	!text " is inline value ",0
+	!text " is ",0
 	jsr print_operand
 }
 	inx
@@ -735,11 +737,10 @@ operand_small
 operand_variable	
 !ifdef DEBUG_TRACE {
 	jsr debug_print
-	!text "operand ",0
+	!text " op ",0
 	txa
 	jsr print_hex_byte
 }
-
 	+next_insn_byte
 	cmp #$00
 	beq .read_tos
@@ -765,7 +766,6 @@ operand_variable
 	jsr print_char
 	jsr print_operand
 }
-
 	inx
 	rts
 
@@ -788,7 +788,6 @@ operand_variable
 	jsr print_char
 	jsr print_operand
 }
-
 	inx
 	rts
 
@@ -805,7 +804,6 @@ operand_variable
 	!text " is TOS=",0
 	jsr print_operand
 }
-
 	inx
 	rts
 
@@ -815,7 +813,7 @@ print_operand
 	jsr print_hex_byte
 	lda operands_lo,X
 	jsr print_hex_byte
-	lda #$d
+	lda #32
 	jmp print_char
 }
 
@@ -823,9 +821,9 @@ print_operand
 update_zpc
 	inc zptr+1
 	inc zpc_mid
-	bne +
-	inc zpc_hi
-+	rts
+;	bne +
+;	inc zpc_hi
+	rts
 
 	; destroys A
 update_zptr
@@ -871,15 +869,26 @@ z_rfalse
 	dey
 	dey
 	sty stackptr
+
+!ifdef DEBUG_TRACE {
+	jsr debug_print
+	!text "sp value during return is ",0
+	lda stackptr
+	jsr print_hex_byte
+	lda #$d
+	jsr print_char
+}
 	lda stack_lo,Y
 	sta zptr
 	lda stack_hi,Y
 	sta zpc_mid
 	lda stack_lo+1,Y
 	sta zpc_hi
-	jsr update_zptr
 	lda stack_hi+1,Y
 	sta frameptr
+	
+	jsr update_zptr
+
 	lda stack_lo+2,Y
 	; TODO: On V4+, might be a non-storing call
 	jsr store_result_2
@@ -915,7 +924,9 @@ z_je
 	and #$3F
 	beq z_rfalse
 	cmp #$1
-	beq z_rtrue
+	bne + ; beq z_rtrue
+	jmp z_rtrue
++
 	ldx #0
 .compute_newpc
 	clc
@@ -930,7 +941,6 @@ z_je
 	lda #$FE
 	adc zptr
 	sta zptr
-	bcs +
 	lda #$FF
 	adc zpc_mid
 	sta zpc_mid
@@ -1211,8 +1221,8 @@ z_get_prop_len
 	bne +
 	inc zp+1
 	inc mid
-	bne +
-	inc hi
+;	bne +
+;	inc hi
 +	lda (zp)
 	asl
 	rol xsave
@@ -1227,8 +1237,8 @@ z_get_prop_len
 	bne +
 	inc zp+1
 	inc mid
-	bne +
-	inc hi
+;	bne +
+;	inc hi
 +	and #$1F
 	jsr printz
 	plp
@@ -1302,13 +1312,12 @@ z_print_paddr
 
 	; destroys A,Y
 printz
+	cmp #6
+	bcs .print_tabled
 	cmp #4
 	beq .print_shift_1
 	cmp #5
-	beq .print_shift_2
-	cmp #6
-	bcs .print_tabled
-	; TODO: abbreviations
+	beq .print_shift_2	; TODO: abbreviations
 	; print a space
 	lda #$FF
 	sta zshift
@@ -1323,8 +1332,7 @@ printz
 	jmp print_char
 .print_shift_1
 	lda #25
-	sta zshift
-	rts
+	!byte $2C ; bit insn skips lda
 .print_shift_2
 	lda #(25+25)
 	sta zshift
@@ -1495,6 +1503,7 @@ z_print_inline_common
 	; return we need to copy the caller's variables back from the stack to the
 	; current frame. this increases the cost of call_vs / ret slightly in favor
 	; of improving the access speed of any local or global variable.
+	; since all calls are variable typed (for now, not on V5) the arg count is in xsave
 z_call_vs
 	lda operands_lo+0
 	ora operands_hi+0
@@ -1511,26 +1520,33 @@ z_call_vs
 	; frame+3 is the first parameter / local variable
 	; new stack ptr is just past last local
 +	+next_insn_byte		; get storage location
-	; stx		xsave		; operand count
-	tax					; local count
+	tax					; storage location
 
+!ifdef DEBUG_TRACE {
+	jsr debug_print
+	!text "call_vs sp is ",0
+	lda stackptr
+	jsr print_hex_byte
+	lda #$d
+	jsr print_char
+}
 	ldy stackptr
 	lda zpc_mid
 	sta stack_hi,Y
 	lda zptr
 	sta stack_lo,Y
 
-	lda zpc_hi
-	sta stack_lo+1,Y
+	iny
+	lda zpc_hi 
+	sta stack_lo,Y
 	lda frameptr
-	sta stack_hi+1,Y
+	sta stack_hi,Y
 
 	; location to store result
+	iny
 	txa
-	sta stack_lo+2,y
+	sta stack_lo,y
 
-	iny
-	iny
 	sty frameptr
 	iny
 
@@ -1553,20 +1569,21 @@ z_call_vs
 	bne -
 +	sty stackptr
 }
-	; now copy incoming parameters past 0
+	; now copy incoming parameters over previous locals
 	dec xsave
 	beq +
 	ldx #1
 	ldy frameptr
 .copyparam
-	lda operands_lo,x
-	sta stack_lo+1,Y
-	lda operands_hi,X
-	sta stack_hi+1,Y
-	inx
 	iny
+	lda operands_lo,x
+	sta stack_lo,Y
+	lda operands_hi,X
+	sta stack_hi,Y
+	inx
 	dec xsave
 	bne .copyparam
+	iny
 	; new sp is larger of operand count and local count
 	cpy stackptr
 	bcc +
@@ -1955,7 +1972,7 @@ store_result_2
 	lda stack_lo,Y
 	jsr print_hex_byte
 	jsr debug_print
-	!text " to TOS",13,0
+	!text " to TOS",0
 }
 	rts
 + 	jsr fatal_error
