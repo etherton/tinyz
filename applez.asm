@@ -956,8 +956,11 @@ z_ret
 
 z_jump
 	lda operands_lo+0
+	ldy #0
 	ldx operands_hi+0
-	jmp .compute_newpc
+	bpl .compute_newpc
+	ldy #$FF
+	bne .compute_newpc
 
 ; on entry, op0/op1 contain decoded operands
 ; on exit, x contains low byte of result, a contains high byte
@@ -979,10 +982,9 @@ z_je
 	and #$3F
 	beq z_rfalse
 	cmp #$1
-	bne + ; beq z_rtrue
-	jmp z_rtrue
-+
-	ldx #0
+	bne +
+	jmp  z_rtrue
++	ldx #0
 .compute_newpc
 	clc
 	adc zptr
@@ -990,9 +992,11 @@ z_je
 	txa
 	adc zpc_mid
 	sta zpc_mid
-	lda zpc_hi
-	adc #0
+	tya
+	adc zpc_hi
 	sta zpc_hi
+	
+	clc
 	lda #$FE
 	adc zptr
 	sta zptr
@@ -1022,11 +1026,13 @@ branch_passed
 .branch_passed
 	and #$7f
 	ldx #0
+	ldy #0
 	cmp #$40
 	bcs .branch_short
 	cmp #$20
 	bcc .long_branch_positive
 	ora #$fc
+	ldy #$FF
 .long_branch_positive
 	tax
 	+next_insn_byte
