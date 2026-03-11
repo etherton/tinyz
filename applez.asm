@@ -134,6 +134,7 @@ temp		= $27
 window_split = $28
 vblprev = 	$29
 top_cursor_x = $2A
+prev_top_cursor_x = $2B
 
 ; Memory is broken up into 4k blocks, up to 512k
 ; It typically starts at $2000 and counts up to $BFFF
@@ -586,6 +587,8 @@ zentry
 	lda #1
 	sta window_split
 	sta vblprev
+	lda #(COLUMNS)
+	sta prev_top_cursor_x
 
 	lda HEADER+25
 	sta abbrev_ptr
@@ -2034,12 +2037,22 @@ z_show_status
 	lda globals_hi+16
 	sta operands_hi+0
 	jsr print_obj
-
+	lda top_cursor_x
+	pha
+	sec
+	sbc prev_top_cursor_x
+	bcs .longer_or_same
+	sta prev_top_cursor_x
 -	lda #32
 	jsr print_char_upper
-	lda top_cursor_x
-	cmp #(COLUMNS-8)
-	bcc -
+	inc prev_top_cursor_x
+	bne -
+.longer_or_same
+	pla
+	sta prev_top_cursor_x
+
+	lda #(COLUMNS-7)
+	sta top_cursor_x
 
 	; global 1 is score
 	lda globals_lo+17
