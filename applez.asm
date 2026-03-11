@@ -3,6 +3,10 @@
 	bit $c00e
 }
 
+!macro skip_imm {
+	!byte $2C ; bit NNNN causes next two bytes to be skipped
+}
+
 _80STOREOFF	= $C000
 _80STOREON	= $C001
 RAMRDOFF	= $C002 ; read enable main memory
@@ -439,6 +443,7 @@ abbrev = $75		; $FF if not halfway through abbreviation, else 0/32/64
 stackptr = $78		; one past top of stack
 frameptr = $79		; one before first local (since locals are one-based)
 abbrev_ptr = $7A
+default_props_ptr = $7C
 
 ;   0-31: 0101 (small,small) (5)
 ;  32-63: 0110 (small,variable) (6)
@@ -563,6 +568,7 @@ zentry
 	; set up 1-based object table address
 	clc
 	lda HEADER+11
+	sta default_props_ptr
 !ifdef Z4PLUS {
 	adc #(126 - 14)
 } else {
@@ -573,6 +579,9 @@ zentry
 	lda HEADER+10
 	adc #>HEADER
 	sta obj_base+1
+	lda HEADER+10
+	adc #>HEADER
+	sta default_props_ptr+1
 
 	lda #1
 	sta window_split
@@ -720,7 +729,7 @@ decode_types
 	; all operand handlers inx before return and so the zero flag is always clear.
 operand_large
 	+next_insn_byte
-	!byte $2C	; bit NNNN, skips lda #$0
+	+skip_imm
 	; zero flag clear on return (x never zero)
 operand_small
 	lda #$0
@@ -864,7 +873,7 @@ z_print_ret
 	jsr print_char
 z_rtrue
 	ldx #1
-	!byte $2C ; bit NNNN skips the next insn
+	+skip_imm
 z_rfalse
 	ldx #0
 	lda #0
@@ -1149,28 +1158,36 @@ z_clear_attr
 	sta (obj_ptr),Y
 	jmp next_insn
 
-z_get_sibling
-	jsr get_object_addr
-	ldy #$5 ; sibling
-z_get_common
-	lda (obj_ptr),Y
-z_get_common_zero
-	tax
-	lda #0
-	jmp store_common
-
-z_get_parent
-	; get_parent(0) is always 0.
-	lda operands_lo+0
-	beq z_get_common_zero
-	jsr get_object_addr
-	ldy #4 ; parent
-	bne z_get_common
-
 z_get_child
 	jsr get_object_addr
 	ldy #6 ; child
-	bne z_get_common
+	bne +
+z_get_sibling
+	jsr get_object_addr
+	ldy #$5 ; sibling
++	lda (obj_ptr),Y
+	beq .child_sibling_zero
+	tax
+	lda #0
+	jsr store_result
+	jmp branch_passed
+.child_sibling_zero
+	tax
+	jsr store_result
+	jmp branch_failed
+
+	; get_parent doesn't branch
+z_get_parent
+	; get_parent(0) is always 0.
+	lda operands_lo+0
+	beq +
+	; otherwise get object address
+	jsr get_object_addr
+	ldy #4 ; parent
+	lda (obj_ptr),Y
++	tax
+	lda #0
+	jmp store_common
 
 z_remove_obj
 	jsr fatal_error
@@ -1189,29 +1206,132 @@ z_insert_obj
 	!text "z_insert_obj not impl",0
 
 z_get_prop_addr
+	jsr prop_common
+	ldx obj_ptr
+	lda obj_mid
+	jmp store_common
+
+	; on input, operands+0 is object number, operands+1 is property index
+	; on return, y is property length or zero if not found; obj_ptr points
+	; at the first byte of the property payload
+prop_common
 	jsr get_object_addr
 	ldy #8		; property addr
 	lda (obj_ptr),Y
 	tax
 	dey
 	lda (obj_ptr),y
-	jmp store_common
+
+	; now obj_ptr points at property table
+	sta obj_mid
+	adc #>HEADER
+	sta obj_ptr+1
+	stx obj_ptr
+
+	; get object length byte
+	lda (obj_ptr)
+	inc obj_ptr
+	bne +
+	inc obj_ptr+1
++	asl
+	adc obj_ptr
+	sta obj_ptr
+	bcc +
+	inc obj_ptr+1
+	; now we're at the first property; they are in descending order, terminated with zero
+	; on V3, upper 3 bits are size-1, lower 5 bits are property index, 1-31
+.find_property
+	lda (obj_ptr)
+	tay
+	inc obj_ptr
+	bne +
+	inc obj_ptr+1
++	and #$1F
+	beq .property_not_found
+	cmp operands_lo+1
+	beq .matched_property
+	; if operands_lo+1 > current property, it's not here
+	bcc .property_not_found
+	jsr .matched_property	; get length in Y
+	tya
+	adc obj_ptr
+	sta obj_ptr
+	bcc .find_property
+	inc obj_ptr+1
+	bne .find_property
+.matched_property
+	tya
+	lsr
+	lsr
+	lsr
+	lsr
+	lsr
+	tay
+	iny
+	rts			; zero flag clear
+.property_not_found
+	ldy #0
+	rts			; zero flag set
 
 z_get_prop
-	jsr fatal_error
-	!text "z_get_prop not impl",0
+	jsr prop_common
+	beq .default_prop
+	dey
+	lda (obj_ptr),Y
+	tax
+	dey
+	bmi +
+	lda (obj_ptr),y
+	+skip_imm
++	lda #0
+	jmp store_common
+
+.default_prop
+	lda operands_lo+0
+	asl
+	tay
+	iny
+	lda (default_props_ptr),Y
+	tax
+	dey
+	lda (default_props_ptr),Y
+	jmp store_common
+
 
 z_put_prop
+	jsr prop_common
+	beq invalid_property
+	dey
+	lda operands_lo+2
+	sta (obj_ptr),Y
+	dey
+	bmi +
+	lda operands_hi+2
+	sta (obj_ptr),Y
++	jmp store_common
+invalid_property
+	lda operands_lo+1
+	jsr print_hex_byte
 	jsr fatal_error
-	!text "z_put_prop not impl",0
+	!text ":invalid property for operation:",0
 
 z_get_next_prop
 	jsr fatal_error
 	!text "z_get_next_prop not impl",0
 
 z_get_prop_len
-	jsr fatal_error
-	!text "z_get_prop_len",0
+	; get_prop_len of zero is zero
+	lda operands_lo+0
+	ora operands_hi+0
+	bne +
+	ldx #0
+	jmp store_common
+
++	jsr prop_common
+	tya
+	tax
+	lda #0
+	jmp store_common
 
 !macro z_print_string hi,mid,zp {
 	lda #$FF
@@ -1345,7 +1465,7 @@ printz
 	jmp print_char
 .print_shift_1
 	lda #25
-	!byte $2C ; bit insn skips lda
+	+skip_imm
 .print_shift_2
 	lda #(25+25)
 	sta zshift
@@ -1375,7 +1495,7 @@ printz
 	lda obj_mid
 	adc #>HEADER
 	sta obj_ptr+1
-	+z_print_string obj_hi,obj_mid,obj_ptr
+	jsr print_obj_ptr
 	lda #$ff
 	sta zshift	; abbreviation might have had padding character
 	rts
@@ -1735,7 +1855,7 @@ attr_setup
 	tay
 	rts
 
-	; operand+0 contains object number; return y=0
+	; operand+0 contains object number; return obj_mid, obj_ptr pointing at object
 get_object_addr
 	; compute objIndex * 9
 	lda operands_lo+0
@@ -1763,9 +1883,13 @@ get_object_addr
 	lda obj_ptr+0
 	adc obj_base
 	sta obj_ptr+0
+
 	lda obj_ptr+1
 	adc obj_base+1
 	sta obj_ptr+1
+	sec
+	sbc #>HEADER
+	sta obj_mid
 	rts
 
 ; print number in operands+0
@@ -1847,7 +1971,7 @@ print_hex_digit
 
 z_new_line
 	lda #13
-	!byte $2C ; skip lda zp
+	+skip_imm
 z_print_char
 	lda operands_lo+0
 	jsr print_char
