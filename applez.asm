@@ -1014,8 +1014,8 @@ branch_failed
 	cmp #$80
 	bcc .branch_passed
 .branch_failed
-	cmp #$40
-	bcs .short_branch_failed
+	and #$40
+	bne .short_branch_failed
 	+skip_insn_byte
 .short_branch_failed
 	jmp next_insn
