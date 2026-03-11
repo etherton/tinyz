@@ -855,13 +855,51 @@ z_ill
 	jsr fatal_error
 	!text "unimplemented insn",0
 
+; branch(var(operands[0].getS()).dec() < operands[1].getS()); break;
 z_dec_chk
+
 	jsr fatal_error
 	!text "dec_chk not impl",0
 
+; branch(var(operands[0].getS()).inc() > operands[1].getS()); break;
 z_inc_chk
-	jsr fatal_error
-	!text "inc_chk not impl",0
+	lda operands_lo+0
+	beq .inc_chk_tos
+!ifndef FRAME_USES_GLOBALS {
+	cmp #$10
+	bcs .inc_chk_global
+	; carry is clear here
+	adc frameptr
+	tax
+	inc stack_lo,X
+	lda stack_lo,X
+	sta operands_lo+0
+	bne +
+	inc stack_hi,X
++	lda stack_hi,X
+	sta operands_hi+0
+	jmp z_jg
+.inc_chk_global
+}
+	tax
+	inc globals_lo,x
+	lda globals_lo,X
+	sta operands_lo+0
+	bne +
+	inc globals_hi,x
++	lda globals_hi,X
+	sta operands_hi+0
+	jmp z_jg
+.inc_chk_tos
+	ldx stackptr
+	inc stack_lo-1,X
+	lda stack_lo-1,X
+	sta operands_lo+0
+	bne +
+	inc stack_hi-1,X
++	lda stack_hi-1,X
+	sta operands_hi+0
+	jmp z_jg
 
 z_jin
 	jsr fatal_error
