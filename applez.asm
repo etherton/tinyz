@@ -135,6 +135,7 @@ window_split = $28
 vblprev = 	$29
 top_cursor_x = $2A
 prev_top_cursor_x = $2B
+text_ptr = $2C
 
 ; Memory is broken up into 4k blocks, up to 512k
 ; It typically starts at $2000 and counts up to $BFFF
@@ -404,7 +405,6 @@ print_char_upper
 	rts
 }
 
-
 .mul40
 	!byte 	$04, $84, $05, $85, $06, $86, $07, $87
 	!byte	$2C, $AC, $2D, $AD, $2E, $AE, $2F, $AF
@@ -421,6 +421,70 @@ print_char_upper
 	; Normal letters have high bit set
 	; Inverse has high bit clear
 	; 
+
+	; returns last keypress in A
+read_char
+	lda $C000
+	bpl read_char
+	bit $C010
+	and #$7f
+	rts
+
+	; text_ptr contains address to store input line
+	; first byte is maximum length
+	; on return, first byte is actual length
+read_line
+	ldy #0
+	lda (text_ptr),Y
+	sta .max_length+1
+	+bp
+.update_cursor
+	lda #'_'
+	jsr print_char
+	lda #' '
+	jsr print_char
+	dec cursor_x
+	dec cursor_x
+.next_char
+	jsr read_char
+	cmp #$08
+	beq .backsp
+	cmp #$7F
+	beq .backsp
+	cmp #$0D
+	beq .return
+	cmp #$20
+	bcc .next_char
+.max_length
+	cpy #99
+	beq .next_char
+	iny
+	pha
+	jsr print_char
+	pla
+	cmp #'A'
+	bcc .notupper2
+	cmp #'Z'+1
+	bcs .notupper2
+	adc #32
+.notupper2
+	sta (text_ptr),y
+	jmp .update_cursor
+.backsp
+	cpy #0
+	beq .next_char
+	dec cursor_x
+	dey
+	jmp .update_cursor
+.return
+	lda #$20
+	jsr print_char
+	lda #$0D
+	jsr print_char
+	lda #0
+	iny
+	sta (text_ptr),y
+	rts
 
 mulTemp = $46
 attr_bit = $47
@@ -596,7 +660,8 @@ zentry
 	adc #>HEADER
 	sta abbrev_ptr+1
 
-	jmp default_print_char
+	jsr default_print_char
+	jmp next_insn
 
 ; opcode
 ; (type byte) (type byte for call_vs2) (00=large, 01=small, 10=var, 11=omit)
@@ -1622,8 +1687,15 @@ z_random
 	!text "z_random not impl",0
 
 z_sread
-	jsr fatal_error
-	!text "z_sread not impl",0
+	lda operands_lo+0
+	sta text_ptr
+	lda operands_hi+0
+	clc
+	adc #>HEADER
+	sta text_ptr+1
+	jsr show_status
+	jsr read_line
+	jmp next_insn
 
 z_inc
 	lda operands_lo+0
@@ -2025,6 +2097,10 @@ z_print_char
 	jmp next_insn
 
 z_show_status
+	jsr show_status
+	jmp next_insn
+
+show_status
 	lda #<print_char_upper
 	sta print_char+1
 	lda #>print_char_upper
@@ -2080,7 +2156,7 @@ default_print_char
 	sta print_char+1
 	lda #>print_char_lower
 	sta print_char+2
-	jmp next_insn	
+	rts	
 	
 	; divide operands+0 by operands+1, quotient in operands+0, remainder in operands+2
 divide
