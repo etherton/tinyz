@@ -456,6 +456,30 @@ uint8_t machine::read_input(uint16_t textAddr,uint16_t parseAddr) {
 		return 13;
 }
 
+template <uint8_t matchLen> const uint8_t *bsearch_n(const uint8_t *match,const uint8_t *entries,uint16_t entryCount,uint8_t entrySize) {
+	uint16_t low = 0, high = entryCount - 1;
+	while (low <= high) {
+		uint16_t mid = (low + high) >> 1;
+		uint8_t index = 0;
+		const uint8_t *entry = (entries  + entrySize * mid);
+		do {
+			if (match[index] < entry[index]) {
+				high = mid - 1;
+				break;
+			}
+			else if (match[index] == entry[index]) {
+				if (++index == matchLen)
+					return entry;
+			}
+			else {
+				low = mid + 1;
+				break;
+			}
+		} while (1);
+	}
+	return nullptr;
+}
+
 uint8_t machine::tokenise(uint16_t textAddr,uint16_t parseAddr,uint8_t offset) {
 	uint16_t dictAddr = m_header->dictionaryAddr.getU();
 	// the separators are actually stored as parsed words. spaces are not.
@@ -489,15 +513,12 @@ uint8_t machine::tokenise(uint16_t textAddr,uint16_t parseAddr,uint8_t offset) {
 		// printf("{{encoding %*.*s}}\n",wordLen,wordLen,m_dynamic+textAddr+offset);
 		encode_text(zword,(char*)m_dynamic + textAddr + offset,wordLen);
 		// printf("{{%04x,%04x}}\n",zword[0].getU(),zword[1].getU());
-		void *result = bsearch(zword,m_readOnly + dictAddr,numWords,entryLength,
-			m_header->version<4? 
-				[](const void *a,const void *b) { return memcmp(a,b,4); } : 
-				[](const void *a,const void *b) { return memcmp(a,b,6); });
+		const uint8_t *result = (m_header->version<4? bsearch_n<4> : bsearch_n<6>)((uint8_t*)zword,m_readOnly + dictAddr,numWords,entryLength);
 
 		if (!result)
 			write_mem16(parseAddr+2+numParsed*4,byte2word(0));
 		else
-			write_mem16(parseAddr+2+numParsed*4,word2word((const uint8_t*)result - m_readOnly));
+			write_mem16(parseAddr+2+numParsed*4,word2word(result - m_readOnly));
 		write_mem8(parseAddr+2+numParsed*4+2,wordLen);
 		write_mem8(parseAddr+2+numParsed*4+3,offset);
 		/* printf("{{%02x%02x%02x%02x}}\n",m_dynamic[parseAddr+2+numParsed*4],m_dynamic[parseAddr+2+numParsed*4+1],
