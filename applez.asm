@@ -1877,7 +1877,7 @@ tokenise
 }
 	jmp next_insn
 +	cmp #32
-	bne .next_letter
+	bne .new_word
 	inc text_offset
 	jmp .next_word	; always taken
 .new_word
@@ -1904,6 +1904,7 @@ tokenise
 	lda #1
 	sta (parse_ptr),y	; length of word
 	inx
+	inc text_offset
 	bne .end_word ; always taken
 .next_letter
 	ldy text_offset
@@ -2053,11 +2054,11 @@ bsearch
 	bne .compare_char
 
 	; search succeeded
-	lda entry_ptr
+	lda obj_ptr
 	ldy parse_offset
 	dey
 	sta (parse_ptr),Y
-	lda entry_ptr+1
+	lda obj_ptr+1
 	sec
 	sbc #>HEADER
 	jmp .word_done
