@@ -511,6 +511,7 @@ operands_hi = $50
 operands_lo = $58
 stringptr = $60
 
+obj_ptr_alt = $62
 obj_hi = $6A
 obj_mid = $6B
 obj_ptr = $6C
@@ -1021,9 +1022,14 @@ z_inc_chk
 	sta operands_hi+0
 	jmp z_jg
 
+	; is operands+0's parent operand+1?
 z_jin
-	jsr fatal_error
-	!text "jin not impl",0
+	jsr get_object_addr
+	ldy #4 ; parent
+	cmp operands_lo+1
+	beq +
+	jmp branch_failed
++	jmp branch_passed
 
 z_print_ret
 	jsr z_print_inline_common
@@ -1385,20 +1391,61 @@ z_get_parent
 	jmp store_common
 
 z_remove_obj
-	jsr fatal_error
-	!text "z_remove_obj not impl",0
-
-;	jsr get_object_addr
-;	ldy #4 ; parent
-;	lda (obj_ptr),Y
-;	bne +
-;	jmp next_insn	; parent is zero, already removed from terminate
-;+	sta operands_lo+0
-;	jsr get_object_addr
+	jsr remove_obj
+	jmp next_insn
+	; operands_lo+4 is previous operands_lo+0
+remove_obj
+	lda operands_lo+0
+	sta operands_lo+4
+	jsr get_object_addr
+	lda obj_ptr
+	sta obj_ptr_alt
+	lda obj_ptr+1
+	sta obj_ptr_alt+1
+	ldy #4 ; parent
+	lda (obj_ptr),Y
+	sta operands_lo+0
+	jsr get_object_addr
+	ldy #6 ; child
+.remove_obj_check_prev
+	lda (obj_ptr),Y
+	cmp operands_lo+4
+	bne .remove_obj_not_direct
+	sty ysave
+	ldy #5	; sibling
+	lda (obj_ptr_alt),Y	
+	ldy ysave
+	sta (obj_ptr),y		; parent's child is our sibling (or our predecessor's sibling is our sibling)
+	ldy #5
+	lda #0
+	sta (obj_ptr_alt),Y	; zero out our sibling
+	rts
+	; walk next sibling in the list instead
+.remove_obj_not_direct
+	sta operands_lo+0
+	jsr get_object_addr
+	ldy #5
+	bne .remove_obj_check_prev	; always take	
 
 z_insert_obj
-	jsr fatal_error
-	!text "z_insert_obj not impl",0
+	jsr remove_obj
+	; set our new parent
+	ldy #4		; parent
+	lda operands_lo+1
+	sta (obj_ptr_alt),y
+	; our sibling is parent's child
+	lda operands_lo+1
+	sta operands_lo+0
+	jsr get_object_addr
+	ldy #6 		; child
+	lda (obj_ptr),y
+	dey			; sibling
+	sta (obj_ptr_alt),Y
+	; parent's child is now us
+	lda operands_lo+4
+	iny			; child
+	sta (obj_ptr),Y
+	jmp next_insn
 
 z_get_prop_addr
 	jsr prop_common
