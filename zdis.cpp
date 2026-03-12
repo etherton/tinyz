@@ -316,7 +316,7 @@ void dump_dictionary(const storyHeader *h) {
 		printf("\t[");
 		print_zscii(b,addr);
 		printf("] ");
-		for (int i=h->version<4? 4 : 6; i<entrySize; i++)
+		for (int i=0; i<entrySize; i++)
 			printf("%02x",b[addr+i]);
 		addr += entrySize;
 		printf("\n");
@@ -345,7 +345,7 @@ int main(int argc,char **argv) {
 	printf("high memory: %x\n",story->highMemoryAddr.getU());
 	printf("initial pc: %x\n",story->initialPCAddr.getU());
 	printf("dictionary: %x\n",story->dictionaryAddr.getU());
-	// dump_dictionary(story);
+	dump_dictionary(story);
 	printf("globals: %x\n",story->globalVarsTableAddr.getU());
 	printf("static memory: %x\n",story->staticMemoryAddr.getU());
 	printf("abbreviations: %x\n",story->abbreviationsAddr.getU());
