@@ -1415,6 +1415,7 @@ prop_common
 	lda (obj_ptr),Y
 	tax
 	dey
+	clc
 	lda (obj_ptr),y
 
 	; now obj_ptr points at property table
@@ -2598,7 +2599,6 @@ default_print_char
 	
 	; divide operands+0 by operands+1, quotient in operands+0, remainder in operands+2
 divide
-	+bp
 	lda #0
 	sta operands_lo+2	; rem
 	sta operands_hi+2	; rem+1
