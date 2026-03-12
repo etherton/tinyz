@@ -7,6 +7,10 @@
 	!byte $2C ; bit NNNN causes next two bytes to be skipped
 }
 
+!macro inca {
+	inc
+}
+
 _80STOREOFF	= $C000
 _80STOREON	= $C001
 RAMRDOFF	= $C002 ; read enable main memory
@@ -153,6 +157,7 @@ text_ptr = $2C
 	sta top_cursor_x
 
 print_char = $00
+encode_buffer = $03		; takes either 6 bytes or 9 bytes
 
 	lda #$4C
 	sta print_char
@@ -433,11 +438,19 @@ read_char
 	; text_ptr contains address to store input line
 	; first byte is maximum length
 	; on return, first byte is actual length
+	; on V3, first byte is maximum length, and input is 0-terminated
+	; on V5+, first byte is maximum length, and second byte is total amount
 read_line
-	ldy #0
-	lda (text_ptr),Y
+	lda (text_ptr)
 	sta .max_length+1
-	+bp
+!ifdef V5PLUS {
+	ldy #1
+	lda (text_ptr),y
+	tay
+	iny
+} else {
+	ldy #0
+}
 .update_cursor
 	lda #'_'
 	jsr print_char
@@ -509,6 +522,23 @@ stackptr = $78		; one past top of stack
 frameptr = $79		; one before first local (since locals are one-based)
 abbrev_ptr = $7A
 default_props_ptr = $7C
+dict_ptr = $7E
+parse_ptr = $80
+text_offset = $82
+parse_offset = $83
+entry_ptr = $84
+low_index = $86
+high_index = $88
+entry_size = $8A
+char_index = $8B
+
+!ifdef Z4PLUS {
+DICT_SIZE = 6
+DICT_WORD_LEN = 9
+} else {
+DICT_SIZE = 4
+DICT_WORD_LEN = 6
+}
 
 ;   0-31: 0101 (small,small) (5)
 ;  32-63: 0110 (small,variable) (6)
@@ -647,6 +677,26 @@ zentry
 	lda HEADER+10
 	adc #>HEADER
 	sta default_props_ptr+1
+
+	lda HEADER+9
+	sta dict_ptr
+	lda HEADER+8
+	adc #>HEADER
+	sta dict_ptr+1
+	lda (dict_ptr)
+	cmp #3
+	beq +		; also sets carry
+	jsr fatal_error
+	!text "dictionary does not have three separators",0
++	ldy #4
+	lda (dict_ptr),Y
+	sta entry_size
+	lda dict_ptr
+	adc #$6			; carry is always set, so add 7
+	sta entry_ptr
+	lda dict_ptr+1
+	adc #0
+	sta entry_ptr+1
 
 	lda #1
 	sta window_split
@@ -1212,14 +1262,45 @@ z_mul
 	lda operands_hi+0
 	ora operands_hi+1
 	bmi .z_mul_signed	; is either result signed?
-	beq .z_mul_8x8		; can we use faster 8x8 mul?
+	beq .z_mul_8x8u		; can we use faster 8x8 mul?
+	jsr .z_mul_16x16u
+	lda operands_hi+2
+	ldx operands_lo+2
+	jmp store_common
+
 	; standard 16x16->16 unsigned
+.z_mul_16x16u
+	; result -> operands_lo+2, result+1 -> operands_hi+2, result+2 -> operands_lo+3, result+3 -> operands_hi+3
+	; destroys A, X, Y, operands+1 (num2); operands+0 (num1) is preserved
+	lda #0
+	sta operands_lo+3	; result+2
+	ldx #16
+-	lsr operands_hi+1	; num2+1
+	ror operands_lo+1	; num2
+	bcc +
+	tay
+	clc
+	lda operands_lo+0	; num1
+	adc operands_lo+3	; result+2
+	sta operands_lo+3	; result+2
+	tya
+	adc operands_hi+0	; num1+1
++	ror
+	ror operands_lo+3	; result+2
+	ror operands_hi+2	; result+1
+	ror operands_lo+2	; result
+	dex
+	bne -
+	sta operands_hi+3	; result+3
+	rts
+
 .z_mul_signed
 	jsr fatal_error
-	!text "only mul 8x8 implemented",13,0
+	!text "only unsigned mul implemented",13,0
 
 	; https://llx.com/Neil/a2/mult.html
-.z_mul_8x8
+	; result in A (high) and X (low)
+.z_mul_8x8u
 	lda #0
 	ldx #8
 -	lsr operands_lo+1
@@ -1686,16 +1767,372 @@ z_random
 	jsr fatal_error
 	!text "z_random not impl",0
 
-z_sread
+operands_to_text_ptr
 	lda operands_lo+0
 	sta text_ptr
 	lda operands_hi+0
 	clc
 	adc #>HEADER
 	sta text_ptr+1
+	rts
+
+z_sread
+	jsr operands_to_text_ptr
+!ifndef Z4PLUS {
+	; this destroys operands+0
 	jsr show_status
+}
 	jsr read_line
+	jmp tokenise
+
+z_tokenise
+	jsr operands_to_text_ptr
+tokenise
+	lda operands_lo+1
+	sta parse_ptr
+	lda operands_hi+1
+	clc
+	adc #>HEADER
+	sta parse_ptr+1
+!ifdef Z5PLUS {
+	ldy #2
+} else {
+	ldy #1
+}
+	sty text_offset
+	lda #0
+	ldy #1
+	sta (parse_ptr),Y	; number of words parsed
+	ldy #4
+	sty parse_offset
+	ldx #0
+
+	; byte zero is the maximum number of words we can parse
+	; the actual number of words is stored in byte one
+	; for each word parsed, four bytes are written:
+	; bytes 0 and 1 are the big-endian address of the word in the dictionary,
+	; or zero if the word was not found. byte 2 is the length of the word,
+	; and byte 3 is the offset in text_buffer of the word
+	
+	; dictionary header
+	; +0 - number of separators (typically 3)
+	; +1/2/3 separator characters (space shouldn't be here)
+	; +n size of each entry (at least 4 in V3, at least 6 otherwise)
+	; +n+1/2 number of dictionary words
+	; the dictionary words themselves follow
+
+	+bp
+
+.next_word
+!ifdef DEBUG_TOKENISE {
+	jsr debug_print
+	!text "text_offset = ",0
+	lda text_offset
+	jsr print_hex_byte
+	jsr debug_print
+	!text ", parse_offset = ",0
+	lda parse_offset
+	jsr print_hex_byte
+	lda #13
+	jsr print_char
+}
+	; skip all spaces and stop at EOL (zero)
+	ldy text_offset
+	lda (text_ptr),Y
+	bne +
+!ifdef DEBUG_TOKENISE {
+	jsr debug_print
+	!text "max parsed=",0
+	lda (parse_ptr)
+	jsr print_hex_byte
+	jsr debug_print
+	!text ", actual parsed=",0
+	ldy #1
+	lda (parse_ptr),y
+	jsr print_hex_byte
+	lda #$d
+	jsr print_char
+	ldy #2
+.print_parsed_data
+	lda (parse_ptr),Y
+	jsr print_hex_byte
+	iny
+	lda (parse_ptr),Y
+	jsr print_hex_byte
+	jsr debug_print
+	!text ": length ",0
+	iny
+	lda (parse_ptr),Y
+	jsr print_hex_byte
+	jsr debug_print
+	!text ", starting at ",0
+	iny
+	lda (parse_ptr),Y
+	jsr print_hex_byte
+	lda #$d
+	jsr print_char
+	iny
+	cpy parse_offset
+	bcc .print_parsed_data
+}
 	jmp next_insn
++	cmp #32
+	bne .next_letter
+	inc text_offset
+	jmp .next_word	; always taken
+.new_word
+	ldy parse_offset
+	lda text_offset
+	iny
+	sta (parse_ptr),Y	; starting offset of word
+	lda #0
+	dey
+	sta (parse_ptr),y	; length of word
+	; if the current start of word is a separator, it's an entire word.
+	ldy text_offset
+	lda (text_ptr),Y
+	jsr is_separator
+	bne .not_separator
+	tay
+	lda #5
+	sta encode_buffer+0
+	inx
+	lda zencode-32,Y
+	and #$1F
+	sta encode_buffer+1
+	ldy parse_offset
+	lda #1
+	sta (parse_ptr),y	; length of word
+	inx
+	bne .end_word ; always taken
+.next_letter
+	ldy text_offset
+	lda (text_ptr),Y
+	beq .end_word
+	cmp #32
+	beq .end_word
+	jsr is_separator
+	beq .end_word
+.not_separator
+	cpx #DICT_WORD_LEN
+	beq .skip_store
+	tay
+	lda zencode-32,y
+	bpl .unshifted
+	lda #5
+	sta encode_buffer,x
+	inx
+	cpx #DICT_WORD_LEN
+	beq .skip_store
+	and #$1F
+.unshifted
+	sta encode_buffer,X
+	inx
+.skip_store
+	inc text_offset
+	ldy parse_offset
+	lda (parse_ptr),Y	; length of word
+	+inca
+	sta (parse_ptr),y
+	bne .next_letter	; always taken
+.end_word
+	; fill dict word with padding
+-	cpx #DICT_WORD_LEN
+	beq +
+	lda #5
+	sta encode_buffer,x
+	inx
+	bne -	; always taken
+	; now encode it (either 4 or 6 bytes)
++
+	ldx #0
+	ldy #0
+	jsr encode_three
+!ifdef Z4PLUS {
+	jsr encode_three
+}
+	lda encode_buffer,x
+	jsr encode_three_final
+!ifdef DEBUG_TOKENISE {
+	jsr debug_print
+	!text "encoded word [",0
+	lda encode_buffer+0
+	jsr print_hex_byte
+	lda encode_buffer+1
+	jsr print_hex_byte
+	lda encode_buffer+2
+	jsr print_hex_byte
+	lda encode_buffer+3
+	jsr print_hex_byte
+	jsr debug_print
+	!text "]",13,0
+}
+	; now encode_buffer+0/1/2/3 (+4/5 in V4+) contains encoded word
+	lda #0
+	sta low_index
+	sta low_index+1
+	sta char_index
+	ldy #6
+	lda (dict_ptr),Y
+	sec
+	sbc #1
+	sta high_index
+	dey
+	lda (dict_ptr),Y
+	sbc #0
+	sta high_index+1
+
+	; returns entry_ptr pointing at matching word or 0:0 if no match
+bsearch
+!ifdef DEBUG_TOKENISE_VERBOSE {
+	jsr debug_print
+	!text "low_index = ",0
+	lda low_index
+	jsr print_hex_byte
+	jsr debug_print
+	!text ", high_index = ",0
+	lda high_index
+	jsr print_hex_byte
+	lda #13
+	jsr print_char
+}
+	; while (low_index <= high_index)
+	lda low_index + 1
+	cmp high_index + 1
+	beq +
+	bcs .search_failed
++	lda low_index
+	cmp high_index
+	beq +
+	bcs .search_failed
+	; mid_index = (low_index + high_index)>>1
++	lda low_index
+	clc
+	adc high_index
+	sta operands_lo+0
+	lda low_index+1
+	adc high_index+1
+	lsr
+	sta	operands_hi+0
+	ror operands_lo+0
+	lda #0
+	sta operands_hi+1
+	sta char_index
+	lda entry_size
+	sta operands_lo+1
+	jsr .z_mul_16x16u
+	; operands_lo+2 contains offset
+	clc
+	lda entry_ptr
+	adc operands_lo+2
+	sta obj_ptr
+	lda entry_ptr+1
+	adc operands_hi+2
+	sta obj_ptr+1
+	; encode_buffer contains string to test againsg
+	; obj_ptr contains entry to compare
+.compare_char
+	ldy char_index
+	lda encode_buffer,Y
+	cmp (obj_ptr),Y
+	bcs +
+	; high = mid-1
+	lda operands_lo+0
+	sec
+	sbc #1
+	sta high_index+0
+	lda operands_hi+0
+	sbc #0
+	sta high_index+1
+	bmi .search_failed	; top of loop does unsigned comparison so catch negative here and exit
+	jmp bsearch
++	bne +
+	inc char_index
+	iny
+	cpy #DICT_SIZE
+	bne .compare_char
+
+	; search succeeded
+	lda entry_ptr
+	ldy parse_offset
+	dey
+	sta (parse_ptr),Y
+	lda entry_ptr+1
+	sec
+	sbc #>HEADER
+	jmp .word_done
+	; low = mid+1
++	lda operands_lo+0
+	clc
+	adc #1
+	sta low_index+0
+	lda operands_hi+0
+	adc #0
+	sta low_index+1
+	jmp bsearch
+.search_failed
+	lda #0
+	ldy parse_offset
+	dey
+	sta (parse_ptr),Y
+.word_done
+	dey
+	sta (parse_ptr),Y
+	; update parse_offset to next word
+	lda parse_offset	
+	clc
+	adc #4
+	sta parse_offset
+	; increment number of words parsed
+	ldy #1
+	lda (parse_ptr),Y
+	+inca
+	sta (parse_ptr),Y
+	jmp .next_word
+
+	; is the character in A a separator character (Z flag set if so)
+	; A is preserved, Y is destroyed
+is_separator
+	pha
+	lda (dict_ptr)
+	tay
+	pla
+-	cmp (dict_ptr),y
+	beq +
+	dey
+	bne -
+	dey				; force nonzero
++	rts
+
+	; x points at unshifted input (3 bytes per call), y points at shifted output (2 bytes per call)
+encode_three
+	lda encode_buffer,X
+	+skip_imm
+encode_three_final
+	ora #$20
+	asl
+	asl
+	sta encode_buffer,Y
+	inx
+	lda encode_buffer,x
+	lsr
+	lsr
+	lsr
+	ora encode_buffer,Y
+	sta encode_buffer,Y
+	iny
+	lda encode_buffer,X
+	asl
+	asl
+	asl
+	asl
+	asl
+	inx
+	ora encode_buffer,x
+	inx
+	sta encode_buffer,Y
+	iny
+	rts
 
 z_inc
 	lda operands_lo+0
@@ -2297,7 +2734,7 @@ fatal_error
 	iny
 	bne -		; always taken
 
-!ifdef DEBUG_TRACE {
+;!ifdef DEBUG_TRACE {
 	; destroys A
 debug_print
 	pla
@@ -2316,7 +2753,7 @@ debug_print
 	lda stringptr
 	pha
 	rts
-}
+;}
 
 	; each 4k in the story file is mapped to a byte in this table
 	; maximum story size is 512k, so 128 slots are needed
@@ -2329,18 +2766,31 @@ debug_print
 	; except that even/odd bytes are in different banks. this means
 	; all memory is contiguuous but you're constantly fussing with banks
 
-	!align 255, 256 - 100 - 26 - 26 - 25
+	!align 255, 512 - 100 - 26 - 26 - 25 - 96
 dec2hex 
 	!byte $00,$01,$02,$03,$04,$05,$06,$07,$08,$09,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
 	!byte $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49
 	!byte $50,$51,$52,$53,$54,$55,$56,$57,$58,$59,$60,$61,$62,$63,$64,$65,$66,$67,$68,$69,$70,$71,$72,$73,$74
 	!byte $75,$76,$77,$78,$79,$80,$81,$82,$83,$84,$85,$86,$87,$88,$89,$90,$91,$92,$93,$94,$95,$96,$97,$98,$99
 
+	; maps ascii to encoded zscii (+128 if it needs a shift-2 (5) first). if 255, needs four-byte encoding 5,6,N>>5,N.
+zencode
+	;  !"#$%&'()*+,-./0123456789:;<=>?
+    ; @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_
+    ; 'abcdefghijklmnopqrstuvwxyz{!}~ 
+	!byte 0,128+20,128+25,128+23,255,255,255,128+24,128+30,128+31,255,255,128+19,128+28,128+18,128+26
+	!byte 128+8,128+9,128+10,128+11,128+12,128+13,128+14,128+15,128+16,128+17,128+29,255,255,255,255,128+21
+	!byte 255,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
+	!byte 21,22,23,24,25,26,27,28,29,30,31,255,128+27,255,255,128+22
+	!byte 255,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
+	!byte 21,23,23,24,25,26,27,28,29,30,31,255,255,255,255,255
+
 	; on V5 the version in the story is copied over this
 zalphabet
 	!text "abcdefghijklmnopqrstuvwxyz"
 	!text "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	!text 13,"0123456789.,!?_#'",34,"/",92,"-:()"
+	; 0=8, .=18, ,=19, !=20, ?=21, _=22, #=23, '=24, "=25, /=26, \=27, -=28, :=29 (=30, )=31
 
 	!align 255, 0
 dispatch +table16 _2op_s_s,_2op_s_s,_2op_s_v,_2op_s_v,_2op_v_s,_2op_v_s,_2op_v_v,_2op_v_v,_1op_large,_1op_small,_1op_variable,_0op,_2op_var,_2op_var,_vop,_vop
