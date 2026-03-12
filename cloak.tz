@@ -822,7 +822,7 @@ routine DoTurn[; i] {
 	// The next byte contains the payload byte.
 	if (parse_buffer[[2]] &= dirBit) {
 		i = Compass(parse_buffer[[1]]);
-		if (i isnt -1)
+		if (i isnt 0)
 			return Travel(i);
 	}
 	// compute final word index, terminate list with zero
