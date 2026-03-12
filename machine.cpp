@@ -384,7 +384,7 @@ void machine::encode_text(word dest[],const char *src,uint8_t len) {
 		else if (a2)
 			shift=2, ch=a2 - m_zscii - 52 + 6;
 		else {
-			store(2); store(6); store(*src >> 5); store(*src);
+			store(5); store(6); store(*src >> 5); store(*src);
 			continue;
 		}
 		if (shift)
