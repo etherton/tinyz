@@ -134,7 +134,6 @@ src_ptr		= $22
 xsave		= $24
 ysave		= $25
 cursor_x	= $26
-temp		= $27
 window_split = $28
 vblprev = 	$29
 top_cursor_x = $2A
@@ -506,9 +505,12 @@ zinsn = $49
 zpc_hi = $4A		; upper two bytes of offset in story (big-endian)
 zpc_mid = $4B
 zptr = $4C			; actual cpu address in memory of current insn (little-endian)
+store_hi = $4E
+operand_count = $4F
 operands_hi = $50
 operands_lo = $58
 stringptr = $60
+
 obj_hi = $6A
 obj_mid = $6B
 obj_ptr = $6C
@@ -783,7 +785,7 @@ _2op_v_v
 	jsr operand_variable
 	jsr operand_variable
 ._2op_common
-	stx xsave
+	stx operand_count
 ._2op_common_2
 	lda zinsn
 	and #$1F
@@ -841,7 +843,7 @@ decode_types
 	rol ztype
 	bne -			; always taken
 .decode_done
-	stx xsave		; je and call_vs need arg count
+	stx operand_count ; je and call_vs need arg count
 	rts
 
 	; all operand handlers inx before return and so the zero flag is always clear.
@@ -1037,7 +1039,7 @@ z_rfalse
 	; frame+1 is upper 8 bits of current PC and previous frameptr
 	; frame+2 is location to store result, and operand count in V5+ (frame+2 is new frameptr)
 .z_ret_common
-	sta temp
+	sta store_hi
 	ldy frameptr
 	dey
 	dey
@@ -1083,7 +1085,7 @@ z_jump
 ; on entry, op0/op1 contain decoded operands
 ; on exit, x contains low byte of result, a contains high byte
 z_je
-	ldx xsave
+	ldx operand_count
 	dex
 -	lda operands_lo
 	cmp operands_lo,X
@@ -1821,8 +1823,6 @@ tokenise
 	; +n+1/2 number of dictionary words
 	; the dictionary words themselves follow
 
-	+bp
-
 .next_word
 !ifdef DEBUG_TOKENISE {
 	jsr debug_print
@@ -2272,7 +2272,7 @@ z_call_vs
 	+get_mem_addr_packed zpc_hi,zpc_mid,zptr
 	+next_insn_byte
 	; get local count in A
-	sta temp
+	tax
 !ifdef Z4PLUS {
 	; zero out the locals
 } else {
@@ -2284,12 +2284,12 @@ z_call_vs
 	+next_insn_byte	; local low byte
 	sta stack_lo,Y
 	iny
-	dec temp
+	dex
 	bne -
 +	sty stackptr
 }
 	; now copy incoming parameters over previous locals
-	dec xsave
+	dec operand_count
 	beq +
 	ldx #1
 	ldy frameptr
@@ -2300,7 +2300,7 @@ z_call_vs
 	lda operands_hi,X
 	sta stack_hi,Y
 	inx
-	dec xsave
+	dec operand_count
 	bne .copyparam
 	iny
 	; new sp is larger of operand count and local count
@@ -2598,31 +2598,32 @@ default_print_char
 	
 	; divide operands+0 by operands+1, quotient in operands+0, remainder in operands+2
 divide
+	+bp
 	lda #0
-	sta operands_lo+2
-	sta operands_hi+2
+	sta operands_lo+2	; rem
+	sta operands_hi+2	; rem+1
 	ldx #16
--	asl operands_lo+0
-	rol operands_hi+0
-	rol operands_lo+2
-	rol operands_hi+2
-	lda operands_lo+2
+-	asl operands_lo+0	; num1
+	rol operands_hi+0	; num1+1
+	rol operands_lo+2	; rem
+	rol operands_hi+2	; rem+1
+	lda operands_lo+2	; rem
 	sec
-	sbc operands_lo+1
+	sbc operands_lo+1	; num2
 	tay
-	lda operands_hi+2
-	sbc operands_hi+1
+	lda operands_hi+2	; rem+1
+	sbc operands_hi+1	; num2+1
 	bcc +
-	sta operands_hi+2
-	sty operands_lo+2
-	inc operands_lo+1
+	sta operands_hi+2	; rem+1
+	sty operands_lo+2	; rem
+	inc operands_lo+0	; num1	
 +	dex
 	bne -
 	rts
 
 z_store
 	lda operands_hi+1
-	sta temp
+	sta store_hi
 	ldx operands_lo+1
 	lda operands_lo+0
 	jsr store_result_2
@@ -2634,7 +2635,7 @@ store_common
 
 	; incoming: x is low byte, a is high byte of result to store
 store_result
-	sta temp
+	sta store_hi
 	+next_insn_byte
 store_result_2
 	cmp #$00
@@ -2645,7 +2646,7 @@ store_result_2
 	; store local
 	adc frameptr
 	tay
-	lda temp
+	lda store_hi
 	sta stack_hi,Y
 	txa
 	sta stack_lo,y
@@ -2670,7 +2671,7 @@ store_result_2
 .store_global
 }
 	tay
-	lda temp
+	lda store_hi
 	sta globals_hi,y
 	txa
 	sta globals_lo,y
@@ -2694,7 +2695,7 @@ store_result_2
 	rts
 .store_tos
 	ldy stackptr
-	lda 	temp
+	lda store_hi
 	sta stack_hi,Y
 	txa
 	sta stack_lo,y
