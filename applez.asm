@@ -2557,8 +2557,9 @@ z_output_stream
 	jmp next_insn
 
 z_quit
-	jsr fatal_error
-	!text "z_quit not impl",0
+	jsr debug_print
+	!text "* End session *",13,0
+	jmp *
 
 attr_bits !byte $80,$40,$20,$10,$08,$04,$02,$01
 
