@@ -1465,7 +1465,7 @@ z_get_prop_addr
 
 	; on input, operands+0 is object number, operands+1 is property index
 	; on return, y is property length or zero if not found; obj_ptr points
-	; at the first byte of the property payload
+	; at the property payload
 prop_common
 !ifdef DEBUG_PROP_COMMON {
 	lda operands_lo+0
@@ -1616,9 +1616,21 @@ z_get_prop_len
 	bne +
 	ldx #0
 	jmp store_common
-
-+	jsr prop_common
-	tya
+	; otherwise go back one byte to find its length
++	lda operands_lo+0
+	clc
+	adc #<(HEADER-1)
+	sta obj_ptr
+	lda operands_hi+0
+	adc #>(HEADER-1)
+	sta obj_ptr+1
+	lda (obj_ptr)
+	lsr
+	lsr
+	lsr
+	lsr
+	lsr
+	+inca
 	tax
 	lda #0
 	jmp store_common
