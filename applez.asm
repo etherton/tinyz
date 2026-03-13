@@ -1542,6 +1542,7 @@ prop_common
 	bcc .property_not_found
 	jsr .matched_property	; get length in Y
 	tya
+	clc
 	adc obj_ptr
 	sta obj_ptr
 	bcc .find_property
@@ -2717,7 +2718,7 @@ show_status
 	jmp -
 
 flush_main_window
-	sty ysave
+	phy
 	ldy #0
 -	cpy chars_stored
 	beq +	
@@ -2727,7 +2728,7 @@ flush_main_window
 	bne -
 +	lda #0
 	sta chars_stored
-	ldy ysave
+	ply
 	rts
 
 buffered_print_char
@@ -2753,8 +2754,7 @@ buffered_print_char
 .fits
 	jsr flush_main_window
 	pla
-	jsr print_char_lower
-	rts
+	jmp print_char_lower
 
 default_print_char
 	lda #<buffered_print_char
