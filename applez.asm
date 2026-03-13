@@ -1457,6 +1457,16 @@ z_get_prop_addr
 	; on return, y is property length or zero if not found; obj_ptr points
 	; at the first byte of the property payload
 prop_common
+!ifdef DEBUG_PROP_COMMON {
+	lda operands_lo+0
+	jsr print_hex_byte
+	lda #','
+	jsr print_char
+	lda operands_lo+1
+	jsr print_hex_byte
+	jsr debug_print
+	!text ": prop_common object",13,0
+}
 	jsr get_object_addr
 	ldy #8		; property addr
 	lda (obj_ptr),Y
@@ -1471,19 +1481,33 @@ prop_common
 	sta obj_ptr+1
 	stx obj_ptr
 
+!ifdef DEBUG_PROP_COMMON {
+	lda obj_ptr+1
+	jsr print_hex_byte
+	lda obj_ptr
+	jsr print_hex_byte
+	jsr debug_print
+	!text ": object table addr",13,0
+}
 	; get object length byte
 	lda (obj_ptr)
-	inc obj_ptr
-	bne +
-	inc obj_ptr+1
-+	asl
+	asl
+	adc #1		; this won't handle extremely long object names
 	adc obj_ptr
 	sta obj_ptr
-	bcc +
+	bcc .find_property
 	inc obj_ptr+1
 	; now we're at the first property; they are in descending order, terminated with zero
 	; on V3, upper 3 bits are size-1, lower 5 bits are property index, 1-31
 .find_property
+!ifdef DEBUG_PROP_COMMON {
+	lda obj_ptr+1
+	jsr print_hex_byte
+	lda obj_ptr
+	jsr print_hex_byte
+	jsr debug_print
+	!text ": next prop addr",13,0
+}
 	lda (obj_ptr)
 	tay
 	inc obj_ptr
@@ -1491,6 +1515,18 @@ prop_common
 	inc obj_ptr+1
 +	and #$1F
 	beq .property_not_found
+
+!ifdef DEBUG_PROP_COMMON {
+	pha
+	jsr print_hex_byte
+	lda #'='
+	jsr print_char
+	lda operands_lo+1
+	jsr print_hex_byte
+	jsr debug_print
+	!text "?",13,0
+	pla
+}
 	cmp operands_lo+1
 	beq .matched_property
 	; if operands_lo+1 > current property, it's not here
