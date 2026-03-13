@@ -1612,7 +1612,7 @@ z_get_prop_len
 	lda #0
 	jmp store_common
 
-!macro z_print_string hi,mid,zp {
+!macro z_print_string_hi hi,mid,zp {
 	lda #$FF
 	sta zshift
 	sta abbrev
@@ -1652,6 +1652,40 @@ z_get_prop_len
 	plp
 	bpl -
 }
+!macro z_print_string zp {
+	lda #$FF
+	sta zshift
+	sta abbrev
+-	lda (zp)
+	php		; remember if negative
+	and #$7C
+	lsr
+	lsr
+	jsr printz
+	lda (zp)
+	and #$3
+	sta xsave
+	inc zp
+	bne +
+	inc zp+1
++	lda (zp)
+	asl
+	rol xsave
+	asl
+	rol xsave
+	asl
+	rol xsave
+	lda xsave
+	jsr printz
+	lda (zp)
+	inc zp
+	bne +
+	inc zp+1
++	and #$1F
+	jsr printz
+	plp
+	bpl -
+}
 
 z_print_obj
 	jsr print_obj
@@ -1671,7 +1705,7 @@ print_obj
 	adc #>HEADER
 	sta obj_ptr+1
 print_obj_ptr
-	+z_print_string obj_hi,obj_mid,obj_ptr
+	+z_print_string obj_ptr
 	rts
 
 z_print_addr
@@ -1715,7 +1749,7 @@ z_print_common
 
 z_print_paddr
 	+get_mem_addr_packed obj_hi,obj_mid,obj_ptr
-	jsr print_obj_ptr
+	+z_print_string_hi obj_hi,obj_mid,obj_ptr
 	jmp next_insn
 
 	; destroys A,Y
@@ -1764,17 +1798,17 @@ printz
 	asl
 	tay
 	lda (abbrev_ptr),Y
-	sta obj_mid
+	sta obj_ptr_alt+1
 	iny
 	lda (abbrev_ptr),Y
-	sta obj_ptr
+	sta obj_ptr_alt
 	; abbreviations are word addresses
-	asl obj_ptr
-	rol obj_mid
-	lda obj_mid
+	asl obj_ptr_alt
+	rol obj_ptr_alt+1
+	lda obj_ptr_alt+1
 	adc #>HEADER
-	sta obj_ptr+1
-	jsr print_obj_ptr
+	sta obj_ptr_alt+1
+	+z_print_string obj_ptr_alt
 	lda #$ff
 	sta zshift	; abbreviation might have had padding character
 	rts
@@ -2296,7 +2330,7 @@ z_print
 	jmp next_insn
 
 z_print_inline_common
-	+z_print_string zpc_hi,zpc_mid,zptr 
+	+z_print_string_hi zpc_hi,zpc_mid,zptr 
 	rts
 
 	; all call instructions route through here, x=1..7
