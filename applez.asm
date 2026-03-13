@@ -521,6 +521,7 @@ output_table = $72
 output_enables = $73
 zshift = $74		; one less than current shift value for ZSCII ($ff for none)
 abbrev = $75		; $FF if not halfway through abbreviation, else 0/32/64
+accum_char = $76
 stackptr = $78		; one past top of stack
 frameptr = $79		; one before first local (since locals are one-based)
 abbrev_ptr = $7A
@@ -1626,6 +1627,7 @@ z_get_prop_len
 	lda #$FF
 	sta zshift
 	sta abbrev
+	sta accum_char
 -	lda (zp)
 	php		; remember if negative
 	and #$7C
@@ -1666,6 +1668,7 @@ z_get_prop_len
 	lda #$FF
 	sta zshift
 	sta abbrev
+	sta accum_char
 -	lda (zp)
 	php		; remember if negative
 	and #$7C
@@ -1763,9 +1766,25 @@ z_print_paddr
 	jmp next_insn
 
 	; destroys A,Y
+	; 5, 6, N>>4, N encodes any character not in dictionary
 printz
 	ldy abbrev
 	bpl .print_abbrev
+	ldy accum_char
+	bmi .not_accum
+	asl accum_char
+	asl accum_char
+	asl accum_char
+	asl accum_char
+	asl accum_char
+	ora accum_char
+	sta accum_char
+	cmp #$20
+	bcc .print_shift_ret
+	ldy #$ff
+	sty accum_char
+	jmp print_char
+.not_accum
 	cmp #6
 	bcs .print_tabled
 	cmp #5
@@ -1781,6 +1800,8 @@ printz
 	jmp print_char
 .print_tabled
 	adc zshift ; zshift is one less because carry always set
+	cmp #57
+	beq .escape
 	tay
 	lda #$FF
 	sta zshift
@@ -1792,6 +1813,7 @@ printz
 .print_shift_2
 	lda #(25+25)
 	sta zshift
+.print_shift_ret
 	rts
 .abbrev
 	sbc #1		; carry always set
@@ -1821,6 +1843,10 @@ printz
 	+z_print_string obj_ptr_alt
 	lda #$ff
 	sta zshift	; abbreviation might have had padding character
+	rts
+.escape
+	lda #0
+	sta accum_char
 	rts
 
 	; loads must be in contiguous dynamic+static memory
