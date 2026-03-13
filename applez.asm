@@ -534,6 +534,9 @@ low_index = $86
 high_index = $88
 entry_size = $8A
 char_index = $8B
+chars_stored = $8C
+
+char_buffer = $200
 
 !ifdef Z4PLUS {
 DICT_SIZE = 6
@@ -659,6 +662,7 @@ zentry
 	lda HEADER+6
 	sta zpc_mid
 	lda #0
+	sta chars_stored
 	sta zpc_hi
 	sta stackptr
 	jsr update_zptr
@@ -712,6 +716,11 @@ zentry
 	lda HEADER+24
 	adc #>HEADER
 	sta abbrev_ptr+1
+
+	lda #COLUMNS
+	sta HEADER+$21
+	lda #24
+	sta HEADER+$20
 
 	jsr default_print_char
 	jmp next_insn
@@ -2707,10 +2716,50 @@ show_status
 	jsr print_char_upper
 	jmp -
 
+flush_main_window
+	sty ysave
+	ldy #0
+-	cpy chars_stored
+	beq +	
+	lda char_buffer,Y
+	jsr print_char_lower
+	iny
+	bne -
++	lda #0
+	sta chars_stored
+	ldy ysave
+	rts
+
+buffered_print_char
+	cmp #$0D
+	beq .break
+	cmp #$20
+	beq .break
+	sty ysave
+	ldy chars_stored
+	sta char_buffer,Y
+	inc chars_stored
+	ldy ysave
+	rts
+.break
+	pha
+	lda cursor_x
+	clc
+	adc chars_stored
+	cmp #(COLUMNS-1)
+	bcc .fits
+	lda #$0D
+	jsr print_char_lower
+.fits
+	jsr flush_main_window
+	pla
+	jsr print_char_lower
+	rts
+
 default_print_char
-	lda #<print_char_lower
+	lda #<buffered_print_char
 	sta print_char+1
-	lda #>print_char_lower
+	lda #>buffered_print_char
 	sta print_char+2
 	rts	
 	
