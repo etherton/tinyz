@@ -359,6 +359,7 @@ routine Travel [dir;r] {
 }
 
 routine Take [obj] {
+	trace 1 "Take called on ",object obj,"^";
 	if (obj parent is Player)
 		print_ret "You're already carrying it.";
 	else if (obj has scenery)
@@ -745,7 +746,7 @@ routine ScanParseTable [; n matched] {
 		nw = 1;
 		matched = 0;
 		repeat {
-			// print "Starting phrase.^";
+			trace 1 "Starting phrase.^";
 			repeat {
 				n = $actions[[na]];
 				++na;
@@ -761,9 +762,9 @@ routine ScanParseTable [; n matched] {
 					if (n & wordMask is parse_buffer[[nw]])
 						matched = 1;
 				}
-				// print "matched = "; print_num matched; crlf;
+				trace 1 "matched = ",matched,crlf;
 				if (n &= isRoutine) {
-					// print "found routine^";
+					trace 1 "found routine^";
 					if (matched isn't 0) {
 						nw = nw + matched + matched;
 						matched = $actions[[na]];
