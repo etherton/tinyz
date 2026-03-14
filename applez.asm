@@ -2793,7 +2793,8 @@ z_print_num
 print_num
 	lda #0
 	sta mulTemp
-	bit operands_hi+0
+	cmp operands_hi+0
+	beq ++
 	bpl +
 	lda #'-'
 	jsr print_char
@@ -2806,7 +2807,7 @@ print_num
 	sta operands_hi+0
 +	+process_digit 10000
 	+process_digit 1000
-	+process_digit 100	
+++	+process_digit 100	
 	ldy operands_lo+0
 	lda dec2hex,Y
 	cmp #10
