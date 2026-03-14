@@ -8,7 +8,20 @@
 }
 
 !macro inca {
+!ifdef TARGET_65C02 {
 	inc
+} else {
+	clc
+	adc #1
+}
+}
+
+!macro lsr5 {
+	lsr
+	lsr
+	lsr
+	lsr
+	lsr
 }
 
 _80STOREOFF	= $C000
@@ -440,7 +453,12 @@ read_char
 	; on V3, first byte is maximum length, and input is 0-terminated
 	; on V5+, first byte is maximum length, and second byte is total amount
 read_line
+!ifdef TARGET_65C02 {
 	lda (text_ptr)
+} else {
+	ldy #0
+	lda (text_ptr),Y
+}
 	sta .max_length+1
 !ifdef V5PLUS {
 	ldy #1
@@ -635,8 +653,23 @@ HEADER = $2000
 }
 ; returns next instruction byte in A;
 ; this version requires 65C02 in apple 2e 
+; other version destroys Y
 !macro next_insn_byte {
+!ifdef TARGET_65C02 {
 	lda (zptr)
+} else {
+	ldy #0
+	lda (zptr),y
+}
+	+skip_insn_byte
+}
+
+!macro next_insn_byte_y0 {
+!ifdef TARGET_65C02 {
+	lda (zptr)
+} else {
+	lda (zptr),y
+}
 	+skip_insn_byte
 }
 
@@ -648,13 +681,14 @@ zentry
 	sta zpc_mid
 	lda #0
 	sta zpc_hi
-	ldy #16
+	ldx #16
 	jsr update_zptr
--	+next_insn_byte
-	sta globals_hi,y
-	+next_insn_byte
-	sta globals_lo,Y
-	iny
+	ldy #0
+-	+next_insn_byte_y0
+	sta globals_hi,x
+	+next_insn_byte_y0
+	sta globals_lo,x
+	inx
 	bne -
 
 	; set up initial pc
@@ -691,7 +725,8 @@ zentry
 	lda HEADER+8
 	adc #>HEADER
 	sta dict_ptr+1
-	lda (dict_ptr)
+	ldy #0
+	lda (dict_ptr),y
 	cmp #3
 	beq +		; also sets carry
 	jsr fatal_error
@@ -722,6 +757,33 @@ zentry
 	sta HEADER+$21
 	lda #24
 	sta HEADER+$20
+
+	; generate zencode table
+	ldx #31
+-	lda zalphabet-6,x
+	tay
+	txa
+	sta zencode-32,Y
+
+	lda zalphabet+26-6,X
+	tay
+	txa
+	ora #(4*32)
+	sta zencode-32,Y
+
+	dex
+	cpx #5
+	bne -
+
+	ldx #31
+-	lda zalphabet+52-6,X
+	tay
+	txa
+	ora #(5*32)
+	sta zencode-32,Y
+	dex
+	cpx #7	; first two slots in last row are special and cannot be overidden.
+	bne - 
 
 	jsr default_print_char
 	jmp next_insn
@@ -1096,7 +1158,13 @@ z_jump
 	ldx operands_hi+0
 	bpl .compute_newpc
 	ldy #$FF
-	bne .compute_newpc
+	bne .compute_newpc	; always taken
+
+z_jz
+	lda operands_lo+0
+	ora operands_hi+0
+	bne branch_failed
+	beq branch_passed	; always taken
 
 ; on entry, op0/op1 contain decoded operands
 ; on exit, x contains low byte of result, a contains high byte
@@ -1223,12 +1291,6 @@ z_jg
 	sbc operands_lo+0
 	bcc branch_passed
 	bcs branch_failed	; always taken
-
-z_jz
-	lda operands_lo+0
-	ora operands_hi+0
-	bne branch_failed
-	beq branch_passed	; always taken
 
 z_or
 	lda operands_lo+0
@@ -1500,7 +1562,12 @@ prop_common
 	!text ": object table addr",13,0
 }
 	; get object length byte
+!ifdef TARGET_65C02 {
 	lda (obj_ptr)
+} else {
+	ldy #0
+	lda (obj_ptr),y
+}
 	asl
 	adc #1		; this won't handle extremely long object names
 	adc obj_ptr
@@ -1518,7 +1585,12 @@ prop_common
 	jsr debug_print
 	!text ": next prop addr",13,0
 }
+!ifdef TARGET_65C02 {
 	lda (obj_ptr)
+} else {
+	ldy #0
+	lda (obj_ptr),y
+}
 	tay
 	inc obj_ptr
 	bne +
@@ -1551,11 +1623,7 @@ prop_common
 	bne .find_property
 .matched_property
 	tya
-	lsr
-	lsr
-	lsr
-	lsr
-	lsr
+	+lsr5
 	tay
 	iny
 	rts			; zero flag clear
@@ -1624,12 +1692,13 @@ z_get_prop_len
 	lda operands_hi+0
 	adc #>(HEADER-1)
 	sta obj_ptr+1
+!ifdef TARGET_65C02 {
 	lda (obj_ptr)
-	lsr
-	lsr
-	lsr
-	lsr
-	lsr
+} else {
+	ldy #0
+	lda (obj_ptr),Y
+}
+	+lsr5
 	+inca
 	tax
 	lda #0
@@ -1681,12 +1750,18 @@ z_get_prop_len
 	sta zshift
 	sta abbrev
 	sta accum_char
+!ifdef TARGET_65C02 {
 -	lda (zp)
+} else {
+	ldy #0
+-	lda (zp),y
+}
 	php		; remember if negative
 	and #$7C
 	lsr
 	lsr
 	jsr printz
+!ifdef TARGET_65C02 {
 	lda (zp)
 	and #$3
 	sta xsave
@@ -1694,6 +1769,15 @@ z_get_prop_len
 	bne +
 	inc zp+1
 +	lda (zp)
+} else {
+	lda (zp),y
+	and #$3
+	sta xsave
+	iny
+	bne +
+	inc zp+1
++	lda (zp),y
+}
 	asl
 	rol xsave
 	asl
@@ -1702,8 +1786,13 @@ z_get_prop_len
 	rol xsave
 	lda xsave
 	jsr printz
+!ifdef TARGET_65C02 {
 	lda (zp)
 	inc zp
+} else {
+	lda (zp),Y
+	iny
+}
 	bne +
 	inc zp+1
 +	and #$1F
@@ -1811,19 +1900,18 @@ printz
 	lda #32
 	jmp print_char
 .print_tabled
-	adc zshift ; zshift is one less because carry always set
-	cmp #57
-	beq .escape
+	adc zshift 	; zshift is one less because carry always set
 	tay
 	lda #$FF
 	sta zshift
 	lda zalphabet-6,Y
+	beq .escape
 	jmp print_char
 .print_shift_1
-	lda #25
+	lda #(26-1)
 	+skip_imm
 .print_shift_2
-	lda #(25+25)
+	lda #(52-1)
 	sta zshift
 .print_shift_ret
 	rts
@@ -1857,7 +1945,6 @@ printz
 	sta zshift	; abbreviation might have had padding character
 	rts
 .escape
-	lda #0
 	sta accum_char
 	rts
 
@@ -1867,14 +1954,14 @@ z_loadb
 	clc
 	lda operands_lo+0
 	adc operands_lo+1
-	sta obj_ptr
+	sta load_addr+1
 	lda operands_hi+0
 	adc operands_hi+1
 	adc #>HEADER
-	sta obj_ptr+1
+	sta load_addr+2
 	; ldy #0
-	lda (obj_ptr)
-	tax
+load_addr
+	ldx $1234
 	lda #0
 	jmp store_common
 
@@ -1882,14 +1969,14 @@ z_storeb
 	clc
 	lda operands_lo+0
 	adc operands_lo+1
-	sta obj_ptr
+	sta store_addr+1
 	lda operands_hi+0
 	adc operands_hi+1
 	adc #>HEADER
-	sta obj_ptr+1
-	; ldy #0
+	sta store_addr+2
 	lda operands_lo+2
-	sta (obj_ptr)
+store_addr
+	sta $1234
 	jmp next_insn
 
 z_loadw
@@ -2060,16 +2147,19 @@ tokenise
 	jsr is_separator
 	bne .not_separator
 	tay
-	lda #5
-	sta encode_buffer+0
-	inx
 	lda zencode-32,Y
+	bpl +
+	pha
+	+lsr5
+	sta encode_buffer,X
+	inx
+	pla
 	and #$1F
-	sta encode_buffer+1
++	sta encode_buffer,X
+	inx
 	ldy parse_offset
 	lda #1
 	sta (parse_ptr),y	; length of word
-	inx
 	inc text_offset
 	bne .end_word ; always taken
 .next_letter
@@ -2086,12 +2176,14 @@ tokenise
 	tay
 	lda zencode-32,y
 	bpl .unshifted
-	lda #5
-	sta encode_buffer,x
+	pha
+	+lsr5
+	sta encode_buffer,X
 	inx
+	pla
+	and #$1F
 	cpx #DICT_WORD_LEN
 	beq .skip_store
-	and #$1F
 .unshifted
 	sta encode_buffer,X
 	inx
@@ -2261,7 +2353,12 @@ bsearch
 	; A is preserved, Y is destroyed
 is_separator
 	pha
+!ifdef TARGET_65C02 {
 	lda (dict_ptr)
+} else {
+	ldy #0
+	lda (dict_ptr),Y
+}
 	tay
 	pla
 -	cmp (dict_ptr),y
@@ -2757,7 +2854,7 @@ show_status
 	jmp -
 
 flush_main_window
-	phy
+	sty flush_restore_y+1
 	ldy #0
 -	cpy chars_stored
 	beq +	
@@ -2767,7 +2864,8 @@ flush_main_window
 	bne -
 +	lda #0
 	sta chars_stored
-	ply
+flush_restore_y
+	ldy #$12
 	rts
 
 buffered_print_char
@@ -2948,17 +3046,25 @@ debug_print
 	sta stringptr
 	pla
 	sta stringptr+1
--	inc stringptr
-	bne +
-	inc stringptr+1
-+	lda (stringptr)
+	sty .debug_print_restore+1
+	ldy #1
+-	lda (stringptr),y
 	beq +
 	jsr print_char
-	jmp -
+	iny
+	bne -
++	tya
+	clc
+	adc stringptr
+	sta stringptr
+	bcc +
+	inc stringptr+1
 +	lda stringptr+1
 	pha
 	lda stringptr
 	pha
+.debug_print_restore
+	ldy #$12
 	rts
 ;}
 
@@ -2973,30 +3079,28 @@ debug_print
 	; except that even/odd bytes are in different banks. this means
 	; all memory is contiguuous but you're constantly fussing with banks
 
-	!align 255, 512 - 100 - 26 - 26 - 25 - 96
+	!align 255, 512 - 100 - (26*3) - 96
 dec2hex 
 	!byte $00,$01,$02,$03,$04,$05,$06,$07,$08,$09,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
 	!byte $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49
 	!byte $50,$51,$52,$53,$54,$55,$56,$57,$58,$59,$60,$61,$62,$63,$64,$65,$66,$67,$68,$69,$70,$71,$72,$73,$74
 	!byte $75,$76,$77,$78,$79,$80,$81,$82,$83,$84,$85,$86,$87,$88,$89,$90,$91,$92,$93,$94,$95,$96,$97,$98,$99
 
-	; maps ascii to encoded zscii (+128 if it needs a shift-2 (5) first). if 255, needs four-byte encoding 5,6,N>>5,N.
+	; maps ascii to encoded zscii (+(4<<5) or (5<<5) if it needs a shift first). if 255, needs four-byte encoding 5,6,N>>5,N.
 zencode
 	;  !"#$%&'()*+,-./0123456789:;<=>?
     ; @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_
     ; 'abcdefghijklmnopqrstuvwxyz{!}~ 
-	!byte 0,128+20,128+25,128+23,255,255,255,128+24,128+30,128+31,255,255,128+19,128+28,128+18,128+26
-	!byte 128+8,128+9,128+10,128+11,128+12,128+13,128+14,128+15,128+16,128+17,128+29,255,255,255,255,128+21
-	!byte 255,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
-	!byte 21,22,23,24,25,26,27,28,29,30,31,255,128+27,255,255,128+22
-	!byte 255,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
-	!byte 21,23,23,24,25,26,27,28,29,30,31,255,255,255,255,255
+	!byte 0
+	!fill 95,255
 
 	; on V5 the version in the story is copied over this
+	; the first two entries in the last row are never replaced. The first is always a newline,
+	; and the second is reserved for "character not in table" and must always be zero.
 zalphabet
 	!text "abcdefghijklmnopqrstuvwxyz"
 	!text "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	!text 13,"0123456789.,!?_#'",34,"/",92,"-:()"
+	!text 0,13,"0123456789.,!?_#'",34,"/",92,"-:()"
 	; 0=8, .=18, ,=19, !=20, ?=21, _=22, #=23, '=24, "=25, /=26, \=27, -=28, :=29 (=30, )=31
 
 	!align 255, 0
