@@ -747,11 +747,14 @@ zentry
 	lda #(COLUMNS)
 	sta prev_top_cursor_x
 
+	; avoid ZP use by modifying the one place we need abbreviations
 	lda HEADER+25
-	sta abbrev_ptr
+	sta abbrev_load+1
+	sta abbrev_load2+1
 	lda HEADER+24
 	adc #>HEADER
-	sta abbrev_ptr+1
+	sta abbrev_load+2
+	sta abbrev_load2+2
 
 	lda #COLUMNS
 	sta HEADER+$21
@@ -1709,13 +1712,23 @@ z_get_prop_len
 	sta zshift
 	sta abbrev
 	sta accum_char
+!ifdef TARGET_65C02 {
 -	lda (zp)
+} else {
+	sty .restore_y+1
+	ldy #0
+-	lda (zp),Y
+}
 	php		; remember if negative
 	and #$7C
 	lsr
 	lsr
 	jsr printz
+!ifdef TARGET_65C02 {
 	lda (zp)
+} else {
+	lda (zp),Y
+}
 	and #$3
 	sta xsave
 	inc zp
@@ -1724,7 +1737,11 @@ z_get_prop_len
 	inc mid
 ;	bne +
 ;	inc hi
+!ifdef TARGET_65C02 {
 +	lda (zp)
+} else {
++	lda (zp),Y
+}
 	asl
 	rol xsave
 	asl
@@ -1733,7 +1750,11 @@ z_get_prop_len
 	rol xsave
 	lda xsave
 	jsr printz
+!ifdef TARGET_65C02 {
 	lda (zp)
+} else {
+	lda (zp),y
+}
 	inc zp
 	bne +
 	inc zp+1
@@ -1744,6 +1765,10 @@ z_get_prop_len
 	jsr printz
 	plp
 	bpl -
+!ifndef TARGET_65C02 {
+.restore_y
+	ldy #$12
+}
 }
 !macro z_print_string zp {
 	lda #$FF
@@ -1753,6 +1778,7 @@ z_get_prop_len
 !ifdef TARGET_65C02 {
 -	lda (zp)
 } else {
+	sty .restore_y+1
 	ldy #0
 -	lda (zp),y
 }
@@ -1799,6 +1825,10 @@ z_get_prop_len
 	jsr printz
 	plp
 	bpl -
+!ifndef TARGET_65C02 {
+.restore_y
+	ldy #$12
+}
 }
 
 z_print_obj
@@ -1866,12 +1896,12 @@ z_print_paddr
 	+z_print_string_hi obj_hi,obj_mid,obj_ptr
 	jmp next_insn
 
-	; destroys A,Y
+	; destroys A,X
 	; 5, 6, N>>4, N encodes any character not in dictionary
 printz
-	ldy abbrev
+	ldx abbrev
 	bpl .print_abbrev
-	ldy accum_char
+	ldx accum_char
 	bmi .not_accum
 	asl accum_char
 	asl accum_char
@@ -1882,8 +1912,8 @@ printz
 	sta accum_char
 	cmp #$20
 	bcc .print_shift_ret
-	ldy #$ff
-	sty accum_char
+	ldx #$ff
+	stx accum_char
 	jmp print_char
 .not_accum
 	cmp #6
@@ -1901,10 +1931,10 @@ printz
 	jmp print_char
 .print_tabled
 	adc zshift 	; zshift is one less because carry always set
-	tay
+	tax
 	lda #$FF
 	sta zshift
-	lda zalphabet-6,Y
+	lda zalphabet-6,x
 	beq .escape
 	jmp print_char
 .print_shift_1
@@ -1928,11 +1958,13 @@ printz
 	clc
 	adc abbrev
 	asl
-	tay
-	lda (abbrev_ptr),Y
+	tax
+abbrev_load
+	lda $2000,x
 	sta obj_ptr_alt+1
-	iny
-	lda (abbrev_ptr),Y
+	inx
+abbrev_load2
+	lda $2000,x
 	sta obj_ptr_alt
 	; abbreviations are word addresses
 	asl obj_ptr_alt
@@ -2530,26 +2562,34 @@ z_call_vs
 	sta stack_lo,y
 
 	sty frameptr
-	iny
+	tya
+	tax
+	inx			; x holds frame value
 
 	+get_mem_addr_packed zpc_hi,zpc_mid,zptr
 	+next_insn_byte
 	; get local count in A
-	tax
+	sec
+	adc frameptr
+	sta local_stop_addr+1
 !ifdef Z4PLUS {
 	; zero out the locals
 } else {
-	; copy local values
-	cmp #$0
-	beq +
--	+next_insn_byte	; local high byte
-	sta stack_hi,y
-	+next_insn_byte	; local low byte
-	sta stack_lo,Y
-	iny
-	dex
+ 	cmp frameptr
+ 	beq .no_params
+!ifndef TARGET_65C02 {
+	ldy #0
+}
+-	+next_insn_byte_y0
+	sta stack_hi,X
+	+next_insn_byte_y0
+	sta stack_lo,X
+	inx
+local_stop_addr
+	cpx #$12
 	bne -
-+	sty stackptr
+.no_params
+	stx stackptr
 }
 	; now copy incoming parameters over previous locals
 	dec operand_count
