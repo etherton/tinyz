@@ -328,7 +328,13 @@ print_char_lower
 }
 	cmp #13
 	beq .print_char_nl
-	ora #$80
+!ifdef TARGET_APPLE2PLUS {
+	cmp #96
+	bcc +
+	sbc #32
+}
++	ora #$80
+
 !if COLUMNS=80 {
 	tax
 	lda cursor_x
@@ -393,8 +399,10 @@ print_char_upper
 }
 	cmp #$40
 	bcc .notupper
+!ifndef TARGET_APPLE2PLUS {
 	cmp #$60
 	bcs .notupper
+}
 	and #$1F
 .notupper
 !if COLUMNS=80 {
@@ -554,8 +562,7 @@ high_index = $88
 entry_size = $8A
 char_index = $8B
 chars_stored = $8C
-
-char_buffer = $200
+last_status_room = $8D
 
 !ifdef Z4PLUS {
 DICT_SIZE = 6
@@ -804,15 +811,17 @@ zentry
 ; location and execute it from there. (eventually)
 	; !align 255,0
 next_insn
+!ifndef TARGET_APPLE2PLUS {
 	lda $c019
 	bpl +			; not in vbl
 	ldx vblprev
 	bmi ++			; didn't just enter vbl
-	inc $2005
+	inc HEADER+5
 	bne +
-	inc $2004
+	inc HEADER+4
 +	sta vblprev
 ++
+}
 
 !ifdef DEBUG_TRACE {
 	lda #13
@@ -1775,27 +1784,14 @@ z_get_prop_len
 	sta zshift
 	sta abbrev
 	sta accum_char
-!ifdef TARGET_65C02 {
--	lda (zp)
-} else {
 	sty .restore_y+1
 	ldy #0
 -	lda (zp),y
-}
 	php		; remember if negative
 	and #$7C
 	lsr
 	lsr
 	jsr printz
-!ifdef TARGET_65C02 {
-	lda (zp)
-	and #$3
-	sta xsave
-	inc zp
-	bne +
-	inc zp+1
-+	lda (zp)
-} else {
 	lda (zp),y
 	and #$3
 	sta xsave
@@ -1803,7 +1799,6 @@ z_get_prop_len
 	bne +
 	inc zp+1
 +	lda (zp),y
-}
 	asl
 	rol xsave
 	asl
@@ -1812,23 +1807,16 @@ z_get_prop_len
 	rol xsave
 	lda xsave
 	jsr printz
-!ifdef TARGET_65C02 {
-	lda (zp)
-	inc zp
-} else {
 	lda (zp),Y
 	iny
-}
 	bne +
 	inc zp+1
 +	and #$1F
 	jsr printz
 	plp
 	bpl -
-!ifndef TARGET_65C02 {
 .restore_y
 	ldy #$12
-}
 }
 
 z_print_obj
@@ -1960,11 +1948,11 @@ printz
 	asl
 	tax
 abbrev_load
-	lda $2000,x
+	lda $1234,x
 	sta obj_ptr_alt+1
 	inx
 abbrev_load2
-	lda $2000,x
+	lda $1234,x
 	sta obj_ptr_alt
 	; abbreviations are word addresses
 	asl obj_ptr_alt
@@ -2852,6 +2840,12 @@ show_status
 	sta top_cursor_x
 
 	lda globals_lo+16
+!ifndef Z4PLUS {
+	cmp last_status_room
+	beq .numbers_only
+}
+	sta last_status_room
+	lda globals_lo+16
 	sta operands_lo+0
 	lda globals_hi+16
 	sta operands_hi+0
@@ -2870,6 +2864,7 @@ show_status
 	pla
 	sta prev_top_cursor_x
 
+.numbers_only
 	lda #(COLUMNS-7)
 	sta top_cursor_x
 
@@ -3155,7 +3150,7 @@ _0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore
 
 _varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
 
-	; 32 bytes remain here
+char_buffer !fill 32
 
 	; stack is split into lower and upper bytes so we can treat the Y register as a stack pointer.
 	!align 255, 0
