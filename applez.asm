@@ -132,8 +132,15 @@ BANK16K_7		= $C08F
 	lda PH0OFF,x
 
 	ldx slot_index
-
-	jmp $C65C
+	txa
+	lsr
+	lsr
+	lsr
+	lsr
+	ora #$C0
+	sta .jump_address+2
+.jump_address
+	jmp $C05C
 
 endboot
 !if COLUMNS=80 {
