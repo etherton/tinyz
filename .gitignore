@@ -1,5 +1,5 @@
 a.out
-*.z*
+*.z?
 *.txt
 *.dbg
 *.save
@@ -17,6 +17,6 @@ tinyzcd
 tinyzcd.dSYM/
 .DS_Store
 makedsk
-applez.bin
-applez.do
-applez.lst
+*.bin
+*.do
+*.lst
