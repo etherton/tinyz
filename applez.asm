@@ -39,8 +39,6 @@ PAGE2		= $C055
 }
 BANK64k		= $C073		; which aux bank of 64k to use (language card)
 
-DELAY		= $FCA8
-
 ; bge <=> bcs
 ; blt <=> bcc
 
@@ -95,14 +93,30 @@ BANK16K_5		= $C08D
 BANK16K_6		= $C08E
 BANK16K_7		= $C08F
 
+	; track 0 is 800-17ff
+	; track 1 is 1800-27ff
+	; track 2 is 2800-37ff
+	; : :
+	; track 11 is A800-b7ff
+	; track 12 is d000-dfff (bank 0)
+	; track 13 is e000-efff
+	; track 14 is f000-ffff
+	; track 15 is d000-dfff (bank 1)
+	; : :
+
 	*=$800
 	!byte 16
 
 	lda data_ptr+1
-	cmp #$38
-	beq endboot
+	beq .next_language_card		; catch wraparound case
+	cmp #$b8
+	beq .first_language_card
 
+.next_4k
 	lda track
+	clc
+	adc #$40
+	sta $400
 	and #1
 	asl
 	asl
@@ -118,7 +132,7 @@ BANK16K_7		= $C08F
 	lda PH0OFF,x
 	lda PH1ON,x
 	lda #86
-	jsr DELAY
+	jsr delay	; can't use rom version since we swap language card
 	sta sector ; A was zero after DELAY, was $10 on entry
 	lda PH1OFF,x
 
@@ -128,7 +142,7 @@ BANK16K_7		= $C08F
 
 	lda PH0ON,x
 	lda #86
-	jsr DELAY
+	jsr delay
 	lda PH0OFF,x
 
 	ldx slot_index
@@ -141,6 +155,29 @@ BANK16K_7		= $C08F
 	sta .jump_address+2
 .jump_address
 	jmp $C05C
+.first_language_card
+	sta BANKA_RAMRD_WE
+	sta BANKA_RAMRD_WE
+.next_language_card
+	lda .bank_addr+1
+	cmp #$88
+	beq endboot
+.bank_addr
+	sta BANK16K_0
+	inc .bank_addr+1
+	lda #$d0
+	sta data_ptr+1
+	bne .next_4k
+
+delay
+	sec
+--	pha
+-	sbc #$01
+	bne -
+	pla
+	sbc #$01
+	bne --
+	rts
 
 endboot
 !if COLUMNS=80 {
