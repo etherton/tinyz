@@ -55,7 +55,7 @@ BANK64k		= $C073		; which aux bank of 64k to use (language card)
 ; lda $c084,x
 ; 36.6ms delay (a=84)
 ; lda $c086,x
-; rom delay routine (in cycles) at $fca8 (delay in A, (26 + 27A + 5A^2)/2 cycles (0.98us per cycle)
+; rom delay routine (in cycles) at $fca8 (delay in A, (26 + 27A + 5A^2)/2 cycles (0.98us per cycle))
 
 data_ptr 	= $26
 blocks_remaining = $28
@@ -1117,7 +1117,6 @@ print_operand
 increment_zpc_mid
 	inc zpc_mid
 	bne +
-	+bp
 	inc zpc_hi
 +	inc zptr+1
 	sta .update_zpc_restorea+1
@@ -1131,38 +1130,67 @@ increment_zpc_mid
 	lda #$FF
 	rts
 
-	; destroys A, mulTemp
+	; destroys A
 update_zptr
 	lda zpc_hi
-	sta mulTemp
+	bne .update_zptr_high
 	lda zpc_mid
-
-	; compute address / 4096 to get TLB index
-	; we already have address / 256 so start from there
-	lsr mulTemp
-	ror
-	lsr mulTemp
-	ror
-	lsr mulTemp
-	ror
-	lsr mulTemp
-	ror
-	sty .update_zptr_restorey+1
-	tay
-	lda zpc_mid
-	and #$0F
-	sta mulTemp
-	lda tlb,Y
-	and #$f0
-	ora mulTemp
+	cmp #$A0
+	bcs .update_zptr_upper
+	adc #>HEADER	; carry clear
 	sta zptr+1
-	lda tlb,y
-	and #$0F
-	beq .update_zptr_restorey
-	tay
-	sta $C080,y		; select correct 16k bank
-.update_zptr_restorey
-	ldy #$ff
+	rts
+
+	; 000-09F is main memory ($20-$BF) (add $20)
+	; 0A0-0CF is language card 16k bank 0 (add $30)
+	; 0D0-0FF is language card 16k bank 1 (direct map)
+	; 100-12F is language card 16k bank 2 (add $D0)
+	; 130-15F is language card 16k bank 3 (add $A0)
+	; 160-18F is language card 16k bank 4 (add $70)
+	; 190-1BF is language card 16k bank 5 (add $40)
+	; 1C0-1EF is language card 16k bank 6 (add $10)
+	; 1F0-1FF is language card 16k bank 7 (sub $20)
+.update_zptr_upper
+	cmp #$D0
+	bcs +
+	adc #$30
+	sta zptr+1
+	sta $C084		; 16k bank 0
+	rts
++	sta zptr+1		; happens to be direct mapping
+	sta $C085		; 16k bank 1
+	rts
+.update_zptr_high
+	; TODO: binary split to reduce average comparisons?
+	lda zpc_mid
+	cmp #$30
+	bcs +
+	adc #$D0		; carry always clear
+	sta zptr+1
+	sta $C086		; 16k bank 2
++	cmp #$60
+	bcs +
+	adc #$A0
+	sta zptr+1
+	sta $C087		; 16k bank 3
++	cmp #$90
+	bcs +
+	adc #$70
+	sta zptr+1
+	sta $C08C		; 16k bank 4
++	cmp #$C0
+	bcs +
+	adc #$40
+	sta zptr+1
+	sta $C08D		; 16k bank 5
++	cmp #$f0
+	bcs +
+	adc #$10
+	sta zptr+1
+	sta $C08E		; 16k bank 6
++	sbc #$20		; carry always set
+	sta zptr+1
+	sta $C08F		; 16k bank 7
 	rts
 
 z_ill
@@ -1261,9 +1289,6 @@ z_rfalse
 	lda stack_hi,Y
 	sta zpc_mid
 	lda stack_lo+1,Y
-	beq +
-	+bp
-+
 	sta zpc_hi
 	lda stack_hi+1,Y
 	sta frameptr
@@ -1314,13 +1339,25 @@ z_je
 	bne +
 	jmp  z_rtrue
 +	ldx #0
+
+	; x is high byte of offset, a is low byte
+	; we want pc + (offset-2) so do that first
+	; so we don't need to process all three bytes
+	; note the sign will never change because 0/1
+	; are already handled above.
 .compute_newpc
-	cpx #0
-	bmi .sign_extend
-	ldy #0
-	+skip_imm
-.sign_extend
+	sec
+	sbc #2
+	tay
+	txa
+	sbc #0
+	tax
+	tya
+	bpl +
 	ldy #$FF
+	+skip_imm
++	ldy #0
+
 	clc
 	adc zptr
 	sta zptr
@@ -1330,19 +1367,6 @@ z_je
 	tya
 	adc zpc_hi
 	sta zpc_hi
-	
-	clc
-	lda #$FE
-	adc zptr
-	sta zptr
-	lda #$FF
-	adc zpc_mid
-	sta zpc_mid
-	lda #$FF
-	adc zpc_hi
-	beq +
-	+bp
-+	sta zpc_hi
 	jsr update_zptr
 	jmp next_insn
 
@@ -1864,7 +1888,6 @@ z_get_prop_len
 	inc zp+1
 	inc mid
 	bne +
-	+bp
 	inc hi
 !ifdef TARGET_65C02 {
 +	lda (zp)
@@ -1889,7 +1912,6 @@ z_get_prop_len
 	inc zp+1
 	inc mid
 	bne +
-	+bp
 	inc hi
 +	and #$1F
 	jsr printz
@@ -3224,16 +3246,6 @@ debug_print
 	ldy #$12
 	rts
 ;}
-
-	; each 4k in the story file is mapped to a byte in this table
-	; if the high byte increments to $00 or $C0, we need to remap
-	; the page fully, otherwise it's normally contiguuous. The upper nibble
-	; is the upper 4 bits of the address of the 4k page. The lower nibble
-	; is the lower four bits of the $C080-based address to hit to marked
-	; the correct bank of memory visible.
-tlb	!byte $20,$30,$40,$50,$60,$70,$80,$90,$A0,$B0 ; 40k
-	!byte $D4,$E4,$F4,$D5,$E5,$F5,$D6,$E6,$F6,$D7,$E7,$F7;	48k (banks 1-4)
-	!byte $DC,$EC,$FC,$DD,$ED,$FD,$DE,$EE,$FE,$DF;	40k (banks 5-8)
 
 	!align 255, 512 - 100 - (26*3) - 96
 dec2hex 
