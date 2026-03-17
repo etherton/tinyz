@@ -132,7 +132,7 @@ BANK16K_7		= $C08F
 	lda sector
 	cmp #$08
 	beq .back_to_loader
-	
+
 	lda track
 	and #1
 	asl
@@ -222,6 +222,9 @@ vblprev = 	$29
 top_cursor_x = $2A
 prev_top_cursor_x = $2B
 text_ptr = $2C
+
+stack_lo = $100
+stack_hi = $200
 
 ; Memory is broken up into 4k blocks, up to 512k
 ; It typically starts at $2000 and counts up to $BFFF
@@ -725,7 +728,7 @@ HEADER = $2000
 !macro skip_insn_byte {
 	inc zptr
 	bne +
-	jsr update_zpc
+	jsr increment_zpc_mid
 +
 }
 ; returns next instruction byte in A;
@@ -1110,25 +1113,65 @@ print_operand
 }
 
 	; preserves A/X/Y
-update_zpc
-	inc zptr+1
+	; if high byte of zptr is $C0 or $00, we need to update the TLB
+increment_zpc_mid
 	inc zpc_mid
-;	bne +
-;	inc zpc_hi
+	bne +
+	+bp
+	inc zpc_hi
++	inc zptr+1
+	sta .update_zpc_restorea+1
+	lda zptr+1
+	beq .update_zptr
+	cmp #$C0
+	bne .update_zpc_restorea
+.update_zptr
+	jsr update_zptr
+.update_zpc_restorea
+	lda #$FF
 	rts
 
-	; destroys A
+	; destroys A, mulTemp
 update_zptr
-	clc
+	lda zpc_hi
+	sta mulTemp
 	lda zpc_mid
-	; TODO: this needs to go through a table lookup and set up page banks
-	adc #>HEADER
+
+	; compute address / 4096 to get TLB index
+	; we already have address / 256 so start from there
+	lsr mulTemp
+	ror
+	lsr mulTemp
+	ror
+	lsr mulTemp
+	ror
+	lsr mulTemp
+	ror
+	sty .update_zptr_restorey+1
+	tay
+	lda zpc_mid
+	and #$0F
+	sta mulTemp
+	lda tlb,Y
+	and #$f0
+	ora mulTemp
 	sta zptr+1
+	lda tlb,y
+	and #$0F
+	beq .update_zptr_restorey
+	tay
+	sta $C080,y		; select correct 16k bank
+.update_zptr_restorey
+	ldy #$ff
 	rts
 
 z_ill
+	lda zinsn
+	jsr print_hex_byte
+	lda #32
+	jsr print_char
 	jsr fatal_error
-	!text "unimplemented insn",0
+	!text "unimplemented insn",13,0
 
 ; branch(var(operands[0].getS()).dec() < operands[1].getS()); break;
 z_dec_chk
@@ -1218,6 +1261,9 @@ z_rfalse
 	lda stack_hi,Y
 	sta zpc_mid
 	lda stack_lo+1,Y
+	beq +
+	+bp
++
 	sta zpc_hi
 	lda stack_hi+1,Y
 	sta frameptr
@@ -1236,11 +1282,8 @@ z_ret
 
 z_jump
 	lda operands_lo+0
-	ldy #0
-	ldx operands_hi+0
-	bpl .compute_newpc
-	ldy #$FF
-	bne .compute_newpc	; always taken
+	ldx operands_hi+0	; msb of X needs to be replicated through Y
+	jmp .compute_newpc
 
 z_jz
 	lda operands_lo+0
@@ -1272,6 +1315,12 @@ z_je
 	jmp  z_rtrue
 +	ldx #0
 .compute_newpc
+	cpx #0
+	bmi .sign_extend
+	ldy #0
+	+skip_imm
+.sign_extend
+	ldy #$FF
 	clc
 	adc zptr
 	sta zptr
@@ -1291,7 +1340,9 @@ z_je
 	sta zpc_mid
 	lda #$FF
 	adc zpc_hi
-	sta zpc_hi
+	beq +
+	+bp
++	sta zpc_hi
 	jsr update_zptr
 	jmp next_insn
 
@@ -1312,13 +1363,11 @@ branch_passed
 .branch_passed
 	and #$7f
 	ldx #0
-	ldy #0
 	cmp #$40
 	bcs .branch_short
 	cmp #$20
 	bcc .long_branch_positive
 	ora #$fc
-	ldy #$FF
 .long_branch_positive
 	tax
 	+next_insn_byte
@@ -1372,7 +1421,7 @@ z_jg
 	lda operands_lo+1
 	sbc operands_lo+0
 	bcc branch_passed
-	bcs branch_failed	; always taken
+	jmp branch_failed	; always taken
 
 z_or
 	lda operands_lo+0
@@ -1814,8 +1863,9 @@ z_get_prop_len
 	bne +
 	inc zp+1
 	inc mid
-;	bne +
-;	inc hi
+	bne +
+	+bp
+	inc hi
 !ifdef TARGET_65C02 {
 +	lda (zp)
 } else {
@@ -1838,8 +1888,9 @@ z_get_prop_len
 	bne +
 	inc zp+1
 	inc mid
-;	bne +
-;	inc hi
+	bne +
+	+bp
+	inc hi
 +	and #$1F
 	jsr printz
 	plp
@@ -3223,8 +3274,8 @@ char_buffer !fill 32
 
 	; stack is split into lower and upper bytes so we can treat the Y register as a stack pointer.
 	!align 255, 0
-stack_lo	!fill 256
-stack_hi	!fill 256
+; stack_lo	!fill 256
+; stack_hi	!fill 256
 
 	; we could have the current frame's locals here as well, but then we have to copy out to the
 	; stack on any call or return. first 16 bytes of each could be used for something else
