@@ -58,6 +58,7 @@ BANK64k		= $C073		; which aux bank of 64k to use (language card)
 ; rom delay routine (in cycles) at $fca8 (delay in A, (26 + 27A + 5A^2)/2 cycles (0.98us per cycle)
 
 data_ptr 	= $26
+blocks_remaining = $28
 slot_index	= $2B		; $60 for slot 6
 sector 		= $3D
 track	 	= $41
@@ -103,20 +104,36 @@ BANK16K_7		= $C08F
 	; track 14 is f000-ffff
 	; track 15 is d000-dfff (bank 1)
 	; : :
+	; We read 2k at a time so that we can fill up to $C000
+	; This means that any time we cross a story boundary
+	; we are halfway through a track.
 
 	*=$800
-	!byte 16
+	!byte 8	; this is the sector to stop loading at (so either 8 or 16 for us)
 
 	lda data_ptr+1
 	beq .next_language_card		; catch wraparound case
-	cmp #$b8
-	beq .first_language_card
-
-.next_4k
-	lda track
+	cmp #$28
+	bne .not_header
+	; round story size (which is half its actual value) up to next 2k multiple
+	lda HEADER+27
 	clc
-	adc #$40
-	sta $400
+	adc #$ff
+	lda HEADER+26
+	adc #3
+	; shift it right to get the rounded-up size in 2k blocks
+	lsr
+	lsr
+	; A contains number of 2k blocks we need to load, but we already loaded one
+	sta blocks_remaining
+.not_header
+	cmp #$C0
+	beq .first_language_card
+	lda sector
+	cmp #$08
+	beq .back_to_loader
+	
+	lda track
 	and #1
 	asl
 	asl
@@ -133,7 +150,7 @@ BANK16K_7		= $C08F
 	lda PH1ON,x
 	lda #86
 	jsr delay	; can't use rom version since we swap language card
-	sta sector ; A was zero after DELAY, was $10 on entry
+	sta sector	; back to sector 0
 	lda PH1OFF,x
 
 	txa
@@ -145,6 +162,16 @@ BANK16K_7		= $C08F
 	jsr delay
 	lda PH0OFF,x
 
+.back_to_loader
+	; swap between final sector of 8 or 16
+	lda $800
+	eor #$18
+	sta $800
+	dec blocks_remaining
+	beq endboot
+	ldy blocks_remaining
+	lda #'.'+128
+	sta $400,y
 	ldx slot_index
 	txa
 	lsr
@@ -159,15 +186,14 @@ BANK16K_7		= $C08F
 	sta BANKA_RAMRD_WE
 	sta BANKA_RAMRD_WE
 .next_language_card
-	lda .bank_addr+1
-	cmp #$88
-	beq endboot
-.bank_addr
-	sta BANK16K_0
-	inc .bank_addr+1
 	lda #$d0
 	sta data_ptr+1
-	bne .next_4k
+	ldy bank_index
+	dec bank_index
+	ldx bank_index,y
+	sta $c080,x
+	bne .back_to_loader
+bank_index !byte 8, $F,$E,$D,$C, $7,$6,$5,$4
 
 delay
 	sec
@@ -3149,15 +3175,14 @@ debug_print
 ;}
 
 	; each 4k in the story file is mapped to a byte in this table
-	; maximum story size is 512k, so 128 slots are needed
-	; 0-15 is main memory and language card (12=4k a, 13=4kb, 14/15=8k)
-	; 16-31 is aux memory and language card
-	; 32-35 is Saturn bank 0
-	; 36-39 is Saturn bank 1, etc
-; tlb 	!fill 128
-	; another idea - map first 64k of memory to $4000-$BFFF
-	; except that even/odd bytes are in different banks. this means
-	; all memory is contiguuous but you're constantly fussing with banks
+	; if the high byte increments to $00 or $C0, we need to remap
+	; the page fully, otherwise it's normally contiguuous. The upper nibble
+	; is the upper 4 bits of the address of the 4k page. The lower nibble
+	; is the lower four bits of the $C080-based address to hit to marked
+	; the correct bank of memory visible.
+tlb	!byte $20,$30,$40,$50,$60,$70,$80,$90,$A0,$B0 ; 40k
+	!byte $D4,$E4,$F4,$D5,$E5,$F5,$D6,$E6,$F6,$D7,$E7,$F7;	48k (banks 1-4)
+	!byte $DC,$EC,$FC,$DD,$ED,$FD,$DE,$EE,$FE,$DF;	40k (banks 5-8)
 
 	!align 255, 512 - 100 - (26*3) - 96
 dec2hex 
