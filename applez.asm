@@ -1161,8 +1161,9 @@ update_zptr
 	sta $C085		; 16k bank 1
 	rts
 .update_zptr_high
-	; TODO: binary split to reduce average comparisons?
 	lda zpc_mid
+	cmp #$90
+	bcs .split
 	cmp #$30
 	bcs +
 	adc #$D0		; carry always clear
@@ -1175,13 +1176,12 @@ update_zptr
 	sta $C087		; 16k bank 3
 	sta zptr+1
 	rts
-+	cmp #$90
-	bcs +
-	adc #$70
++	adc #$70
 	sta $C08C		; 16k bank 4
 	sta zptr+1
 	rts
-+	cmp #$C0
+.split
+	cmp #$C0
 	bcs +
 	adc #$40
 	sta $C08D		; 16k bank 5
