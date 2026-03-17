@@ -1166,31 +1166,36 @@ update_zptr
 	cmp #$30
 	bcs +
 	adc #$D0		; carry always clear
-	sta zptr+1
 	sta $C086		; 16k bank 2
+	sta zptr+1
+	rts
 +	cmp #$60
 	bcs +
 	adc #$A0
-	sta zptr+1
 	sta $C087		; 16k bank 3
+	sta zptr+1
+	rts
 +	cmp #$90
 	bcs +
 	adc #$70
-	sta zptr+1
 	sta $C08C		; 16k bank 4
+	sta zptr+1
+	rts
 +	cmp #$C0
 	bcs +
 	adc #$40
-	sta zptr+1
 	sta $C08D		; 16k bank 5
+	sta zptr+1
+	rts
 +	cmp #$f0
 	bcs +
 	adc #$10
-	sta zptr+1
 	sta $C08E		; 16k bank 6
-+	sbc #$20		; carry always set
 	sta zptr+1
+	rts
++	sbc #$20		; carry always set
 	sta $C08F		; 16k bank 7
+	sta zptr+1
 	rts
 
 z_ill
