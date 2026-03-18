@@ -603,7 +603,9 @@ ztype = $48
 zinsn = $49
 zpc_hi = $4A		; upper two bytes of offset in story (big-endian)
 zpc_mid = $4B
+!ifdef TARGET_65C02 {
 zptr = $4C			; actual cpu address in memory of current insn (little-endian)
+}
 store_hi = $4E
 operand_count = $4F
 operands_hi = $50
@@ -636,6 +638,8 @@ entry_size = $8A
 char_index = $8B
 chars_stored = $8C
 last_status_room = $8D
+zchar_hi = $8E
+zchar_lo = $8F
 
 !ifdef Z4PLUS {
 DICT_SIZE = 6
@@ -724,34 +728,126 @@ HEADER = $2000
 ; +12 globals
 ; +14 static memory address
 
-
+!ifdef TARGET_65C02 {
 !macro skip_insn_byte {
 	inc zptr
 	bne +
 	jsr increment_zpc_mid
 +
 }
-; returns next instruction byte in A;
-; this version requires 65C02 in apple 2e 
-; other version destroys Y
+
 !macro next_insn_byte {
-!ifdef TARGET_65C02 {
 	lda (zptr)
-} else {
-	ldy #0
-	lda (zptr),y
-}
-	+skip_insn_byte
+	inc zptr
+	bne +
+	jsr increment_zpc_mid
++
 }
 
-!macro next_insn_byte_y0 {
-!ifdef TARGET_65C02 {
-	lda (zptr)
 } else {
-	lda (zptr),y
+
+!macro skip_insn_byte {
+	jsr sib
 }
-	+skip_insn_byte
+
+!macro next_insn_byte {
+	jsr nib
 }
+
+nib
+	!byte $AD		; LDA $1234
+zptr
+	!byte $0,$0
+sib
+	inc zptr
+	bne ++
+}
+
+	; preserves A/X/Y
+	; if high byte of zptr is $C0 or $00, we need to update the TLB
+increment_zpc_mid
+	inc zpc_mid
+	bne +
+	inc zpc_hi
++	inc zptr+1
+	sta .update_zpc_restorea+1
+	lda zptr+1
+	beq .update_zptr
+	cmp #$C0
+	bne .update_zpc_restorea
+.update_zptr
+	jsr update_zptr
+.update_zpc_restorea
+	lda #$FF
+++	rts
+
+	; destroys A
+update_zptr
+	lda zpc_hi
+	bne .update_zptr_high
+	lda zpc_mid
+	cmp #$A0
+	bcs .update_zptr_upper
+	adc #>HEADER	; carry clear
+	sta zptr+1
+	rts
+
+	; 000-09F is main memory ($20-$BF) (add $20)
+	; 0A0-0CF is language card 16k bank 0 (add $30)
+	; 0D0-0FF is language card 16k bank 1 (direct map)
+	; 100-12F is language card 16k bank 2 (add $D0)
+	; 130-15F is language card 16k bank 3 (add $A0)
+	; 160-18F is language card 16k bank 4 (add $70)
+	; 190-1BF is language card 16k bank 5 (add $40)
+	; 1C0-1EF is language card 16k bank 6 (add $10)
+	; 1F0-1FF is language card 16k bank 7 (sub $20)
+.update_zptr_upper
+	cmp #$D0
+	bcs +
+	adc #$30
+	sta zptr+1
+	sta $C084		; 16k bank 0
+	rts
++	sta zptr+1		; happens to be direct mapping
+	sta $C085		; 16k bank 1
+	rts
+.update_zptr_high
+	lda zpc_mid
+	cmp #$90
+	bcs .split
+	cmp #$30
+	bcs +
+	adc #$D0		; carry always clear
+	sta $C086		; 16k bank 2
+	sta zptr+1
+	rts
++	cmp #$60
+	bcs +
+	adc #$A0
+	sta $C087		; 16k bank 3
+	sta zptr+1
+	rts
++	adc #$70
+	sta $C08C		; 16k bank 4
+	sta zptr+1
+	rts
+.split
+	cmp #$C0
+	bcs +
+	adc #$40
+	sta $C08D		; 16k bank 5
+	sta zptr+1
+	rts
++	cmp #$f0
+	bcs +
+	adc #$10
+	sta $C08E		; 16k bank 6
+	sta zptr+1
+	rts
++	sbc #$20		; carry always set
+	sta $C08F		; 16k bank 7
+	sta zptr+1
+	rts
 
 zentry
 	; copy globals into our own shadow storage
@@ -763,10 +859,9 @@ zentry
 	sta zpc_hi
 	ldx #16
 	jsr update_zptr
-	ldy #0
--	+next_insn_byte_y0
+-	+next_insn_byte
 	sta globals_hi,x
-	+next_insn_byte_y0
+	+next_insn_byte
 	sta globals_lo,x
 	inx
 	bne -
@@ -1111,92 +1206,6 @@ print_operand
 	lda #32
 	jmp print_char
 }
-
-	; preserves A/X/Y
-	; if high byte of zptr is $C0 or $00, we need to update the TLB
-increment_zpc_mid
-	inc zpc_mid
-	bne +
-	inc zpc_hi
-+	inc zptr+1
-	sta .update_zpc_restorea+1
-	lda zptr+1
-	beq .update_zptr
-	cmp #$C0
-	bne .update_zpc_restorea
-.update_zptr
-	jsr update_zptr
-.update_zpc_restorea
-	lda #$FF
-	rts
-
-	; destroys A
-update_zptr
-	lda zpc_hi
-	bne .update_zptr_high
-	lda zpc_mid
-	cmp #$A0
-	bcs .update_zptr_upper
-	adc #>HEADER	; carry clear
-	sta zptr+1
-	rts
-
-	; 000-09F is main memory ($20-$BF) (add $20)
-	; 0A0-0CF is language card 16k bank 0 (add $30)
-	; 0D0-0FF is language card 16k bank 1 (direct map)
-	; 100-12F is language card 16k bank 2 (add $D0)
-	; 130-15F is language card 16k bank 3 (add $A0)
-	; 160-18F is language card 16k bank 4 (add $70)
-	; 190-1BF is language card 16k bank 5 (add $40)
-	; 1C0-1EF is language card 16k bank 6 (add $10)
-	; 1F0-1FF is language card 16k bank 7 (sub $20)
-.update_zptr_upper
-	cmp #$D0
-	bcs +
-	adc #$30
-	sta zptr+1
-	sta $C084		; 16k bank 0
-	rts
-+	sta zptr+1		; happens to be direct mapping
-	sta $C085		; 16k bank 1
-	rts
-.update_zptr_high
-	lda zpc_mid
-	cmp #$90
-	bcs .split
-	cmp #$30
-	bcs +
-	adc #$D0		; carry always clear
-	sta $C086		; 16k bank 2
-	sta zptr+1
-	rts
-+	cmp #$60
-	bcs +
-	adc #$A0
-	sta $C087		; 16k bank 3
-	sta zptr+1
-	rts
-+	adc #$70
-	sta $C08C		; 16k bank 4
-	sta zptr+1
-	rts
-.split
-	cmp #$C0
-	bcs +
-	adc #$40
-	sta $C08D		; 16k bank 5
-	sta zptr+1
-	rts
-+	cmp #$f0
-	bcs +
-	adc #$10
-	sta $C08E		; 16k bank 6
-	sta zptr+1
-	rts
-+	sbc #$20		; carry always set
-	sta $C08F		; 16k bank 7
-	sta zptr+1
-	rts
 
 z_ill
 	lda zinsn
@@ -2643,8 +2652,38 @@ z_print
 	jmp next_insn
 
 z_print_inline_common
-	+z_print_string_hi zpc_hi,zpc_mid,zptr 
+	lda #$FF
+	sta zshift
+	sta abbrev
+	sta accum_char
+-	+next_insn_byte
+	cmp #$80
+	php			; remember if negative
+	sta zchar_hi
+	and #$7C
+	lsr
+	lsr
+	jsr printz
+	lda zchar_hi
+	and #$3
+	sta zchar_hi
+	+next_insn_byte
+	sta zchar_lo
+	asl
+	rol zchar_hi
+	asl
+	rol zchar_hi
+	asl
+	rol zchar_hi
+	lda zchar_hi
+	jsr printz
+	lda zchar_lo
+	and #$1F
+	jsr printz
+	plp
+	bcc -
 	rts
+
 
 	; all call instructions route through here, x=1..7
 	; the current frame's locals are kept in globals array to simplify decode logic
@@ -2713,12 +2752,10 @@ z_call_vs
 } else {
  	cmp frameptr
  	beq .no_params
-!ifndef TARGET_65C02 {
-	ldy #0
-}
--	+next_insn_byte_y0
+
+-	+next_insn_byte
 	sta stack_hi,X
-	+next_insn_byte_y0
+	+next_insn_byte
 	sta stack_lo,X
 	inx
 local_stop_addr
