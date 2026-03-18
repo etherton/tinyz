@@ -1365,8 +1365,10 @@ z_je
 	tay
 	txa
 	sbc #0
+	; hey guess what transfers affect N and Z flags.
 	tax
 	tya
+	cpx #0
 	bpl +
 	ldy #$FF
 	+skip_imm
@@ -2737,32 +2739,26 @@ z_call_vs
 	sta stack_lo,y
 
 	sty frameptr
-	tya
-	tax
-	inx			; x holds frame value
+	iny
 
 	+get_mem_addr_packed zpc_hi,zpc_mid,zptr
 	+next_insn_byte
 	; get local count in A
-	sec
-	adc frameptr
-	sta local_stop_addr+1
+	tax
 !ifdef Z4PLUS {
 	; zero out the locals
 } else {
- 	cmp frameptr
- 	beq .no_params
-
--	+next_insn_byte
-	sta stack_hi,X
-	+next_insn_byte
-	sta stack_lo,X
-	inx
-local_stop_addr
-	cpx #$12
+	; copy local values
+	cmp #$0
+	beq +
+-	+next_insn_byte	; local high byte
+	sta stack_hi,y
+	+next_insn_byte	; local low byte
+	sta stack_lo,Y
+	iny
+	dex
 	bne -
-.no_params
-	stx stackptr
++	sty stackptr
 }
 	; now copy incoming parameters over previous locals
 	dec operand_count
