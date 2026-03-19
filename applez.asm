@@ -58,7 +58,7 @@ BANK64k		= $C073		; which aux bank of 64k to use (language card)
 ; rom delay routine (in cycles) at $fca8 (delay in A, (26 + 27A + 5A^2)/2 cycles (0.98us per cycle))
 
 data_ptr 	= $26
-blocks_remaining = $28
+tracks_remaining = $28
 slot_index	= $2B		; $60 for slot 6
 bits = $3c
 sector 		= $3D
@@ -133,11 +133,44 @@ stage1
 	lda #$f0
 	sta data_ptr+1
 	jsr read_next_track
-	; read first 8k of story (for now)
+
+	; read first track of story to get entire size
 	lda #>HEADER
 	sta data_ptr+1
 	jsr read_next_track
+
+	; round story size (which is half its actual value) up to next 4k multiple
+	lda HEADER+27
+	clc
+	adc #$ff
+	lda HEADER+26
+	adc #7
+	; shift it right to get the rounded-up size in 4k blocks
+	lsr
+	lsr
+	lsr
+	; A contains number of 4k tracks we need to load, but we already loaded one
+	sta tracks_remaining
+
+-	dec tracks_remaining
+	beq +
+	ldy tracks_remaining
+	lda #'.'+$80
+	sta $400,y
 	jsr read_next_track
+	lda data_ptr+1
+	cmp #$C0
+	bne -
+	; sta _80STOREON
+	; sta $C054
+	; switch to aux memory
+	sta RAMWRTON
+	sta RAMRDON
+	lda #$10
+	sta data_ptr+1
+	bne -
++	sta RAMWRTOFF
+	sta RAMRDOFF
 	jmp endboot
 
 read_next_track
@@ -297,18 +330,6 @@ conv_tab
 	!byte 255,44,45,46,47,48,49,50
 	!byte 255,255,51,52,53,54,55,56
 	!byte 255,57,58,59,60,61,62,63
-
-	; round story size (which is half its actual value) up to next 2k multiple
-	lda HEADER+27
-	clc
-	adc #$ff
-	lda HEADER+26
-	adc #3
-	; shift it right to get the rounded-up size in 2k blocks
-	lsr
-	lsr
-	; A contains number of 2k blocks we need to load, but we already loaded one
-	sta blocks_remaining
 
 delay
 	sec
@@ -830,7 +851,7 @@ DICT_WORD_LEN = 6
 
 } // endif
 
-HEADER = $800
+HEADER = $1000
 ;  +0 version
 ;  +1 flags
 ;  +2 pad0
