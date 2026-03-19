@@ -2969,8 +2969,7 @@ get_object_addr
 	beq .noprint
 	sta mulTemp
 	txa
-	clc
-	adc #$30
+	ora #$30
 	jsr print_char
 .noprint
 }
@@ -2997,6 +2996,10 @@ print_num
 +	+process_digit 10000
 	+process_digit 1000
 ++	+process_digit 100	
+;	+process_digit 10
+;	lda operands_lo+0
+;	ora #$30
+;	jmp print_char
 	ldy operands_lo+0
 	lda dec2hex,Y
 	cmp #10
@@ -3013,8 +3016,7 @@ print_hex_byte
 	pla
 	and #$f
 print_hex_digit
-	clc
-	adc #$30
+	ora #$30
 	cmp #$3A
 	bcc +
 	adc #$6	; carry is always set
