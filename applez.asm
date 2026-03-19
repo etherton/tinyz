@@ -60,6 +60,7 @@ BANK64k		= $C073		; which aux bank of 64k to use (language card)
 data_ptr 	= $26
 blocks_remaining = $28
 slot_index	= $2B		; $60 for slot 6
+bits = $3c
 sector 		= $3D
 track	 	= $41
 trackbit	= $42
@@ -108,31 +109,51 @@ BANK16K_7		= $C08F
 	; This means that any time we cross a story boundary
 	; we are halfway through a track.
 
-	*=$800
-	!byte 8	; this is the sector to stop loading at (so either 8 or 16 for us)
+	*=$E000		; actually loads at $800 hence the magic numbers in .copy below
+	!byte 16	; this is the sector to stop loading at
 
-	lda data_ptr+1
-	beq .next_language_card		; catch wraparound case
-	cmp #$28
-	bne .not_header
-	; round story size (which is half its actual value) up to next 2k multiple
-	lda HEADER+27
-	clc
-	adc #$ff
-	lda HEADER+26
-	adc #3
-	; shift it right to get the rounded-up size in 2k blocks
-	lsr
-	lsr
-	; A contains number of 2k blocks we need to load, but we already loaded one
-	sta blocks_remaining
-.not_header
-	cmp #$C0
-	beq .first_language_card
+	sta BANKA_RAMRD_WE	; +1
+	sta BANKA_RAMRD_WE	; +4
+
+	; We load the first 4k track at $800, and immediately relocate everything to $e000
+	; y is zero
+.copy
+	lda $800,Y			; +7
+	sta $E000,Y			; +10
+	iny
+	bne .copy
+	inc $809
+	inc $80C
+	dec $800
+	bne .copy
+	jmp stage1
+
+stage1
+	; read second half of interpreter
+	lda #$f0
+	sta data_ptr+1
+	jsr read_next_track
+	; read first 8k of story (for now)
+	lda #>HEADER
+	sta data_ptr+1
+	jsr read_next_track
+	jsr read_next_track
+	jmp endboot
+
+read_next_track
+	jsr next_track
+	lda #0
+	sta sector
+-	jsr read_sector
+	inc sector
+	inc data_ptr+1
 	lda sector
-	cmp #$08
-	beq .back_to_loader
+	sta $400
+	cmp #$10
+	bne -
+	rts
 
+next_track
 	lda track
 	and #1
 	asl
@@ -142,7 +163,7 @@ BANK16K_7		= $C08F
 
 	; if original track was even, do PH0OFF, PH1ON, delay, PH1OFF, PH2ON delay PH2OFF
 	; if original track was odd, do PH2OFF, PH3ON, delay, PH3OFF, PH0ON delay PH0OFF
-	txa
+	lda slot_index
 	eor trackbit
 	tax
 
@@ -161,39 +182,133 @@ BANK16K_7		= $C08F
 	lda #86
 	jsr delay
 	lda PH0OFF,x
+	rts
 
-.back_to_loader
-	; swap between final sector of 8 or 16
-	lda $800
-	eor #$18
-	sta $800
-	dec blocks_remaining
-	beq endboot
-	ldy blocks_remaining
-	lda #'.'+128
-	sta $400,y
+RDBYTE = $c08c
+
+; we don't use much of the stack
+twos_buffer = $100
+
+	; sector to read in 'sector', destination is data_ptr
+read_sector
+	; loop until we find next address
 	ldx slot_index
-	txa
+	; address header is $d5, $aa, $96 XX YY XX YY XX YY XX YY (volume, track, sector, checksum)
+read_header
+	lda RDBYTE,x
+	bpl read_header
+	cmp #$d5		; cmp messes with carry flag
+	bne read_header
+-	lda RDBYTE,X
+	bpl -
+	cmp #$aa
+	bne read_header
+-	lda RDBYTE,X
+	bpl -
+	cmp #$96
+	bne read_header
+
+	ldy #4			; skip volume and track
+-	lda RDBYTE,X
+	bpl -
+	dey
+	bne -
+
+-	lda RDBYTE,X
+	bpl -
+	sec
+	rol
+	sta bits
+-	lda RDBYTE,X
+	bpl -
+	and bits
+	cmp sector
+	bne read_header
+
+read_data
+	lda RDBYTE,x
+	bpl read_data
+	cmp #$d5		; cmp messes with carry flag
+	bne read_data
+-	lda RDBYTE,X
+	bpl -
+	cmp #$aa
+	bne read_header
+-	lda RDBYTE,X
+	bpl -
+	eor #$ad
+	bne read_header	
+
+	; a now zero
+	ldy #86
+read_twos
+	sty bits
+-	ldy RDBYTE,X
+	bpl -
+	eor conv_tab-$96,Y
+	ldy bits
+	dey
+	sta twos_buffer,Y
+	bne read_twos
+
+read_sixes
+	sty bits
+-	ldy RDBYTE,X
+	bpl -
+	eor conv_tab-$96,Y
+	ldy bits
+	sta (data_ptr),y
+	iny
+	bne read_sixes
+
+-	ldy RDBYTE,X
+	bpl -
+	eor conv_tab-$96,Y
+	beq +
+	jmp read_sector
++
+	ldy #0
+initx
+	ldx #86
+-	dex
+	bmi initx
+	lda (data_ptr),Y
+	lsr twos_buffer,X
+	rol
+	lsr twos_buffer,X
+	rol
+	sta (data_ptr),Y
+	iny
+	bne -
+	rts	
+
+conv_tab
+	!byte 0,1
+	!byte 255,255,2,3,255,4,5,6
+	!byte 255,255,255,255,255,255,7,8
+	!byte 255,255,255,9,10,11,12,13
+	!byte 255,255,14,15,16,17,18,19
+	!byte 255,20,21,22,23,24,25,26
+	!byte 255,255,255,255,255,255,255,255
+	!byte 255,255,255,27,255,28,29,30
+	!byte 255,255,255,31,255,255,32,33
+	!byte 255,34,35,36,37,38,39,40
+	!byte 255,255,255,255,255,41,42,43
+	!byte 255,44,45,46,47,48,49,50
+	!byte 255,255,51,52,53,54,55,56
+	!byte 255,57,58,59,60,61,62,63
+
+	; round story size (which is half its actual value) up to next 2k multiple
+	lda HEADER+27
+	clc
+	adc #$ff
+	lda HEADER+26
+	adc #3
+	; shift it right to get the rounded-up size in 2k blocks
 	lsr
 	lsr
-	lsr
-	lsr
-	ora #$C0
-	sta .jump_address+2
-.jump_address
-	jmp $C05C
-.first_language_card
-	sta BANKA_RAMRD_WE
-	sta BANKA_RAMRD_WE
-.next_language_card
-	lda #$d0
-	sta data_ptr+1
-	ldy bank_index
-	dec bank_index
-	ldx bank_index,y
-	sta $c080,x
-	bne .back_to_loader
-bank_index !byte 8, $F,$E,$D,$C, $7,$6,$5,$4
+	; A contains number of 2k blocks we need to load, but we already loaded one
+	sta blocks_remaining
 
 delay
 	sec
@@ -222,9 +337,6 @@ vblprev = 	$29
 top_cursor_x = $2A
 prev_top_cursor_x = $2B
 text_ptr = $2C
-
-stack_lo = $100
-stack_hi = $200
 
 ; Memory is broken up into 4k blocks, up to 512k
 ; It typically starts at $2000 and counts up to $BFFF
@@ -718,7 +830,7 @@ DICT_WORD_LEN = 6
 
 } // endif
 
-HEADER = $2000
+HEADER = $800
 ;  +0 version
 ;  +1 flags
 ;  +2 pad0
@@ -3347,8 +3459,8 @@ char_buffer !fill 32
 
 	; stack is split into lower and upper bytes so we can treat the Y register as a stack pointer.
 	!align 255, 0
-; stack_lo	!fill 256
-; stack_hi	!fill 256
+stack_lo	!fill 256
+stack_hi	!fill 256
 
 	; we could have the current frame's locals here as well, but then we have to copy out to the
 	; stack on any call or return. first 16 bytes of each could be used for something else
