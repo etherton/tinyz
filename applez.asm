@@ -699,19 +699,19 @@ DICT_WORD_LEN = 6
 ; sta zp is 3x2 cycles, jmp ind is 5 - 11 total
 ; pha is 3 3x2 cycles, rts is is 6 - 12 total
 !macro dispatch16 label {
-	tay
-	lda label+16,Y
+	tax
+	lda label+16,x
 	sta .target+2
-	lda label,Y
+	lda label,x
 	sta .target+1
 .target jmp $1234
 }
 
 !macro dispatch32 label {
-	tay
-	lda label+32,y
+	tax
+	lda label+32,x
 	sta .target+2
-	lda label,Y
+	lda label,x
 	sta .target+1
 .target jmp $1234
 }
@@ -737,11 +737,6 @@ HEADER = $2000
 +
 }
 
-; 65C02 uses X for dispatch, not Y, so we need to zero X again
-!macro zerox {
-	ldx #0
-}
-
 !macro zeroy {
 }
 
@@ -762,16 +757,11 @@ HEADER = $2000
 +
 }
 
-!macro zerox {
-}
-
 !macro zeroy {
 	ldy #0
 }
 
 !macro next_insn_byte_y0 {
-;	cpy #0
-;-	bne -
 	lda (zptr),y
 	inc zptr
 	bne +
@@ -1029,10 +1019,9 @@ next_insn
 	tax
 	jmp (dispatch,x)
 } else {
-	ldx #0
 	lsr
-	tay
-	lda dispatch,Y
+	tax
+	lda dispatch,x
 	sta .jump+1
 .jump jmp _2op_s_s
 }
@@ -1042,26 +1031,22 @@ next_insn
 ; Y contains instruction
 ; X contains operand count
 _2op_s_s
-	+zerox
-	+zeroy
+	ldx #0
 	jsr operand_small
 	jsr operand_small
 	bne ._2op_common ; always taken
 _2op_s_v
-	+zerox
-	+zeroy
+	ldx #0
 	jsr operand_small
 	jsr operand_variable
 	bne ._2op_common ; always taken
 _2op_v_s
-	+zerox
-	+zeroy
+	ldx #0
 	jsr operand_variable
 	jsr operand_small
 	bne ._2op_common ; always taken
 _2op_v_v
-	+zerox
-	+zeroy
+	ldx #0
 	jsr operand_variable
 	jsr operand_variable
 ._2op_common
@@ -1080,18 +1065,15 @@ _vop
 	+dispatch32 _varTbl
 
 _1op_large
-	+zerox
-	+zeroy
+	ldx #0
 	jsr operand_large
 	bne ._1op_common ; always taken
 _1op_small
-	+zerox
-	+zeroy
+	ldx #0
 	jsr operand_small
 	bne ._1op_common ; always taken
 _1op_variable
-	+zerox
-	+zeroy
+	ldx #0
 	jsr operand_variable
 ._1op_common
 	lda zinsn
@@ -1104,7 +1086,6 @@ _0op
 	+dispatch16 _0opTbl
 
 decode_types
-	+zeroy
 	+next_insn_byte_y0
 	sta ztype
 	ldx #0
