@@ -603,9 +603,7 @@ ztype = $48
 zinsn = $49
 zpc_hi = $4A		; upper two bytes of offset in story (big-endian)
 zpc_mid = $4B
-!ifdef TARGET_65C02 {
 zptr = $4C			; actual cpu address in memory of current insn (little-endian)
-}
 store_hi = $4E
 operand_count = $4F
 operands_hi = $50
@@ -736,7 +734,15 @@ HEADER = $2000
 +
 }
 
-!macro next_insn_byte {
+; 65C02 uses X for dispatch, not Y, so we need to zero X again
+!macro zerox {
+	ldx #0
+}
+
+!macro zeroy {
+}
+
+!macro next_insn_byte_y0 {
 	lda (zptr)
 	inc zptr
 	bne +
@@ -747,22 +753,29 @@ HEADER = $2000
 } else {
 
 !macro skip_insn_byte {
-	jsr sib
-}
-
-!macro next_insn_byte {
-	jsr nib
-}
-
-nib
-	!byte $AD		; LDA $1234
-zptr
-	!byte $0,$0
-sib
 	inc zptr
-	bne ++
+	bne +
+	jsr increment_zpc_mid
++
 }
 
+!macro zerox {
+}
+
+!macro zeroy {
+	ldy #0
+}
+
+!macro next_insn_byte_y0 {
+;	cpy #0
+;-	bne -
+	lda (zptr),y
+	inc zptr
+	bne +
+	jsr increment_zpc_mid
++
+}
+}
 	; preserves A/X/Y
 	; if high byte of zptr is $C0 or $00, we need to update the TLB
 increment_zpc_mid
@@ -779,7 +792,7 @@ increment_zpc_mid
 	jsr update_zptr
 .update_zpc_restorea
 	lda #$FF
-++	rts
+	rts
 
 	; destroys A
 update_zptr
@@ -859,9 +872,10 @@ zentry
 	sta zpc_hi
 	ldx #16
 	jsr update_zptr
--	+next_insn_byte
+	+zeroy
+-	+next_insn_byte_y0
 	sta globals_hi,x
-	+next_insn_byte
+	+next_insn_byte_y0
 	sta globals_lo,x
 	inx
 	bne -
@@ -1001,7 +1015,8 @@ next_insn
 	lda zptr
 	jsr print_hex_byte
 }
-	+next_insn_byte
+	+zeroy
+	+next_insn_byte_y0
 	sta zinsn
 	lsr
 	lsr
@@ -1011,6 +1026,7 @@ next_insn
 	tax
 	jmp (dispatch,x)
 } else {
+	ldx #0
 	lsr
 	+dispatch16 dispatch
 }
@@ -1019,22 +1035,26 @@ next_insn
 ; Y contains instruction
 ; X contains operand count
 _2op_s_s
-	ldx #0
+	+zerox
+	+zeroy
 	jsr operand_small
 	jsr operand_small
 	bne ._2op_common ; always taken
 _2op_s_v
-	ldx #0
+	+zerox
+	+zeroy
 	jsr operand_small
 	jsr operand_variable
 	bne ._2op_common ; always taken
 _2op_v_s
-	ldx #0
+	+zerox
+	+zeroy
 	jsr operand_variable
 	jsr operand_small
 	bne ._2op_common ; always taken
 _2op_v_v
-	ldx #0
+	+zerox
+	+zeroy
 	jsr operand_variable
 	jsr operand_variable
 ._2op_common
@@ -1053,15 +1073,18 @@ _vop
 	+dispatch32 _varTbl
 
 _1op_large
-	ldx #0
+	+zerox
+	+zeroy
 	jsr operand_large
 	bne ._1op_common ; always taken
 _1op_small
-	ldx #0
+	+zerox
+	+zeroy
 	jsr operand_small
 	bne ._1op_common ; always taken
 _1op_variable
-	ldx #0
+	+zerox
+	+zeroy
 	jsr operand_variable
 ._1op_common
 	lda zinsn
@@ -1074,7 +1097,8 @@ _0op
 	+dispatch16 _0opTbl
 
 decode_types
-	+next_insn_byte
+	+zeroy
+	+next_insn_byte_y0
 	sta ztype
 	ldx #0
 -	bit ztype
@@ -1101,13 +1125,13 @@ decode_types
 
 	; all operand handlers inx before return and so the zero flag is always clear.
 operand_large
-	+next_insn_byte
+	+next_insn_byte_y0
 	+skip_imm
 	; zero flag clear on return (x never zero)
 operand_small
 	lda #$0
 	sta operands_hi,x
-	+next_insn_byte
+	+next_insn_byte_y0
 	sta operands_lo,x
 
 !ifdef DEBUG_TRACE {
@@ -1131,7 +1155,7 @@ operand_variable
 	txa
 	jsr print_hex_byte
 }
-	+next_insn_byte
+	+next_insn_byte_y0
 	cmp #$00
 	beq .read_tos
 !ifndef FRAME_USES_GLOBALS {
@@ -1144,6 +1168,7 @@ operand_variable
 	sta operands_hi,x
 	lda stack_lo,Y
 	sta operands_lo,x
+	+zeroy
 
 !ifdef DEBUG_TRACE {
 	jsr debug_print
@@ -1166,6 +1191,7 @@ operand_variable
 	sta operands_hi,X
 	lda globals_lo,Y
 	sta operands_lo,x
+	+zeroy
 
 !ifdef DEBUG_TRACE {
 	jsr debug_print
@@ -1188,6 +1214,7 @@ operand_variable
 	sta operands_hi,x
 	lda stack_lo,Y
 	sta operands_lo,X
+	+zeroy
 
 !ifdef DEBUG_TRACE {
 	jsr debug_print
@@ -1387,7 +1414,8 @@ z_je
 	jmp next_insn
 
 branch_failed
-	+next_insn_byte
+	+zeroy
+	+next_insn_byte_y0
 	cmp #$80
 	bcc .branch_passed
 .branch_failed
@@ -1397,7 +1425,8 @@ branch_failed
 .short_branch_failed
 	jmp next_insn
 branch_passed
-	+next_insn_byte
+	+zeroy
+	+next_insn_byte_y0
 	cmp #$80
 	bcc .branch_failed
 .branch_passed
@@ -1410,7 +1439,7 @@ branch_passed
 	ora #$fc
 .long_branch_positive
 	tax
-	+next_insn_byte
+	+next_insn_byte_y0
 	; x contains high byte of offset, a contains low byte
 	; compute pc = pc + offset - 2
 	jmp .compute_newpc
@@ -2658,7 +2687,8 @@ z_print_inline_common
 	sta zshift
 	sta abbrev
 	sta accum_char
--	+next_insn_byte
+	+zeroy
+-	+next_insn_byte_y0
 	cmp #$80
 	php			; remember if negative
 	sta zchar_hi
@@ -2669,7 +2699,7 @@ z_print_inline_common
 	lda zchar_hi
 	and #$3
 	sta zchar_hi
-	+next_insn_byte
+	+next_insn_byte_y0
 	sta zchar_lo
 	asl
 	rol zchar_hi
@@ -2710,8 +2740,9 @@ z_call_vs
 	; frame+2 is location to store result, and operand count in V5+ (frame+2 is new frameptr)
 	; frame+3 is the first parameter / local variable
 	; new stack ptr is just past last local
-+	+next_insn_byte		; get storage location
-	tax					; storage location
++	+zeroy
+	+next_insn_byte_y0		; get storage location
+	sta mulTemp				; set it aside for now
 
 !ifdef DEBUG_TRACE {
 	jsr debug_print
@@ -2721,44 +2752,45 @@ z_call_vs
 	lda #$d
 	jsr print_char
 }
-	ldy stackptr
+	ldx stackptr
 	lda zpc_mid
-	sta stack_hi,Y
+	sta stack_hi,x
 	lda zptr
-	sta stack_lo,Y
+	sta stack_lo,x
 
-	iny
+	inx
 	lda zpc_hi 
-	sta stack_lo,Y
+	sta stack_lo,x
 	lda frameptr
-	sta stack_hi,Y
+	sta stack_hi,x
 
 	; location to store result
-	iny
-	txa
-	sta stack_lo,y
+	inx
+	lda mulTemp
+	sta stack_lo,x
 
-	sty frameptr
-	iny
+	stx frameptr
+	inx
 
 	+get_mem_addr_packed zpc_hi,zpc_mid,zptr
-	+next_insn_byte
+	+zeroy
+	+next_insn_byte_y0
 	; get local count in A
-	tax
+	sta mulTemp
 !ifdef Z4PLUS {
 	; zero out the locals
 } else {
 	; copy local values
 	cmp #$0
 	beq +
--	+next_insn_byte	; local high byte
-	sta stack_hi,y
-	+next_insn_byte	; local low byte
-	sta stack_lo,Y
-	iny
-	dex
+-	+next_insn_byte_y0	; local high byte
+	sta stack_hi,x
+	+next_insn_byte_y0	; local low byte
+	sta stack_lo,x
+	inx
+	dec mulTemp
 	bne -
-+	sty stackptr
++	stx stackptr
 }
 	; now copy incoming parameters over previous locals
 	dec operand_count
@@ -3156,7 +3188,8 @@ store_common
 	; incoming: x is low byte, a is high byte of result to store
 store_result
 	sta store_hi
-	+next_insn_byte
+	+zeroy
+	+next_insn_byte_y0
 store_result_2
 	cmp #$00
 	beq .store_tos
