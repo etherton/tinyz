@@ -678,39 +678,42 @@ DICT_WORD_LEN = 6
 } else {
 
 !macro table16 t0,t1,t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t12,t13,t14,t15 {
-	!byte <(t0-1),<(t1-1),<(t2-1),<(t3-1),<(t4-1),<(t5-1),<(t6-1),<(t7-1)
-	!byte <(t8-1),<(t9-1),<(t10-1),<(t11-1),<(t12-1),<(t13-1),<(t14-1),<(t15-1)
-	!byte >(t0-1),>(t1-1),>(t2-1),>(t3-1),>(t4-1),>(t5-1),>(t6-1),>(t7-1)
-	!byte >(t8-1),>(t9-1),>(t10-1),>(t11-1),>(t12-1),>(t13-1),>(t14-1),>(t15-1)
+	!byte <(t0),<(t1),<(t2),<(t3),<(t4),<(t5),<(t6),<(t7)
+	!byte <(t8),<(t9),<(t10),<(t11),<(t12),<(t13),<(t14),<(t15)
+	!byte >(t0),>(t1),>(t2),>(t3),>(t4),>(t5),>(t6),>(t7)
+	!byte >(t8),>(t9),>(t10),>(t11),>(t12),>(t13),>(t14),>(t15)
 }
 
 !macro table32 t0,t1,t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t12,t13,t14,t15,t16,t17,t18,t19,t20,t21,t22,t23,t24,t25,t26,t27,t28,t29,t30,t31 {
-	!byte <(t0-1),<(t1-1),<(t2-1),<(t3-1),<(t4-1),<(t5-1),<(t6-1),<(t7-1)
-	!byte <(t8-1),<(t9-1),<(t10-1),<(t11-1),<(t12-1),<(t13-1),<(t14-1),<(t15-1)
-	!byte <(t16-1),<(t17-1),<(t18-1),<(t19-1),<(t20-1),<(t21-1),<(t22-1),<(t23-1)
-	!byte <(t24-1),<(t25-1),<(t26-1),<(t27-1),<(t28-1),<(t29-1),<(t30-1),<(t31-1)
-	!byte >(t0-1),>(t1-1),>(t2-1),>(t3-1),>(t4-1),>(t5-1),>(t6-1),>(t7-1)
-	!byte >(t8-1),>(t9-1),>(t10-1),>(t11-1),>(t12-1),>(t13-1),>(t14-1),>(t15-1)
-	!byte >(t16-1),>(t17-1),>(t18-1),>(t19-1),>(t20-1),>(t21-1),>(t22-1),>(t23-1)
-	!byte >(t24-1),>(t25-1),>(t26-1),>(t27-1),>(t28-1),>(t29-1),>(t30-1),>(t31-1)
+	!byte <(t0),<(t1),<(t2),<(t3),<(t4),<(t5),<(t6),<(t7)
+	!byte <(t8),<(t9),<(t10),<(t11),<(t12),<(t13),<(t14),<(t15)
+	!byte <(t16),<(t17),<(t18),<(t19),<(t20),<(t21),<(t22),<(t23)
+	!byte <(t24),<(t25),<(t26),<(t27),<(t28),<(t29),<(t30),<(t31)
+	!byte >(t0),>(t1),>(t2),>(t3),>(t4),>(t5),>(t6),>(t7)
+	!byte >(t8),>(t9),>(t10),>(t11),>(t12),>(t13),>(t14),>(t15)
+	!byte >(t16),>(t17),>(t18),>(t19),>(t20),>(t21),>(t22),>(t23)
+	!byte >(t24),>(t25),>(t26),>(t27),>(t28),>(t29),>(t30),>(t31)
 }
 
+; sta abs is 4x2 cycles, jmp abs is 3 - 11 total
+; sta zp is 3x2 cycles, jmp ind is 5 - 11 total
+; pha is 3 3x2 cycles, rts is is 6 - 12 total
 !macro dispatch16 label {
 	tay
 	lda label+16,Y
-	pha
+	sta .target+2
 	lda label,Y
-	pha
-	rts
+	sta .target+1
+.target jmp $1234
 }
 
 !macro dispatch32 label {
 	tay
 	lda label+32,y
-	pha
+	sta .target+2
 	lda label,Y
-	pha
-	rts
+	sta .target+1
+.target jmp $1234
 }
 
 } // endif
@@ -1028,9 +1031,13 @@ next_insn
 } else {
 	ldx #0
 	lsr
-	+dispatch16 dispatch
+	tay
+	lda dispatch,Y
+	sta .jump+1
+.jump jmp _2op_s_s
 }
 
+	!align 255, 0
 ; at entry to instruction handler:
 ; Y contains instruction
 ; X contains operand count
