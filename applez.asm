@@ -37,7 +37,6 @@ AUXCHARSET	= $C00F
 PAGE1		= $C054
 PAGE2		= $C055
 }
-BANK64k		= $C073		; which aux bank of 64k to use (language card)
 
 ; bge <=> bcs
 ; blt <=> bcc
@@ -57,13 +56,25 @@ BANK64k		= $C073		; which aux bank of 64k to use (language card)
 ; lda $c086,x
 ; rom delay routine (in cycles) at $fca8 (delay in A, (26 + 27A + 5A^2)/2 cycles (0.98us per cycle))
 
-data_ptr 	= $26
-tracks_remaining = $28
-slot_index	= $2B		; $60 for slot 6
-bits = $3c
-sector 		= $3D
-track	 	= $41
-trackbit	= $42
+; Hardware specific layer uses $20-$3F
+dest_ptr	= $20
+src_ptr		= $22
+xsave		= $24
+ysave		= $25
+cursor_x	= $26
+window_split = $28
+vblprev = 	$29
+top_cursor_x = $2A
+slot_index	= $2B		; $60 for slot 6 (this comes from boot loader)
+prev_top_cursor_x = $2C
+text_ptr = $2D
+
+data_ptr = $2E
+sector = $30
+track = $31
+trackbit = $32
+bits = $33
+tracks_remaining = $34
 
 PH0OFF		= $C080
 PH0ON		= $C081
@@ -74,7 +85,7 @@ PH2ON		= $C085
 PH3OFF		= $C086
 PH3ON		= $C087
 
-; WE locations must be accessed twice
+; WE locations must be accessed twice if not already in WE state.
 BANKA_RAMRD_WP	= $C080
 BANKA_ROMRD_WE	= $C081
 BANKA_ROMRD_WP	= $C082
@@ -85,29 +96,6 @@ BANKB_ROMRD_WE	= $C089
 BANKB_ROMRD_WP	= $C08A
 BANKB_RAMRD_WE	= $C08B
 
-BANK16K_0		= $C084
-BANK16K_1		= $C085
-BANK16K_2		= $C086
-BANK16K_3		= $C087
-
-BANK16K_4		= $C08C
-BANK16K_5		= $C08D
-BANK16K_6		= $C08E
-BANK16K_7		= $C08F
-
-	; track 0 is 800-17ff
-	; track 1 is 1800-27ff
-	; track 2 is 2800-37ff
-	; : :
-	; track 11 is A800-b7ff
-	; track 12 is d000-dfff (bank 0)
-	; track 13 is e000-efff
-	; track 14 is f000-ffff
-	; track 15 is d000-dfff (bank 1)
-	; : :
-	; We read 2k at a time so that we can fill up to $C000
-	; This means that any time we cross a story boundary
-	; we are halfway through a track.
 
 	*=$E000		; actually loads at $800 hence the magic numbers in .copy below
 	!byte 16	; this is the sector to stop loading at
@@ -130,6 +118,8 @@ BANK16K_7		= $C08F
 
 stage1
 	; read second half of interpreter
+	sty data_ptr
+	sty track
 	lda #$f0
 	sta data_ptr+1
 	jsr read_next_track
@@ -347,17 +337,6 @@ endboot
 	sta _80STOREON
 }
 	sta AUXCHARSET
-
-dest_ptr	= $20
-src_ptr		= $22
-xsave		= $24
-ysave		= $25
-cursor_x	= $26
-window_split = $28
-vblprev = 	$29
-top_cursor_x = $2A
-prev_top_cursor_x = $2B
-text_ptr = $2C
 
 ; Memory is broken up into 4k blocks, up to 512k
 ; It typically starts at $2000 and counts up to $BFFF
@@ -730,6 +709,7 @@ read_line
 	sta (text_ptr),y
 	rts
 
+; Portable code ZP use starts at $40
 mulTemp = $46
 attr_bit = $47
 ztype = $48
