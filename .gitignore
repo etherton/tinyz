@@ -19,4 +19,5 @@ tinyzcd.dSYM/
 makedsk
 *.bin
 *.do
+*.po
 *.lst
