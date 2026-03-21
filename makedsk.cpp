@@ -3,7 +3,12 @@
 #include <string.h>
 
 // maps sector 0-15 to correct offset in .dsk file
-const unsigned char xlat[] = { 0, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 15 };
+// 0->0 7->1 14->2 6->3 13->4 5->5 12->6 4->7 11->8 3->9 10->10 2->11 9->12 1->13 8->14 15->15
+const unsigned char xlat_do[] = { 0, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 15 };
+
+// 0->0 8->1 1->2 9->3 2->4 10->5 3->6 11->7 4->8 12->9 5->10 13->11 6->12 14->13 7->14 15->15
+const unsigned char xlat_po[] = { 0, 2, 4, 6, 8, 10, 12, 14, 1, 3, 5, 7, 9, 11, 13, 15 };
+
 
 // nib files are 6656 bytes per track. applewin writes 336 zero bytes between sectors
 // since actual disk track length is closer to 6384 bytes.
@@ -32,13 +37,40 @@ int main(int argc,char **argv) {
 	int offset = 0;
 	for (int i=1; i<argc; i++) {
 		if (!strcmp(argv[i],"-o")) {
-			FILE *o = fopen(argv[i+1],"wb");
-			if (!o)
+			const char *ext = strrchr(argv[i+1],'.');
+			if (!ext) {
+				fprintf(stderr,"file '%s' needs extension\n",argv[i+1]);
 				return 2;
-			for (int track=0; track<35; track++) {
-				for (int sector=0; sector<16; sector++) {
-					fwrite(in + track * 4096 + xlat[sector] * 256,1,256,o);
+			}
+			FILE *o = fopen(argv[i+1],"wb");
+			if (!o) {
+				fprintf(stderr,"cannot create file '%s'\n",argv[i+1]);
+				return 2;
+			}
+			if (!strcmp(ext,".dsk") || !strcmp(ext,".do")) {
+				for (int track=0; track<35; track++) {
+					for (int sector=0; sector<16; sector++) {
+						fwrite(in + track * 4096 + xlat_do[sector] * 256,1,256,o);
+					}
 				}
+			}
+			else if (!strcmp(ext,".po")) {
+				for (int track=0; track<35; track++) {
+					for (int sector=0; sector<16; sector++) {
+						fwrite(in + track * 4096 + xlat_po[sector] * 256,1,256,o);
+					}
+				}
+			}
+			else if (!strcmp(ext,".nib")) {
+				for (int track=0; track<35; track++) {
+					for (int sector=0; sector<16; sector++) {
+						fwrite(in + track * 4096 + xlat_po[sector] * 256,1,256,o);
+					}
+				}
+			}
+			else {
+				fprintf(stderr,"unknown extension '%s'\n",ext);
+				return 2;
 			}
 			fclose(o);
 			printf("Wrote '%s'\n",argv[i+1]);
@@ -46,13 +78,15 @@ int main(int argc,char **argv) {
 		}
 		else {
 			FILE *f = fopen(argv[i],"rb");
-			if (!f)
+			if (!f) {
+				fprintf(stderr,"cannot open '%s'\n",argv[i]);
 				return 1;
+			}
 			fseek(f,0,SEEK_END);
 			int size = ftell(f);
 			fseek(f,0,SEEK_SET);
 			if (fread(in + offset,1,size,f) != size) {
-				fprintf(stderr,"short read\n");
+				fprintf(stderr,"short read on '%s'\n",argv[i]);
 				return 1;
 			}
 			printf("Section '%s' offset %d size %d\n",argv[i],offset,size);
