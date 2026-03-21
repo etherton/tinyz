@@ -83,6 +83,8 @@ PH2OFF		= $C084
 PH2ON		= $C085
 PH3OFF		= $C086
 PH3ON		= $C087
+MOTOROFF	= $C088
+MOTORON		= $C089
 
 ; WE locations must be accessed twice if not already in WE state.
 BANKA_RAMRD_WP	= $C080
@@ -166,6 +168,7 @@ stage1
 	bne -
 +	sta RAMWRTOFF
 	sta RAMRDOFF
+	sta MOTOROFF,x
 	jmp endboot
 
 read_next_track
