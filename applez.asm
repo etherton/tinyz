@@ -208,6 +208,7 @@ next_track
 	rts
 
 RDBYTE = $c08c
+RDBYTE6 = $c08c + $60
 
 ; we don't use much of the stack
 twos_buffer = $100
@@ -263,63 +264,155 @@ read_data
 	bne read_header	
 
 	; a now zero
-	ldy #86
+	; read twos in reverse order
+	; so we can merge with sixes with a single counter.
+	tay
 read_twos
-	sty bits
--	ldy RDBYTE,X
+-	ldx RDBYTE6
 	bpl -
-	eor conv_tab-$96,Y
-	ldy bits
-	dey
+	eor conv_tab-$96,x
 	sta twos_buffer,Y
+	iny
+	cpy #86
 	bne read_twos
 
+	ldy #0
 read_sixes
-	sty bits
--	ldy RDBYTE,X
+-	ldx RDBYTE6
 	bpl -
-	eor conv_tab-$96,Y
-	ldy bits
+	eor conv_tab-$96,x
 	sta (data_ptr),y
 	iny
 	bne read_sixes
 
--	ldy RDBYTE,X
+-	ldx RDBYTE6
 	bpl -
-	eor conv_tab-$96,Y
+	eor conv_tab-$96,x
 	beq +
 	jmp read_sector
 +
-	ldy #0
-initx
-	ldx #86
--	dex
-	bmi initx
-	lda (data_ptr),Y
-	lsr twos_buffer,X
-	rol
-	lsr twos_buffer,X
-	rol
-	sta (data_ptr),Y
-	iny
-	bne -
-	rts	
+	lda data_ptr+1
+	sta patch1+2
+	sta patch1+5
+
+	sta patch2+2
+	sta patch2+5
+
+	sta patch3+2
+	sta patch3+5
+
+	ldy #$55
+-	ldx twos_buffer,y	; 4
+	lda interleave,x	; 4
+patch1
+	ora $ff00,y			; 4
+	sta $ff00,y			; 5
+	dey					; 2
+	bpl -				; 3 - 22 cycles
+
+	ldy #$55
+-	ldx twos_buffer,y
+	lda interleave+1,x
+patch2
+	ora $ff56,Y
+	sta $ff56,Y
+	dey
+	bpl -
+
+	ldy #$53
+-	ldx twos_buffer,y
+	lda interleave+2,X
+patch3
+	ora $ffac,Y
+	sta $ffac,Y
+	dey
+	bpl -
+
+	ldx slot_index
+	rts
 
 conv_tab
-	!byte 0,1
-	!byte 255,255,2,3,255,4,5,6
-	!byte 255,255,255,255,255,255,7,8
-	!byte 255,255,255,9,10,11,12,13
-	!byte 255,255,14,15,16,17,18,19
-	!byte 255,20,21,22,23,24,25,26
+	!byte 0*4,1*4
+	!byte 255,255,2*4,3*4,255,4*4,5*4,6*4
+	!byte 255,255,255,255,255,255,7*4,8*4
+	!byte 255,255,255,9*4,10*4,11*4,12*4,13*4
+	!byte 255,255,14*4,15*4,16*4,17*4,18*4,19*4
+	!byte 255,20*4,21*4,22*4,23*4,24*4,25*4,26*4
 	!byte 255,255,255,255,255,255,255,255
-	!byte 255,255,255,27,255,28,29,30
-	!byte 255,255,255,31,255,255,32,33
-	!byte 255,34,35,36,37,38,39,40
-	!byte 255,255,255,255,255,41,42,43
-	!byte 255,44,45,46,47,48,49,50
-	!byte 255,255,51,52,53,54,55,56
-	!byte 255,57,58,59,60,61,62,63
+	!byte 255,255,255,27*4,255,28*4,29*4,30*4
+	!byte 255,255,255,31*4,255,255,32*4,33*4
+	!byte 255,34*4,35*4,36*4,37*4,38*4,39*4,40*4
+	!byte 255,255,255,255,255,41*4,42*4,43*4
+	!byte 255,44*4,45*4,46*4,47*4,48*4,49*4,50*4
+	!byte 255,255,51*4,52*4,53*4,54*4,55*4,56*4
+	!byte 255,57*4,58*4,59*4,60*4,61*4,62*4,63*4
+; +0 is first two bits, reversed, +1 is second two bits, reversed, +2 is third two bits, reversed
+	!align 255, 0
+interleave
+	!byte 0,0,0,0
+	!byte 2,0,0,0
+	!byte 1,0,0,0
+	!byte 3,0,0,0
+	!byte 0,2,0,0
+	!byte 2,2,0,0
+	!byte 1,2,0,0
+	!byte 3,2,0,0
+	!byte 0,1,0,0
+	!byte 2,1,0,0
+	!byte 1,1,0,0
+	!byte 3,1,0,0
+	!byte 0,3,0,0
+	!byte 2,3,0,0
+	!byte 1,3,0,0
+	!byte 3,3,0,0
+	!byte 0,0,2,0
+	!byte 2,0,2,0
+	!byte 1,0,2,0
+	!byte 3,0,2,0
+	!byte 0,2,2,0
+	!byte 2,2,2,0
+	!byte 1,2,2,0
+	!byte 3,2,2,0
+	!byte 0,1,2,0
+	!byte 2,1,2,0
+	!byte 1,1,2,0
+	!byte 3,1,2,0
+	!byte 0,3,2,0
+	!byte 2,3,2,0
+	!byte 1,3,2,0
+	!byte 3,3,2,0
+	!byte 0,0,1,0
+	!byte 2,0,1,0
+	!byte 1,0,1,0
+	!byte 3,0,1,0
+	!byte 0,2,1,0
+	!byte 2,2,1,0
+	!byte 1,2,1,0
+	!byte 3,2,1,0
+	!byte 0,1,1,0
+	!byte 2,1,1,0
+	!byte 1,1,1,0
+	!byte 3,1,1,0
+	!byte 0,3,1,0
+	!byte 2,3,1,0
+	!byte 1,3,1,0
+	!byte 3,3,1,0
+	!byte 0,0,3,0
+	!byte 2,0,3,0
+	!byte 1,0,3,0
+	!byte 3,0,3,0
+	!byte 0,2,3,0
+	!byte 2,2,3,0
+	!byte 1,2,3,0
+	!byte 3,2,3,0
+	!byte 0,1,3,0
+	!byte 2,1,3,0
+	!byte 1,1,3,0
+	!byte 3,1,3,0
+	!byte 0,3,3,0
+	!byte 2,3,3,0
+	!byte 1,3,3,0
+	!byte 3,3,3,0
 
 delay
 	sec
