@@ -211,11 +211,20 @@ RDBYTE = $c08c
 RDBYTE6 = $c08c + $60
 
 ; we don't use much of the stack
-twos_buffer = $100
+; have to start higher to avoid page crossing
+twos_buffer = $12C
 
 	; sector to read in 'sector', destination is data_ptr
 read_sector
+	; patch instructions before we reach time critical parts.
+	ldx data_ptr+1
+	stx patch2+2
+	stx patch3+2
+	dex
+	stx patch1+2
+
 	; loop until we find next address
+retry_sector
 	ldx slot_index
 	; address header is $d5, $aa, $96 XX YY XX YY XX YY XX YY (volume, track, sector, checksum)
 read_header
@@ -268,69 +277,69 @@ read_data
 	; so we can merge with sixes with a single counter.
 	tay
 read_twos
--	ldx RDBYTE6
-	bpl -
-	eor conv_tab-$96,x
-	sta twos_buffer,Y
-	iny
-	cpy #86
-	bne read_twos
+-	ldx RDBYTE6				; 4
+	bpl -					; 2 when not taken
+	eor conv_tab-$96,x		; 4
+	sta twos_buffer,Y		; 5
+	iny						; 2
+	cpy #$56				; 2
+	bne read_twos			; 3, 2 when not taken on final iteration
 
-	ldy #0
-read_sixes
+	; the following code is extremely timing sensitive
+	; we can't afford any branches crossing page boundaries here.
+	; normally we'd start at $55 and count downward, but we need the bytes
+	; in the correct order and we also can't afford the compare instruction.
+	; but we also have to watch out for page crossings.
+	ldy #$2A
+-	ldx RDBYTE6			; 4 - read next 6's byte
+	bpl -				; 2 - when not taken
+	eor conv_tab-$96,X	; 4 - convert to 6 bit (pre-shifted) value
+	ldx twos_buffer-$2A,Y; 4 - get matching 2's entry (no crossing)
+	ora interleave,X	; 4 - merge them
+patch1
+	sta $ff00-$2A,Y		; 5+1 - store the result (page crossing)
+	and #$fc			; 2 - clear the bits so next ora works.
+	iny					; 2 - stops at 128 (need this to have fewer page crossings)
+	bpl -				; 3 - 31 cycles per byte (30 cycles on last iteration)
+
+	; note that after this point are in perfect lockstep; there are two
+	; cycles available for the reload of Y, then the next byte is latched (32 cycles)
+
+	ldy #$2A
 -	ldx RDBYTE6
 	bpl -
-	eor conv_tab-$96,x
-	sta (data_ptr),y
+	eor conv_tab-$96,X
+	ldx twos_buffer-$2A,Y
+	ora interleave+1,X
+patch2
+	sta $ff56-$2A,Y			; no page crossing this time!
+	and #$fc
 	iny
-	bne read_sixes
+	bpl -					; 30 cycles per byte, 29 on last iteration
+
+	ldy #$2C
+-	ldx RDBYTE6
+	bpl -
+	eor conv_tab-$96,X
+	ldx twos_buffer-$2C,Y
+	ora interleave+2,X
+patch3
+	sta $ffac-$2C,Y
+	and #$fc
+	iny
+	bpl -
 
 -	ldx RDBYTE6
 	bpl -
 	eor conv_tab-$96,x
 	beq +
-	jmp read_sector
-+
-	lda data_ptr+1
-	sta patch1+2
-	sta patch1+5
+	jmp retry_sector		; checksum failure
 
-	sta patch2+2
-	sta patch2+5
-
-	sta patch3+2
-	sta patch3+5
-
-	ldy #$55
--	ldx twos_buffer,y	; 4
-	lda interleave,x	; 4
-patch1
-	ora $ff00,y			; 4
-	sta $ff00,y			; 5
-	dey					; 2
-	bpl -				; 3 - 22 cycles
-
-	ldy #$55
--	ldx twos_buffer,y
-	lda interleave+1,x
-patch2
-	ora $ff56,Y
-	sta $ff56,Y
-	dey
-	bpl -
-
-	ldy #$53
--	ldx twos_buffer,y
-	lda interleave+2,X
-patch3
-	ora $ffac,Y
-	sta $ffac,Y
-	dey
-	bpl -
-
-	ldx slot_index
++	ldx slot_index
 	rts
 
+	; we cannot afford page crossings for either of these tables.
+	!align 255, 256-(13*8+2)
 conv_tab
 	!byte 0*4,1*4
 	!byte 255,255,2*4,3*4,255,4*4,5*4,6*4
@@ -346,8 +355,8 @@ conv_tab
 	!byte 255,44*4,45*4,46*4,47*4,48*4,49*4,50*4
 	!byte 255,255,51*4,52*4,53*4,54*4,55*4,56*4
 	!byte 255,57*4,58*4,59*4,60*4,61*4,62*4,63*4
-; +0 is first two bits, reversed, +1 is second two bits, reversed, +2 is third two bits, reversed
 	!align 255, 0
+; +0 is first two bits, reversed, +1 is second two bits, reversed, +2 is third two bits, reversed
 interleave
 	!byte 0,0,0,0
 	!byte 2,0,0,0
