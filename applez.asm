@@ -219,6 +219,21 @@ RDBYTE6 = $c08c + $60
 ; have to start higher to avoid page crossing
 twos_buffer = $12C
 
+; returns A zero (and zero flag set) if it's the data part, nonzero if header part
+read_d5_aa
+	lda RDBYTE,X
+	bpl read_d5_aa
+	cmp #$d5
+	bne read_d5_aa
+-	lda RDBYTE,X
+	bpl -
+	cmp #$aa
+	bne read_d5_aa
+-	lda RDBYTE,X
+	bpl -
+	eor #$ad
+	rts
+
 	; sector to read in 'sector', destination is data_ptr
 read_sector
 	; patch instructions before we reach time critical parts.
@@ -233,27 +248,16 @@ retry_sector
 	ldx slot_index
 	; address header is $d5, $aa, $96 XX YY XX YY XX YY XX YY (volume, track, sector, checksum)
 read_header
-	lda RDBYTE,x
-	bpl read_header
-	cmp #$d5		; cmp messes with carry flag
-	bne read_header
--	lda RDBYTE,X
-	bpl -
-	cmp #$aa
-	bne read_header
--	lda RDBYTE,X
-	bpl -
-	cmp #$96
-	bne read_header
+	jsr read_d5_aa
+	beq read_header
 
-	ldy #4			; skip volume and track
+	ldy #5			; skip volume and track, ending on sector
 -	lda RDBYTE,X
 	bpl -
 	dey
 	bne -
 
--	lda RDBYTE,X
-	bpl -
+
 	sec
 	rol
 	sta bits
@@ -264,17 +268,7 @@ read_header
 	bne read_header
 
 read_data
-	lda RDBYTE,x
-	bpl read_data
-	cmp #$d5		; cmp messes with carry flag
-	bne read_data
--	lda RDBYTE,X
-	bpl -
-	cmp #$aa
-	bne read_header
--	lda RDBYTE,X
-	bpl -
-	eor #$ad
+	jsr read_d5_aa
 	bne read_header	
 
 	; a now zero
