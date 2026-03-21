@@ -69,8 +69,9 @@ slot_index	= $2B		; $60 for slot 6 (this comes from boot loader)
 prev_top_cursor_x = $2C
 text_ptr = $2D
 
-data_ptr = $2E
-sector = $30
+data_page = $2E
+min_sector = $2F
+sector_count = $30
 track = $31
 trackbit = $32
 bits = $33
@@ -118,19 +119,21 @@ BANKB_RAMRD_WE	= $C08B
 
 stage1
 	; read rest of track with our faster code
-	sty data_ptr
 	sty track
-	lda #$E3
-	sta data_ptr+1
+	lda #$E0			; point at rom, but min_sector skips first three
+	sta data_page
 	lda #3
+	sta min_sector
 	jsr read_rest_track_1
+	lda #0
+	sta min_sector
 
 	; read second half of interpreter
 	jsr read_next_track
 
 	; read first track of story to get entire size
 	lda #>HEADER
-	sta data_ptr+1
+	sta data_page
 	jsr read_next_track
 
 	; round story size (which is half its actual value) up to next 4k multiple
@@ -152,7 +155,7 @@ stage1
 	lda #'.'+$80
 	sta $400,y
 	jsr read_next_track
-	lda data_ptr+1
+	lda data_page
 	cmp #$C0
 	bne -
 	; sta _80STOREON
@@ -161,7 +164,7 @@ stage1
 	sta RAMWRTON
 	sta RAMRDON
 	lda #$10
-	sta data_ptr+1
+	sta data_page
 	bne -
 +	sta RAMWRTOFF
 	sta RAMRDOFF
@@ -169,16 +172,18 @@ stage1
 
 read_next_track
 	jsr next_track
-	lda #0
 read_rest_track_1
-	sta sector
+	lda #$10
+	sec
+	sbc min_sector
+	sta sector_count
 -	jsr read_sector
-	inc sector
-	inc data_ptr+1
-	lda sector
-	sta $400
-	cmp #$10
+	dec sector_count
 	bne -
+	clc
+	lda data_page
+	adc #$10
+	sta data_page
 	rts
 
 next_track
@@ -199,7 +204,6 @@ next_track
 	lda PH1ON,x
 	lda #86
 	jsr delay	; can't use rom version since we swap language card
-	sta sector	; back to sector 0
 	lda PH1OFF,x
 
 	txa
@@ -234,15 +238,10 @@ read_d5_aa
 	eor #$ad
 	rts
 
-	; sector to read in 'sector', destination is data_ptr
+	; read one sector not below min_sector. destination is data_page
+	; we could conceivably read a sector twice but that's harmless.
 read_sector
 	; patch instructions before we reach time critical parts.
-	ldx data_ptr+1
-	stx patch2+2
-	stx patch3+2
-	dex
-	stx patch1+2
-
 	lda slot_index
 	tax
 	ora #$8C
@@ -269,8 +268,14 @@ read_header
 -	lda RDBYTE,X
 	bpl -
 	and bits
-	cmp sector
-	bne read_header
+	cmp min_sector			; if less than min_sector, skip (used for track zero)
+	bcc read_header
+	clc
+	adc data_page
+	sta patch2+2
+	sta patch3+2
+	sbc #0					; carry is clear so this is a decrement
+	sta patch1+2
 
 read_data
 	jsr read_d5_aa
