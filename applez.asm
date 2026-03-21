@@ -213,7 +213,7 @@ next_track
 	rts
 
 RDBYTE = $c08c
-RDBYTE6 = $c08c + $60
+RDBYTE6 = $C000	; bad value to make sure it's patched
 
 ; we don't use much of the stack
 ; have to start higher to avoid page crossing
@@ -243,9 +243,15 @@ read_sector
 	dex
 	stx patch1+2
 
+	lda slot_index
+	tax
+	ora #$8C
+	sta slotpatch1+1
+	sta slotpatch2+1
+	sta slotpatch3+1
+	sta slotpatch4+1
+
 	; loop until we find next address
-retry_sector
-	ldx slot_index
 	; address header is $d5, $aa, $96 XX YY XX YY XX YY XX YY (volume, track, sector, checksum)
 read_header
 	jsr read_d5_aa
@@ -256,7 +262,6 @@ read_header
 	bpl -
 	dey
 	bne -
-
 
 	sec
 	rol
@@ -276,6 +281,7 @@ read_data
 	; so we can merge with sixes with a single counter.
 	tay
 read_twos
+slotpatch1
 -	ldx RDBYTE6				; 4
 	bpl -					; 2 when not taken
 	eor conv_tab-$96,x		; 4
@@ -290,6 +296,7 @@ read_twos
 	; in the correct order and we also can't afford the compare instruction.
 	; but we also have to watch out for page crossings.
 	ldy #$2A
+slotpatch2
 -	ldx RDBYTE6			; 4 - read next 6's byte
 	bpl -				; 2 - when not taken
 	eor conv_tab-$96,X	; 4 - convert to 6 bit (pre-shifted) value
@@ -305,6 +312,7 @@ patch1
 	; cycles available for the reload of Y, then the next byte is latched (32 cycles)
 
 	ldy #$2A
+slotpatch3
 -	ldx RDBYTE6
 	bpl -
 	eor conv_tab-$96,X
@@ -317,6 +325,7 @@ patch2
 	bpl -					; 30 cycles per byte, 29 on last iteration
 
 	ldy #$2C
+slotpatch4
 -	ldx RDBYTE6
 	bpl -
 	eor conv_tab-$96,X
@@ -328,14 +337,13 @@ patch3
 	iny
 	bpl -
 
--	ldx RDBYTE6
+	ldx slot_index
+-	ldy RDBYTE,x
 	bpl -
-	eor conv_tab-$96,x
+	eor conv_tab-$96,y
 	beq +
-	jmp retry_sector		; checksum failure
-
-+	ldx slot_index
-	rts
+	jmp read_header	; checksum failure (x must already have slot_index in it)
++	rts
 
 delay
 	sec
