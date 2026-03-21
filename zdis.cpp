@@ -324,6 +324,23 @@ void dump_dictionary(const storyHeader *h) {
 }
 
 int main(int argc,char **argv) {
+	int report = 255;
+	while (argv[1][0]=='-') {
+		switch(argv[1][1]) {
+			case 'r':
+				report = 0;
+				switch (argv[1][2]) {
+					case 'D': report |= 1; break;
+					case 'R': report |= 2; break;
+					case 'G': report |= 4; break;
+					case 'O': report |= 8; break;
+					case 'A': report |= 16; break;
+				}
+				break;
+		}
+		++argv;
+		--argc;
+	}
 	storyHeader *story = getStory(argv[1]);
 	if (argc > 2) {
 		if (!di.read(argv[2])) {
@@ -345,17 +362,22 @@ int main(int argc,char **argv) {
 	printf("high memory: %x\n",story->highMemoryAddr.getU());
 	printf("initial pc: %x\n",story->initialPCAddr.getU());
 	printf("dictionary: %x\n",story->dictionaryAddr.getU());
-	dump_dictionary(story);
+	if (report & 1)
+		dump_dictionary(story);
 	printf("globals: %x\n",story->globalVarsTableAddr.getU());
 	printf("static memory: %x\n",story->staticMemoryAddr.getU());
 	printf("abbreviations: %x\n",story->abbreviationsAddr.getU());
-	/* for (int i=0; i<96; i++) {
-		printf("[");
-		print_zscii((uint8_t*)story,abbreviations[i].getU2());
-		printf("]");
-	} */
-	printf("\nstory length: %x\n",story->storyLength.getU() * storyScales[story->version]);
-	dump_objects(story);
+	if (report & 16) {
+		for (int i=0; i<96; i++) {
+			printf("%d:[",i);
+			print_zscii((uint8_t*)story,abbreviations[i].getU2());
+			printf("]\n");
+		}
+	}
+	printf("story length: %x (%dk)\n",story->storyLength.getU() * storyScales[story->version],
+		(story->storyLength.getU() * storyScales[story->version] + 1023)>>10);
+	if (report & 8)
+		dump_objects(story);
 
 	printf("last property at %x\n",last_property);
 	auto roundUp = [&](int a) { return (a + storyScales[story->version] - 1) & -storyScales[story->version]; };
@@ -366,16 +388,18 @@ int main(int argc,char **argv) {
 	int stop = story->storyLength.getU() * storyScales[story->version];
 	const uint8_t *b = (const uint8_t*) story;
 
-	int sn = 0;
-	while (start < stop) {
-		int test;
-		if (b[start] > 15 || !(test = routine(story,start,no_printf))) {
-			printf("S%d: ",++sn);
-			start = roundUp(print_zscii(b,start));
+	if (report & 2) {	
+		int sn = 0;
+		while (start < stop) {
+			int test;
+			if (b[start] > 15 || !(test = routine(story,start,no_printf))) {
+				printf("S%d: ",++sn);
+				start = roundUp(print_zscii(b,start));
+			}
+			else
+				start = roundUp(routine(story,start));
+			printf("\n");
 		}
-		else
-			start = roundUp(routine(story,start));
-		printf("\n");
 	}
 	return 0;
 }
