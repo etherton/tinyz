@@ -1,5 +1,5 @@
-all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3 cloak.do advent.do demogame.do \
-	sieve_2p.do sieve_2e.do sieve_2ee.do
+all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3 advent.do advent.po demogame.do \
+	sieve_2p.do sieve_2e.do sieve_2ee.do cloak_2p.do cloak_2e.do cloak_2e.po cloak_2ee.do zork_2e.do zork_2e.po
 
 tinyzcd: opcodes.h header.h tinyz.y debug.h debug.cpp Makefile
 	bison --debug tinyz.y -v -o tinyz.debug.tab.cpp && clang++ -DDEBUG_MEM=1 -g -std=c++17 tinyz.debug.tab.cpp debug.cpp -o tinyzcd
@@ -15,6 +15,9 @@ tinyzterp: opcodes.h header.h machine.h machine.cpp interface_macos.cpp debug.h 
 
 zdis: opcodes.h header.h zdis.cpp debug.h debug.cpp Makefile
 	clang++ -std=c++17 zdis.cpp debug.cpp -o zdis
+
+makedsk: makedsk.cpp
+	clang++ makedsk.cpp -o makedsk
 
 cloak.z3: cloak.tz tinyzc Makefile
 	./tinyzc -z3 -agametext.txt -Acloak.abbrev -g -r cloak.tz > cloak.z3.txt
@@ -61,20 +64,38 @@ applez_2e.bin: applez.asm Makefile
 applez_2ee.bin: applez.asm Makefile
 	acme -f plain --cpu 65c02 -DCOLUMNS=80 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DTARGET_65C02=1 -r applez_2ee.lst -o applez_2ee.bin applez.asm
 
-sieve_2p.do: sieve.z3 applez_2p.bin
+sieve_2p.do: sieve.z3 applez_2p.bin makedsk
 	./makedsk applez_2p.bin sieve.z3 -o sieve_2p.do
 
-sieve_2e.do: sieve.z3 applez_2e.bin
+sieve_2e.do: sieve.z3 applez_2e.bin makedsk
 	./makedsk applez_2e.bin sieve.z3 -o sieve_2e.do
 
-sieve_2ee.do: sieve.z3 applez_2ee.bin
+sieve_2ee.do: sieve.z3 applez_2ee.bin makedsk
 	./makedsk applez_2ee.bin sieve.z3 -o sieve_2ee.do
 
-cloak.do: cloak.z3 applez_2ee.bin Makefile
-	./makedsk applez_2ee.bin cloak.z3 -o cloak.do
+cloak_2p.do: cloak.z3 applez_2p.bin Makefile makedsk
+	./makedsk applez_2p.bin cloak.z3 -o cloak_2p.do
 
-advent.do: advent.z3 applez_2ee.bin Makefile
-	./makedsk applez_2ee.bin advent.z3 -o advent.do
+cloak_2e.do: cloak.z3 applez_2e.bin Makefile makedsk
+	./makedsk applez_2e.bin cloak.z3 -o cloak_2e.do
 
-demogame.do: demogame.z3 applez_2ee.bin Makefile
+cloak_2e.po: cloak.z3 applez_2e.bin Makefile makedsk
+	./makedsk applez_2e.bin cloak.z3 -o cloak_2e.po
+
+cloak_2ee.do: cloak.z3 applez_2ee.bin Makefile makedsk
+	./makedsk applez_2ee.bin cloak.z3 -o cloak_2ee.do
+
+advent.do: advent.z3 applez_2ee.bin Makefile makedsk
+	./makedsk applez_2e.bin advent.z3 -o advent.do
+
+advent.po: advent.z3 applez_2ee.bin Makefile makedsk
+	./makedsk applez_2e.bin advent.z3 -o advent.po
+
+zork_2e.do: zork1-r88-s840726.z3 applez_2ee.bin Makefile makedsk
+	./makedsk applez_2e.bin zork1-r88-s840726.z3 -o zork_2e.do
+
+zork_2e.po: zork1-r88-s840726.z3 applez_2ee.bin Makefile makedsk
+	./makedsk applez_2e.bin zork1-r88-s840726.z3 -o zork_2e.po
+
+demogame.do: demogame.z3 applez_2ee.bin Makefile makedsk
 	./makedsk applez_2ee.bin demogame.z3 -o demogame.do
