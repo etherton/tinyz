@@ -33,10 +33,8 @@ RAMWRTON	= $C005 ; write enable aux memory
 _80COLON	= $C00D
 AUXCHARSET	= $C00F
 
-!if COLUMNS=80 {
 PAGE1		= $C054
 PAGE2		= $C055
-}
 
 ; bge <=> bcs
 ; blt <=> bcc
@@ -158,11 +156,11 @@ stage1
 	lda data_page
 	cmp #$C0
 	bne -
-	; sta _80STOREON
-	; sta $C054
-	; switch to aux memory
+	sta _80STOREON
+	sta PAGE1	; switch to aux memory
 	sta RAMWRTON
 	sta RAMRDON
+
 	lda #$10
 	sta data_page
 	bne -
