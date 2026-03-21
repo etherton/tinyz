@@ -184,7 +184,7 @@ read_rest_track_1
 next_track
 	lda track
 	and #1
-	asl
+	asl				; carry is clear
 	asl
 	sta trackbit	; trackbit is 0 if track was even, 4 if track was odd
 	inc track
@@ -345,16 +345,6 @@ patch3
 	jmp read_header	; checksum failure (x must already have slot_index in it)
 +	rts
 
-delay
-	sec
---	pha
--	sbc #$01
-	bne -
-	pla
-	sbc #$01
-	bne --
-	rts
-
 	; we cannot afford page crossings for either of these tables.
 	!align 255, 256-(13*8+2)
 conv_tab
@@ -364,8 +354,17 @@ conv_tab
 	!byte 255,255,255,9*4,10*4,11*4,12*4,13*4
 	!byte 255,255,14*4,15*4,16*4,17*4,18*4,19*4
 	!byte 255,20*4,21*4,22*4,23*4,24*4,25*4,26*4
-	!byte 255,255,255,255,255,255,255,255
-	!byte 255,255,255,27*4,255,28*4,29*4,30*4
+	; call with carry clear!
+	; hide this 11 byte routine in an unused part of the table
+delay
+--	pha
+-	sbc #$00
+	bne -
+	pla
+	sbc #$00
+	bne --
+	rts
+	!byte 27*4,255,28*4,29*4,30*4
 	!byte 255,255,255,31*4,255,255,32*4,33*4
 	!byte 255,34*4,35*4,36*4,37*4,38*4,39*4,40*4
 	!byte 255,255,255,255,255,41*4,42*4,43*4
@@ -439,8 +438,6 @@ interleave
 	!byte 2,3,3,0
 	!byte 1,3,3,0
 	!byte 3,3,3,0
-
-
 
 endboot
 !if COLUMNS=80 {
