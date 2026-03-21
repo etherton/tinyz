@@ -98,7 +98,7 @@ BANKB_RAMRD_WE	= $C08B
 
 
 	*=$E000		; actually loads at $800 hence the magic numbers in .copy below
-	!byte 16	; this is the sector to stop loading at
+	!byte 3		; this is the sector to stop loading at
 
 	sta BANKA_RAMRD_WE	; +1
 	sta BANKA_RAMRD_WE	; +4
@@ -117,11 +117,15 @@ BANKB_RAMRD_WE	= $C08B
 	jmp stage1
 
 stage1
-	; read second half of interpreter
+	; read rest of track with our faster code
 	sty data_ptr
 	sty track
-	lda #$f0
+	lda #$E3
 	sta data_ptr+1
+	lda #3
+	jsr read_rest_track_1
+
+	; read second half of interpreter
 	jsr read_next_track
 
 	; read first track of story to get entire size
@@ -166,6 +170,7 @@ stage1
 read_next_track
 	jsr next_track
 	lda #0
+read_rest_track_1
 	sta sector
 -	jsr read_sector
 	inc sector
@@ -338,6 +343,16 @@ patch3
 +	ldx slot_index
 	rts
 
+delay
+	sec
+--	pha
+-	sbc #$01
+	bne -
+	pla
+	sbc #$01
+	bne --
+	rts
+
 	; we cannot afford page crossings for either of these tables.
 	!align 255, 256-(13*8+2)
 conv_tab
@@ -423,15 +438,7 @@ interleave
 	!byte 1,3,3,0
 	!byte 3,3,3,0
 
-delay
-	sec
---	pha
--	sbc #$01
-	bne -
-	pla
-	sbc #$01
-	bne --
-	rts
+
 
 endboot
 !if COLUMNS=80 {
