@@ -1152,10 +1152,21 @@ zentry
 	sta stackptr
 	jsr update_zptr
 
-	; set up 1-based object table address
+	; get default property table minus 2 (since objects are 1-based)
 	clc
 	lda HEADER+11
+	adc #$FE
 	sta default_props_ptr
+
+	lda HEADER+10
+	adc #$FF
+	clc
+	adc #>HEADER
+	sta default_props_ptr+1
+
+	; now compute the 1-based pointer to the object array
+	clc
+	lda HEADER+11
 !if ZVERSION>3 {
 	adc #(126 - 14)
 } else {
@@ -1165,10 +1176,7 @@ zentry
 
 	lda HEADER+10
 	adc #>HEADER
-	sta obj_base+1
-	lda HEADER+10
-	adc #>HEADER
-	sta default_props_ptr+1
+	sta obj_base+1		; carry clear after this
 
 	lda HEADER+9
 	sta dict_ptr
@@ -1630,10 +1638,11 @@ z_je
 
 .branch_short
 	and #$3F
-	beq z_rfalse
-	cmp #$1
 	bne +
-	jmp  z_rtrue
+	jmp z_rfalse
++	cmp #$1
+	bne +
+	jmp z_rtrue
 +	ldx #0
 
 	; x is high byte of offset, a is low byte
@@ -2045,14 +2054,13 @@ z_insert_obj
 z_get_prop_addr
 	+begin_dynamic
 	jsr prop_common
+	jsr find_property
 	+end_dynamic
 	ldx obj_ptr
 	lda obj_mid
 	jmp store_common
 
-	; on input, operands+0 is object number, operands+1 is property index
-	; on return, y is property length or zero if not found; obj_ptr points
-	; at the property payload
+	; on input, operands+0 is object number; returns with obj_ptr pointing at first property
 prop_common
 !ifdef DEBUG_PROP_COMMON {
 	lda operands_lo+0
@@ -2097,11 +2105,15 @@ prop_common
 	adc #1		; this won't handle extremely long object names
 	adc obj_ptr
 	sta obj_ptr
-	bcc .find_property
+	bcc +
 	inc obj_ptr+1
++	rts
+
+	; on input, prop_common must have been called (obj_ptr valid), and operands+1 is property index
+	; on return, y is property length or zero if not found; obj_ptr points at the property payload.
 	; now we're at the first property; they are in descending order, terminated with zero
 	; on V3, upper 3 bits are size-1, lower 5 bits are property index, 1-31
-.find_property
+find_property
 !ifdef DEBUG_PROP_COMMON {
 	lda obj_ptr+1
 	jsr print_hex_byte
@@ -2143,9 +2155,9 @@ prop_common
 	clc
 	adc obj_ptr
 	sta obj_ptr
-	bcc .find_property
+	bcc find_property
 	inc obj_ptr+1
-	bne .find_property
+	bne find_property
 .matched_property
 	tya
 	+lsr5
@@ -2159,6 +2171,7 @@ prop_common
 z_get_prop
 	+begin_dynamic
 	jsr prop_common
+	jsr find_property
 	beq .default_prop
 	dey
 	lda (obj_ptr),Y
@@ -2171,8 +2184,9 @@ z_get_prop
 	+end_dynamic
 	jmp store_common
 
+	; get the property index again (properties are between 1-31)
 .default_prop
-	lda operands_lo+0
+	lda operands_lo+1
 	asl
 	tay
 	iny
@@ -2187,6 +2201,7 @@ z_get_prop
 z_put_prop
 	+begin_dynamic
 	jsr prop_common
+	jsr find_property
 	beq invalid_property
 	dey
 	lda operands_lo+2
@@ -2195,8 +2210,8 @@ z_put_prop
 	bmi +
 	lda operands_hi+2
 	sta (obj_ptr),Y
-	+end_dynamic
-+	jmp store_common
++	+end_dynamic
+	jmp next_insn
 invalid_property
 	lda operands_lo+1
 	jsr print_hex_byte
@@ -2204,8 +2219,41 @@ invalid_property
 	!text ":invalid property for operation:",0
 
 z_get_next_prop
-	jsr fatal_error
-	!text "z_get_next_prop not impl",0
+	+begin_dynamic
+	jsr prop_common
+	; obj_ptr points at propery table now
+	; operands+1 is property index to match
+	; uint8_t pv = read_mem8(pa);
+.search_next_prop
+!ifdef TARGET_65C02 {
+	lda (obj_ptr)
+} else {
+	ldy #0
+	lda (obj_ptr),Y
+}
+	tax		; preserve full value
+	; if (!prop || !pv || (pv & 31) < prop) return byte2word(pv & 31);
+	and #31
+	beq .found_next_prop ; zero terminates list
+	ldy operands_lo+0
+	beq .found_next_prop ; requesting next property of zero always returns first if any
+	; (pv & 31) < prop?
+	cmp operands_lo+0
+	bcc .found_next_prop
+	; pa += 2 + (pv>>5);
+	txa
+	+lsr5
+	adc #2 	; carry still clear
+	adc obj_ptr
+	sta obj_ptr
+	bcc .search_next_prop
+	inc obj_ptr+1
+	bne .search_next_prop		; always taken
+.found_next_prop
+	tax
+	lda #0
+	+end_dynamic
+	jmp store_common
 
 z_get_prop_len
 	; get_prop_len of zero is zero
