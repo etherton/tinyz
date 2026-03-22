@@ -74,6 +74,7 @@ sector = $33
 tracks_remaining = $34
 sector_map_lo = $35
 sector_map_hi = $36
+seed = $38
 
 PH0OFF		= $C080
 PH0ON		= $C081
@@ -1845,6 +1846,56 @@ z_mul
 	ldx mulTemp
 	jmp store_common
 
+z_random
+	lda operands_hi+1
+	bmi .seed_random
+	bpl .random_range
+	ldx operands_lo+1
+	bne .random_range
+	; random(0) should seed based on system randomness.
+	eor #$FF
+.seed_random
+	sta seed+1
+	ldx operands_lo+1
+	stx seed
+	lda #0
+	ldx #0
+	jmp store_common
+.random_range
+	; LFSR (came from google AI query)
+    lda seed
+    lsr
+    lda seed+1
+    ror
+    eor seed
+    sta seed
+    eor seed+1
+    lsr
+    lda seed
+    ror
+    eor seed
+    sta seed
+    eor seed+1
+    sta seed+1
+	; divide seed by range
+	lda operands_lo+0
+	sta operands_lo+1
+	lda operands_hi+0
+	sta operands_hi+1
+	lda seed
+	sta operands_lo+0
+	lda seed+1
+	sta operands_hi+1
+	jsr divide
+	; increment result
+	lda operands_hi+0
+	ldx operands_lo+0
+	inx
+	bne +
+	clc
+	adc #1
++	jmp store_common
+
 z_div
 	jsr divide
 	lda operands_hi+0
@@ -2476,10 +2527,6 @@ z_storew
 	lda operands_hi+2
 	sta (obj_ptr),Y
 	jmp next_insn
-
-z_random
-	jsr fatal_error
-	!text "z_random not impl",0
 
 operands_to_text_ptr
 	lda operands_lo+0
