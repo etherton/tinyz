@@ -3240,7 +3240,10 @@ z_pull
 	lda stack_lo,Y
 	tax
 	lda stack_hi,Y
-	jmp store_common
+	sta store_hi
+	lda operands_lo+0
+	jsr store_result_2
+	jmp next_insn
 
 z_set_window
 	lda operands_lo+0
