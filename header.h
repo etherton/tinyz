@@ -9,6 +9,7 @@ struct word {
 	int16_t  getS() const { return (int16_t)getU(); }
 	uint32_t getU2() const { return getU()<<1; }
 	bool notZero() const { return hi || lo; }
+	bool isZero() const { return !hi && !lo; }
 	bool operator==(const word &that) const { return lo==that.lo && hi==that.hi; }
 
 	void setByte(uint8_t b) { lo = b; hi = 0; }

@@ -140,32 +140,38 @@ private:
 		if (!o || o>m_objCount)
 			fault("remove_obj object %d out of range",o);
 		if (m_header->version < 4) {
-			uint8_t p = m_objectSmall->objTable[o-1].parent;
-			uint8_t s = m_objectSmall->objTable[o-1].sibling;
-			if (p && m_objectSmall->objTable[p-1].child == o)
-				m_objectSmall->objTable[p-1].child = s;
-			// scan entire object table to find dangling sibling reference (parent may be zero)
-			else for (uint16_t i=1; i<=m_objCount; i++)
-				if (m_objectSmall->objTable[i-1].sibling == o) {
-					m_objectSmall->objTable[i-1].sibling = s;
-					break;
+			if (!m_objectSmall->objTable[o-1].parent)
+				return;
+			uint8_t *p = &m_objectSmall->objTable[m_objectSmall->objTable[o-1].parent-1].child;
+			uint8_t &s = m_objectSmall->objTable[o-1].sibling;
+			while (*p) {
+				if (*p == o) {
+					*p = s;
+					m_objectSmall->objTable[o-1].parent = 0;
+					s = 0;
+					return;
 				}
-			m_objectSmall->objTable[o-1].parent = 0;
-			m_objectSmall->objTable[o-1].sibling = 0;
+				else
+					p = &m_objectSmall->objTable[*p-1].sibling;
+			}
+			fault("remove_obj failed object %d wasn't in chain",o);
 		}
 		else {
-			word p = m_objectLarge->objTable[o-1].parent;
-			word s = m_objectLarge->objTable[o-1].sibling;
-			if (p.notZero() && m_objectLarge->objTable[p.getU()-1].child.getU() == o)
-				m_objectLarge->objTable[p.getU()-1].child = s;
-			// scan entire object table to find dangling sibling reference (parent may be zero)
-			else for (uint16_t i=1; i<=m_objCount; i++)
-				if (m_objectLarge->objTable[i-1].sibling.getU() == o) {
-					m_objectLarge->objTable[i-1].sibling = s;
-					break;
+			if (m_objectLarge->objTable[o-1].parent.isZero())
+				return;
+			word *p = &m_objectLarge->objTable[m_objectLarge->objTable[o-1].parent.getU()-1].child;
+			word &s = m_objectLarge->objTable[o-1].sibling;
+			while (p->notZero()) {
+				if (p->getU() == o) {
+					*p = s;
+					m_objectLarge->objTable[o-1].parent.setByte(0);
+					s.setByte(0);
+					return;
 				}
-			m_objectLarge->objTable[o-1].parent.setByte(0);
-			m_objectLarge->objTable[o-1].sibling.setByte(0);
+				else
+					p = &m_objectLarge->objTable[p->getU()-1].sibling;
+			}
+			fault("remove_obj failed object %d wasn't in chain",o);
 		}
 	}
 	void objMoveTo(uint16_t o1,uint16_t o2) {
