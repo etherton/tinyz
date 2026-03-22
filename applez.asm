@@ -2732,16 +2732,17 @@ tokenise
 !ifdef DEBUG_TOKENISE {
 	jsr debug_print
 	!text "max parsed=",0
-	lda (parse_ptr)
+	ldy #0
+	lda (parse_ptr),y
 	jsr print_hex_byte
 	jsr debug_print
 	!text ", actual parsed=",0
-	ldy #1
+	iny
 	lda (parse_ptr),y
 	jsr print_hex_byte
 	lda #$d
 	jsr print_char
-	ldy #2
+	iny
 .print_parsed_data
 	lda (parse_ptr),Y
 	jsr print_hex_byte
@@ -2883,26 +2884,29 @@ bsearch
 !ifdef DEBUG_TOKENISE_VERBOSE {
 	jsr debug_print
 	!text "low_index = ",0
+	lda low_index+1
+	jsr print_hex_byte
 	lda low_index
 	jsr print_hex_byte
 	jsr debug_print
 	!text ", high_index = ",0
+	lda high_index+1
+	jsr print_hex_byte
 	lda high_index
 	jsr print_hex_byte
 	lda #13
 	jsr print_char
 }
 	; while (low_index <= high_index)
-	lda low_index + 1
-	cmp high_index + 1
-	beq +
-	bcs .search_failed
-+	lda low_index
-	cmp high_index
-	beq +
-	bcs .search_failed
+	; equivalently, if high_index - low_index isn't negative
+	lda high_index
+	sec
+	sbc low_index
+	lda high_index+1
+	sbc low_index+1
+	bmi .search_failed
 	; mid_index = (low_index + high_index)>>1
-+	lda low_index
+	lda low_index
 	clc
 	adc high_index
 	sta operands_lo+0
@@ -2925,7 +2929,7 @@ bsearch
 	lda entry_ptr+1
 	adc operands_hi+2
 	sta obj_ptr+1
-	; encode_buffer contains string to test againsg
+	; encode_buffer contains string to test against
 	; obj_ptr contains entry to compare
 .compare_char
 	ldy char_index
