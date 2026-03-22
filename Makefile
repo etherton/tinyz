@@ -1,5 +1,5 @@
 all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3 advent.do advent.po demogame.do \
-	sieve_2p.do sieve_2e.do sieve_2ee.do cloak.do zork.do
+	sieve_2p.do sieve_2e.do sieve_2ee.do cloak.do zork.do dejavu.do
 
 tinyzcd: opcodes.h header.h tinyz.y debug.h debug.cpp Makefile
 	bison --debug tinyz.y -v -o tinyz.debug.tab.cpp && clang++ -DDEBUG_MEM=1 -g -std=c++17 tinyz.debug.tab.cpp debug.cpp -o tinyzcd
@@ -56,13 +56,13 @@ sieve.z3: sieve.tz
 	./tinyzc sieve.tz
 
 applez_2p.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=40 -DTARGET_APPLE2PLUS=1 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DNTARGET_65C02=1 -r applez_2p.lst -o applez_2p.bin applez.asm
+	acme -f plain --cpu 6502 -DCOLUMNS=40 -DTARGET_APPLE2PLUS=1 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DNTARGET_65C02=1 -DZVERSION=3 -r applez_2p.lst -o applez_2p.bin applez.asm
 
 applez_2e.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=80 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DNTARGET_65C02=1 -r applez_2e.lst -o applez_2e.bin applez.asm
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DNTARGET_65C02=1 -r applez_2e.lst -o applez_2e.bin -DZVERSION=3 applez.asm
 
 applez_2ee.bin: applez.asm Makefile
-	acme -f plain --cpu 65c02 -DCOLUMNS=80 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DTARGET_65C02=1 -r applez_2ee.lst -o applez_2ee.bin applez.asm
+	acme -f plain --cpu 65c02 -DCOLUMNS=80 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DTARGET_65C02=1 -r applez_2ee.lst -o applez_2ee.bin -DZVERSION=3 applez.asm
 
 sieve_2p.do: sieve.z3 applez_2p.bin makedsk
 	./makedsk applez_2p.bin sieve.z3 -o sieve_2p.do
@@ -87,3 +87,6 @@ zork.do: zork1-r88-s840726.z3 applez_2e.bin Makefile makedsk
 
 demogame.do: demogame.z3 applez_2e.bin Makefile makedsk
 	./makedsk applez_2e.bin demogame.z3 -o demogame.do
+
+dejavu.do: dejavu.z3 applez_2e.bin Makefile makedsk
+	./makedsk applez_2e.bin dejavu.z3 -o dejavu.do

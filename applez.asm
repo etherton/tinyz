@@ -32,6 +32,7 @@ RAMWRTOFF	= $C004 ; write enable main memory
 RAMWRTON	= $C005 ; write enable aux memory
 _80COLON	= $C00D
 AUXCHARSET	= $C00F
+RAMRD		= $C013	; bit 7 on if AUX memory active from $200-$BFFF
 
 PAGE1		= $C054
 PAGE2		= $C055
@@ -147,14 +148,27 @@ stage1
 	jsr read_next_track
 
 	; round story size (which is half its actual value) up to next 4k multiple
+	; for V3 it's (size + $7ff) >> 8+3
+	; for V4/5 it's (size + $3ff) >> 8+2
+	; for V8 it's (size + $1ff) >> 8+1
 	lda HEADER+27
 	clc
 	adc #$ff
 	lda HEADER+26
+!if ZVERSION=8 {
+	adc #1
+} else if (ZVERSION>3) {
+	adc #3
+} else {
 	adc #7
+}
 	; shift it right to get the rounded-up size in 4k blocks
+!if (ZVERSION<8) {
 	lsr
+!if (ZVERSION=3) {
 	lsr
+}
+}
 	lsr
 	; A contains number of 4k tracks we need to load, but we already loaded one
 	sta tracks_remaining
@@ -171,7 +185,7 @@ stage1
 	sta _80STOREON
 	sta PAGE1	; switch to aux memory
 	sta RAMWRTON
-	sta RAMRDON
+	; sta RAMRDON ; not necessary now that we do single read pass
 
 	lda #$10
 	sta data_page
@@ -480,7 +494,7 @@ interleave
 endboot
 	; these are part of boot code but we're tight on space there.
 +	sta RAMWRTOFF
-	sta RAMRDOFF
+	; sta RAMRDOFF
 
 
 !if COLUMNS=80 {
@@ -903,7 +917,7 @@ last_status_room = $8D
 zchar_hi = $8E
 zchar_lo = $8F
 
-!ifdef Z4PLUS {
+!if ZVERSION>4 {
 DICT_SIZE = 6
 DICT_WORD_LEN = 9
 } else {
@@ -1033,8 +1047,30 @@ HEADER = $1000
 +
 }
 }
+
+!ifdef TAGET_APPLE2SPLUS {
+!macro begin_dynamic {
+}
+!macro end_dynamic {
+}
+} else {
+; begin dynamic memory reference; remember if we were using alt memory, then switch to main
+; modifies N/Z/V flags
+!macro begin_dynamic {
+	bit RAMRD
+	php
+	sta RAMRDOFF
+}
+; remember old setting and if it was active, re-enable it. destroys flags.
+!macro end_dynamic {
+	plp
+	bpl +
+	sta RAMRDON
++
+}
+}
 	; preserves A/X/Y
-	; if high byte of zptr is $C0 or $00, we need to update the TLB
+	; if high byte of zptr is $C0, we need to update the TLB
 increment_zpc_mid
 	inc zpc_mid
 	bne +
@@ -1042,7 +1078,6 @@ increment_zpc_mid
 +	inc zptr+1
 	sta .update_zpc_restorea+1
 	lda zptr+1
-	beq .update_zptr
 	cmp #$C0
 	bne .update_zpc_restorea
 .update_zptr
@@ -1054,69 +1089,31 @@ increment_zpc_mid
 	; destroys A
 update_zptr
 	lda zpc_hi
-	bne .update_zptr_high
+	bne .update_zptr_hi
 	lda zpc_mid
-	cmp #$A0
+	cmp #$B0
 	bcs .update_zptr_upper
 	adc #>HEADER	; carry clear
+	sta RAMRDOFF
 	sta zptr+1
 	rts
 
-	; 000-09F is main memory ($20-$BF) (add $20)
-	; 0A0-0CF is language card 16k bank 0 (add $30)
-	; 0D0-0FF is language card 16k bank 1 (direct map)
-	; 100-12F is language card 16k bank 2 (add $D0)
-	; 130-15F is language card 16k bank 3 (add $A0)
-	; 160-18F is language card 16k bank 4 (add $70)
-	; 190-1BF is language card 16k bank 5 (add $40)
-	; 1C0-1EF is language card 16k bank 6 (add $10)
-	; 1F0-1FF is language card 16k bank 7 (sub $20)
+	; B0->10, C0->20, D0->30, E0->40, F0->50
 .update_zptr_upper
-	cmp #$D0
-	bcs +
-	adc #$30
+	; carry already set (A contains upper byte)
+	sbc #$A0
 	sta zptr+1
-	sta $C084		; 16k bank 0
+	sta RAMRDON
+	+bp
 	rts
-+	sta zptr+1		; happens to be direct mapping
-	sta $C085		; 16k bank 1
-	rts
-.update_zptr_high
+	; 100->60, 110->70, 120->80 etc 
+.update_zptr_hi
+	clc
 	lda zpc_mid
-	cmp #$90
-	bcs .split
-	cmp #$30
-	bcs +
-	adc #$D0		; carry always clear
-	sta $C086		; 16k bank 2
+	adc #$60
 	sta zptr+1
-	rts
-+	cmp #$60
-	bcs +
-	adc #$A0
-	sta $C087		; 16k bank 3
-	sta zptr+1
-	rts
-+	adc #$70
-	sta $C08C		; 16k bank 4
-	sta zptr+1
-	rts
-.split
-	cmp #$C0
-	bcs +
-	adc #$40
-	sta $C08D		; 16k bank 5
-	sta zptr+1
-	rts
-+	cmp #$f0
-	bcs +
-	adc #$10
-	sta $C08E		; 16k bank 6
-	sta zptr+1
-	rts
-+	sbc #$20		; carry always set
-	sta $C08F		; 16k bank 7
-	sta zptr+1
+	sta RAMRDON
+	+bp
 	rts
 
 zentry
@@ -1136,7 +1133,14 @@ zentry
 	sta globals_lo,x
 	inx
 	bne -
-
+	
+	jsr default_print_char
+	lda HEADER
+	cmp #ZVERSION
+	beq +
+	jsr fatal_error
+	!text "story version isn't compatible with interpreter",13,0
++
 	; set up initial pc
 	lda HEADER+7
 	sta zptr
@@ -1152,7 +1156,7 @@ zentry
 	clc
 	lda HEADER+11
 	sta default_props_ptr
-!ifdef Z4PLUS {
+!if ZVERSION>3 {
 	adc #(126 - 14)
 } else {
 	adc #(62 - 9)		; skip defaults, and objects are 1-based
@@ -1176,7 +1180,7 @@ zentry
 	cmp #3
 	beq +		; also sets carry
 	jsr fatal_error
-	!text "dictionary does not have three separators",0
+	!text "dictionary does not have three separators",13,0
 +	ldy #4
 	lda (dict_ptr),Y
 	sta entry_size
@@ -1234,7 +1238,6 @@ zentry
 	cpx #7	; first two slots in last row are special and cannot be overidden.
 	bne - 
 
-	jsr default_print_char
 	jmp next_insn
 
 ; opcode
@@ -1909,21 +1912,26 @@ z_mod
 	jmp store_common
 
 z_test_attr
+	+begin_dynamic
 	jsr attr_setup
 	lda (obj_ptr),Y
+	+end_dynamic
 	and attr_bit
 	beq +
 	jmp branch_passed
 +	jmp branch_failed
 
 z_set_attr
+	+begin_dynamic
 	jsr attr_setup
 	lda (obj_ptr),y
 	ora attr_bit
 	sta (obj_ptr),Y
+	+end_dynamic
 	jmp next_insn
 
 z_clear_attr
+	+begin_dynamic
 	jsr attr_setup
 	lda attr_bit
 	eor #$ff
@@ -1931,16 +1939,21 @@ z_clear_attr
 	lda (obj_ptr),Y
 	and attr_bit
 	sta (obj_ptr),Y
+	+end_dynamic
 	jmp next_insn
 
 z_get_child
+	+begin_dynamic
 	jsr get_object_addr
 	ldy #6 ; child
 	bne +
 z_get_sibling
+	+begin_dynamic
 	jsr get_object_addr
 	ldy #$5 ; sibling
 +	lda (obj_ptr),Y
+	+end_dynamic
+	cmp #0
 	beq .child_sibling_zero
 	tax
 	lda #0
@@ -1957,9 +1970,11 @@ z_get_parent
 	lda operands_lo+0
 	beq +
 	; otherwise get object address
+	+begin_dynamic
 	jsr get_object_addr
 	ldy #4 ; parent
 	lda (obj_ptr),Y
+	+end_dynamic
 +	tax
 	lda #0
 	jmp store_common
@@ -1971,6 +1986,7 @@ z_remove_obj
 remove_obj
 	lda operands_lo+0
 	sta operands_lo+4
+	+begin_dynamic
 	jsr get_object_addr
 	lda obj_ptr
 	sta obj_ptr_alt
@@ -1978,6 +1994,7 @@ remove_obj
 	sta obj_ptr_alt+1
 	ldy #4 ; parent
 	lda (obj_ptr),Y
+	beq .remove_obj_no_parent
 	sta operands_lo+0
 	jsr get_object_addr
 	ldy #6 ; child
@@ -1993,6 +2010,8 @@ remove_obj
 	ldy #5
 	lda #0
 	sta (obj_ptr_alt),Y	; zero out our sibling
+.remove_obj_no_parent
+	+end_dynamic
 	rts
 	; walk next sibling in the list instead
 .remove_obj_not_direct
@@ -2006,6 +2025,7 @@ z_insert_obj
 	; set our new parent
 	ldy #4		; parent
 	lda operands_lo+1
+	+begin_dynamic
 	sta (obj_ptr_alt),y
 	; our sibling is parent's child
 	lda operands_lo+1
@@ -2019,10 +2039,13 @@ z_insert_obj
 	lda operands_lo+4
 	iny			; child
 	sta (obj_ptr),Y
+	+end_dynamic
 	jmp next_insn
 
 z_get_prop_addr
+	+begin_dynamic
 	jsr prop_common
+	+end_dynamic
 	ldx obj_ptr
 	lda obj_mid
 	jmp store_common
@@ -2134,6 +2157,7 @@ prop_common
 	rts			; zero flag set
 
 z_get_prop
+	+begin_dynamic
 	jsr prop_common
 	beq .default_prop
 	dey
@@ -2144,6 +2168,7 @@ z_get_prop
 	lda (obj_ptr),y
 	+skip_imm
 +	lda #0
+	+end_dynamic
 	jmp store_common
 
 .default_prop
@@ -2155,10 +2180,12 @@ z_get_prop
 	tax
 	dey
 	lda (default_props_ptr),Y
+	+end_dynamic
 	jmp store_common
 
 
 z_put_prop
+	+begin_dynamic
 	jsr prop_common
 	beq invalid_property
 	dey
@@ -2168,6 +2195,7 @@ z_put_prop
 	bmi +
 	lda operands_hi+2
 	sta (obj_ptr),Y
+	+end_dynamic
 +	jmp store_common
 invalid_property
 	lda operands_lo+1
@@ -2194,14 +2222,16 @@ z_get_prop_len
 	lda operands_hi+0
 	adc #>(HEADER-1)
 	sta obj_ptr+1
+	+begin_dynamic
 !ifdef TARGET_65C02 {
 	lda (obj_ptr)
 } else {
 	ldy #0
 	lda (obj_ptr),Y
 }
+	+end_dynamic
 	+lsr5
-	+inca
+	adc #1		; carry always clear from lsr
 	tax
 	lda #0
 	jmp store_common
@@ -2314,6 +2344,7 @@ z_print_obj
 	jmp next_insn
 
 print_obj
+	+begin_dynamic
 	jsr get_object_addr
 	ldy #7
 	lda (obj_ptr),y	; high byte
@@ -2328,6 +2359,7 @@ print_obj
 	sta obj_ptr+1
 print_obj_ptr
 	+z_print_string obj_ptr
+	+end_dynamic
 	rts
 
 z_print_addr
@@ -2353,11 +2385,11 @@ z_print_common
 	asl ptr
 	rol mid
 	rol hi
-!ifdef Z4PLUS {
+!if ZVERSION>3 {
 	asl ptr
 	rol mid
 	rol hi
-!ifdef Z8 {
+!if ZVERSION=8 {
 	asl ptr
 	rol mid
 	rol hi
@@ -2469,9 +2501,10 @@ z_loadb
 	adc operands_hi+1
 	adc #>HEADER
 	sta load_addr+2
-	; ldy #0
+	+begin_dynamic
 load_addr
 	ldx $1234
+	+end_dynamic
 	lda #0
 	jmp store_common
 
@@ -2485,8 +2518,10 @@ z_storeb
 	adc #>HEADER
 	sta store_addr+2
 	lda operands_lo+2
+	+begin_dynamic
 store_addr
 	sta $1234
+	+end_dynamic
 	jmp next_insn
 
 z_loadw
@@ -2500,12 +2535,14 @@ z_loadw
 	adc operands_hi+1
 	adc #>HEADER
 	sta obj_ptr+1
+	+begin_dynamic
 	; TODO: if this crosses a 4k boundary we need multiple calls
 	ldy #1
 	lda (obj_ptr),Y
 	tax
 	dey
 	lda (obj_ptr),y
+	+end_dynamic
 	jmp store_common
 
 z_storew
@@ -2520,12 +2557,14 @@ z_storew
 	adc #>HEADER
 	sta obj_ptr+1
 	; TODO: if this crosses a 4k boundary we need multiple calls
+	+begin_dynamic
 	ldy #1
 	lda operands_lo+2
 	sta (obj_ptr),Y
 	dey
 	lda operands_hi+2
 	sta (obj_ptr),Y
+	+end_dynamic
 	jmp next_insn
 
 operands_to_text_ptr
@@ -2539,16 +2578,19 @@ operands_to_text_ptr
 
 z_sread
 	jsr operands_to_text_ptr
-!ifndef Z4PLUS {
+!if ZVERSION=3 {
 	; this destroys operands+0
 	jsr show_status
 }
+	+begin_dynamic
 	jsr read_line
+	+end_dynamic
 	jmp tokenise
 
 z_tokenise
 	jsr operands_to_text_ptr
 tokenise
+	+begin_dynamic
 	lda operands_lo+1
 	sta parse_ptr
 	lda operands_hi+1
@@ -2634,6 +2676,7 @@ tokenise
 	cpy parse_offset
 	bcc .print_parsed_data
 }
+	+end_dynamic
 	jmp next_insn
 +	cmp #32
 	bne .new_word
@@ -2713,7 +2756,7 @@ tokenise
 	ldx #0
 	ldy #0
 	jsr encode_three
-!ifdef Z4PLUS {
+!if ZVERSION>3 {
 	jsr encode_three
 }
 	lda encode_buffer,x
@@ -2851,7 +2894,7 @@ bsearch
 	; increment number of words parsed
 	ldy #1
 	lda (parse_ptr),Y
-	+inca
+	+inca ; TODO: carry probably always clear here?
 	sta (parse_ptr),Y
 	jmp .next_word
 
@@ -3075,7 +3118,7 @@ z_call_vs
 	+next_insn_byte_y0
 	; get local count in A
 	sta mulTemp
-!ifdef Z4PLUS {
+!if ZVERSION>3 {
 	; zero out the locals
 } else {
 	; copy local values
@@ -3219,7 +3262,10 @@ attr_setup
 get_object_addr
 	; compute objIndex * 9
 	lda operands_lo+0
-	sta obj_ptr+0
+	bne +
+	jsr fatal_error
+	!text "get_object_addr 0 called",13,0
++	sta obj_ptr+0
 	lda operands_hi+0
 	sta obj_ptr+1
 
@@ -3353,7 +3399,7 @@ show_status
 	sta top_cursor_x
 
 	lda globals_lo+16
-!ifndef Z4PLUS {
+!if ZVERSION=3 {
 	cmp last_status_room
 	beq .numbers_only
 }
@@ -3655,6 +3701,7 @@ _varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_p
 
 char_buffer !fill 32
 
+	; resist temptation to move these to $800 because that's banked RAM on apple 2e.
 	; stack is split into lower and upper bytes so we can treat the Y register as a stack pointer.
 	!align 255, 0
 stack_lo	!fill 256
