@@ -1595,6 +1595,7 @@ z_inc_chk
 z_jin
 	jsr get_object_addr
 	ldy #4 ; parent
+	lda (obj_ptr),y
 	cmp operands_lo+1
 	beq +
 	jmp branch_failed
