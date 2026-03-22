@@ -130,12 +130,11 @@ stage1
 
 	; read rest of track with our faster code
 	sty track
-	lda #$E0			; point at rom, but min_sector skips first three
+	lda #$E0
 	sta data_page
-	lda #$F8
+	lda #$F8				; already read first three sectors
 	sta sector_map_lo
-	lda #$FF
-	sta sector_map_hi
+
 	jsr read_rest_track_1
 
 	; read second half of interpreter
@@ -159,20 +158,25 @@ stage1
 	; A contains number of 4k tracks we need to load, but we already loaded one
 	sta tracks_remaining
 
--	dec tracks_remaining
+-	lda #$FF
+	dec tracks_remaining
 	beq +
+	ldy tracks_remaining
+	sta $500-1,y
 	jsr read_next_track
 	lda data_page
 	cmp #$C0
 	bne -
-	; sta _80STOREON
-	; sta PAGE1	; switch to aux memory
+	sta _80STOREON
+	sta PAGE1	; switch to aux memory
 	sta RAMWRTON
 	sta RAMRDON
 
 	lda #$10
 	sta data_page
 	bne -		; always taken
+	ldx slot_index
+	sta MOTOROFF,x
 +	jmp endboot
 
 next_track
@@ -228,8 +232,9 @@ read_next_track
 	jsr next_track
 	lda #$FF
 	sta sector_map_lo
-	sta sector_map_hi
 read_rest_track_1
+	lda #$FF
+	sta sector_map_hi
 -	jsr read_sector
 	lda sector_map_lo
 	ora sector_map_hi
@@ -475,8 +480,7 @@ endboot
 	; these are part of boot code but we're tight on space there.
 +	sta RAMWRTOFF
 	sta RAMRDOFF
-	ldx slot_index
-	sta MOTOROFF,x
+
 
 !if COLUMNS=80 {
 	sta _80COLON
