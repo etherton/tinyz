@@ -67,13 +67,13 @@ slot_index	= $2B		; $60 for slot 6 (this comes from boot loader)
 prev_top_cursor_x = $2C
 text_ptr = $2D
 
-data_page = $2E
-min_sector = $2F
-sector_count = $30
+data_page = $30
 track = $31
 trackbit = $32
-bits = $33
+sector = $33
 tracks_remaining = $34
+sector_map_lo = $35
+sector_map_hi = $36
 
 PH0OFF		= $C080
 PH0ON		= $C081
@@ -99,7 +99,7 @@ BANKB_RAMRD_WE	= $C08B
 
 
 	*=$E000		; actually loads at $800 hence the magic numbers in .copy below
-	!byte 3		; this is the sector to stop loading at
+	!byte 3		; this is the sector to stop loading at (rest of our code and lookup tables)
 
 	sta BANKA_RAMRD_WE	; +1
 	sta BANKA_RAMRD_WE	; +4
@@ -118,15 +118,25 @@ BANKB_RAMRD_WE	= $C08B
 	jmp stage1
 
 stage1
+	; patch instructions before we reach time critical parts.
+	txa
+	ora #$8C
+	sta slotpatch1+1
+	sta slotpatch2+1
+	sta slotpatch3+1
+	sta slotpatch4+1
+	sta slotpatch5+1
+	sta slotpatch6+1
+
 	; read rest of track with our faster code
 	sty track
 	lda #$E0			; point at rom, but min_sector skips first three
 	sta data_page
-	lda #3
-	sta min_sector
+	lda #$F8
+	sta sector_map_lo
+	lda #$FF
+	sta sector_map_hi
 	jsr read_rest_track_1
-	lda #0
-	sta min_sector
 
 	; read second half of interpreter
 	jsr read_next_track
@@ -151,41 +161,19 @@ stage1
 
 -	dec tracks_remaining
 	beq +
-	ldy tracks_remaining
-	lda #'.'+$80
-	sta $400,y
 	jsr read_next_track
 	lda data_page
 	cmp #$C0
 	bne -
-	sta _80STOREON
-	sta PAGE1	; switch to aux memory
+	; sta _80STOREON
+	; sta PAGE1	; switch to aux memory
 	sta RAMWRTON
 	sta RAMRDON
 
 	lda #$10
 	sta data_page
-	bne -
-+	sta RAMWRTOFF
-	sta RAMRDOFF
-	sta MOTOROFF,x
-	jmp endboot
-
-read_next_track
-	jsr next_track
-read_rest_track_1
-	lda #$10
-	sec
-	sbc min_sector
-	sta sector_count
--	jsr read_sector
-	dec sector_count
-	bne -
-	clc
-	lda data_page
-	adc #$10
-	sta data_page
-	rts
+	bne -		; always taken
++	jmp endboot
 
 next_track
 	lda track
@@ -217,40 +205,42 @@ next_track
 	lda PH0OFF,x
 	rts
 
-RDBYTE = $c08c
-RDBYTE6 = $C000	; bad value to make sure it's patched
+RDBYTE6 = $C000	; bad value to make sure it's patched ($C08C + slot*16)
 
 ; we don't use much of the stack
 ; have to start higher to avoid page crossing
+; use this area because it swaps as same time as ZP and high memory
 twos_buffer = $12C
 
 ; returns A zero (and zero flag set) if it's the data part, nonzero if header part
 read_d5_aa
-	lda RDBYTE,X
-	bpl read_d5_aa
+	jsr read_byte
 	cmp #$d5
 	bne read_d5_aa
--	lda RDBYTE,X
-	bpl -
+	jsr read_byte
 	cmp #$aa
 	bne read_d5_aa
--	lda RDBYTE,X
-	bpl -
+	jsr read_byte
 	eor #$ad
 	rts
 
-	; read one sector not below min_sector. destination is data_page
-	; we could conceivably read a sector twice but that's harmless.
-read_sector
-	; patch instructions before we reach time critical parts.
-	lda slot_index
-	tax
-	ora #$8C
-	sta slotpatch1+1
-	sta slotpatch2+1
-	sta slotpatch3+1
-	sta slotpatch4+1
+read_next_track
+	jsr next_track
+	lda #$FF
+	sta sector_map_lo
+	sta sector_map_hi
+read_rest_track_1
+-	jsr read_sector
+	lda sector_map_lo
+	ora sector_map_hi
+	bne -
+	clc
+	lda data_page
+	adc #$10
+	sta data_page
+	rts
 
+read_sector
 	; loop until we find next address
 	; address header is $d5, $aa, $96 XX YY XX YY XX YY XX YY (volume, track, sector, checksum)
 read_header
@@ -258,24 +248,35 @@ read_header
 	beq read_header
 
 	ldy #5			; skip volume and track, ending on sector
--	lda RDBYTE,X
-	bpl -
+-	jsr read_byte
 	dey
 	bne -
 
+	; we have a limited amount of time here; there's a sector header epilog and then
+	; some sync bytes and then the sector data header.
+	; we need a pretty big table to decode the bits so let's use the third column of interleave
 	sec
-	rol
-	sta bits
--	lda RDBYTE,X
-	bpl -
-	and bits
-	cmp min_sector			; if less than min_sector, skip (used for track zero)
-	bcc read_header
-	clc
-	adc data_page
+	rol	
+	sta sector
+	jsr read_byte
+	and sector
+	sta sector
+
+	asl
+	asl				; multiply by four so we can use the big table (carry clear)
+	tay
+
+	ldx		interleave+3,Y		; get low or high byte of sector_map_hi
+	lda		interleave+3+64,y	; get shifted value
+	and		sector_map_lo,X
+	beq		read_header
+	
+	lda data_page
+	adc sector		; this was final sector address (carry still clear)
+
 	sta patch2+2
 	sta patch3+2
-	sbc #0					; carry is clear so this is a decrement
+	sbc #0			; carry was clear so this is a decrement
 	sta patch1+2
 
 read_data
@@ -287,14 +288,14 @@ read_data
 	; so we can merge with sixes with a single counter.
 	tay
 read_twos
+	ldy #$2A
 slotpatch1
 -	ldx RDBYTE6				; 4
 	bpl -					; 2 when not taken
 	eor conv_tab-$96,x		; 4
-	sta twos_buffer,Y		; 5
+	sta twos_buffer-$2A,Y	; 5
 	iny						; 2
-	cpy #$56				; 2
-	bne read_twos			; 3, 2 when not taken on final iteration
+	bpl -					; 3, 2 when not taken on final iteration
 
 	; the following code is extremely timing sensitive
 	; we can't afford any branches crossing page boundaries here.
@@ -341,22 +342,36 @@ patch3
 	sta $ffac-$2C,Y
 	and #$fc
 	iny
-	bpl -
+	bpl -					; 30 cycles per byte, 29 on last iteration
 
-	ldx slot_index
--	ldy RDBYTE,x
+slotpatch5
+-	ldy RDBYTE6
 	bpl -
 	eor conv_tab-$96,y
 	beq +
-	jmp read_header	; checksum failure (x must already have slot_index in it)
-+	rts
+	jmp read_header	; checksum failure 
+	; if we got here, remember that we successfully read the sector
++	lda sector
+	asl
+	asl
+	tay
+	ldx interleave+3,Y			; get which byte in sector map to update
+	lda interleave+3+128,Y		; get inverted shifted bit
+	and sector_map_lo,X
+	sta sector_map_lo,x
+	rts
 
 	; we cannot afford page crossings for either of these tables.
 	!align 255, 256-(13*8+2)
 conv_tab
 	!byte 0*4,1*4
 	!byte 255,255,2*4,3*4,255,4*4,5*4,6*4
-	!byte 255,255,255,255,255,255,7*4,8*4
+read_byte
+slotpatch6
+	lda RDBYTE6
+	bpl read_byte
+	rts
+	!byte 7*4,8*4
 delay
 	sec
 	bcs delay2
@@ -381,6 +396,8 @@ delay2
 	!byte 255,57*4,58*4,59*4,60*4,61*4,62*4,63*4
 	!align 255, 0
 ; +0 is first two bits, reversed, +1 is second two bits, reversed, +2 is third two bits, reversed
+; +3 is a bit table used to manage the sector map; first 16 rows is (sector/8), next is (1<<(sector&7),
+; last 16 rows is ~(1<<(sector&7))
 interleave
 	!byte 0,0,0,0
 	!byte 2,0,0,0
@@ -390,46 +407,52 @@ interleave
 	!byte 2,2,0,0
 	!byte 1,2,0,0
 	!byte 3,2,0,0
-	!byte 0,1,0,0
-	!byte 2,1,0,0
-	!byte 1,1,0,0
-	!byte 3,1,0,0
-	!byte 0,3,0,0
-	!byte 2,3,0,0
-	!byte 1,3,0,0
-	!byte 3,3,0,0
-	!byte 0,0,2,0
-	!byte 2,0,2,0
-	!byte 1,0,2,0
-	!byte 3,0,2,0
-	!byte 0,2,2,0
-	!byte 2,2,2,0
-	!byte 1,2,2,0
-	!byte 3,2,2,0
-	!byte 0,1,2,0
-	!byte 2,1,2,0
-	!byte 1,1,2,0
-	!byte 3,1,2,0
-	!byte 0,3,2,0
-	!byte 2,3,2,0
-	!byte 1,3,2,0
-	!byte 3,3,2,0
-	!byte 0,0,1,0
-	!byte 2,0,1,0
-	!byte 1,0,1,0
-	!byte 3,0,1,0
-	!byte 0,2,1,0
-	!byte 2,2,1,0
-	!byte 1,2,1,0
-	!byte 3,2,1,0
-	!byte 0,1,1,0
-	!byte 2,1,1,0
-	!byte 1,1,1,0
-	!byte 3,1,1,0
-	!byte 0,3,1,0
-	!byte 2,3,1,0
-	!byte 1,3,1,0
-	!byte 3,3,1,0
+
+	!byte 0,1,0,1
+	!byte 2,1,0,1
+	!byte 1,1,0,1
+	!byte 3,1,0,1
+	!byte 0,3,0,1
+	!byte 2,3,0,1
+	!byte 1,3,0,1
+	!byte 3,3,0,1
+
+	!byte 0,0,2,1
+	!byte 2,0,2,2
+	!byte 1,0,2,4
+	!byte 3,0,2,8
+	!byte 0,2,2,16
+	!byte 2,2,2,32
+	!byte 1,2,2,64
+	!byte 3,2,2,128
+
+	!byte 0,1,2,1
+	!byte 2,1,2,2
+	!byte 1,1,2,4
+	!byte 3,1,2,8
+	!byte 0,3,2,16
+	!byte 2,3,2,32
+	!byte 1,3,2,64
+	!byte 3,3,2,128
+
+	!byte 0,0,1,255-1
+	!byte 2,0,1,255-2
+	!byte 1,0,1,255-4
+	!byte 3,0,1,255-8
+	!byte 0,2,1,255-16
+	!byte 2,2,1,255-32
+	!byte 1,2,1,255-64
+	!byte 3,2,1,255-128
+
+	!byte 0,1,1,255-1
+	!byte 2,1,1,255-2
+	!byte 1,1,1,255-4
+	!byte 3,1,1,255-8
+	!byte 0,3,1,255-16
+	!byte 2,3,1,255-32
+	!byte 1,3,1,255-64
+	!byte 3,3,1,255-128
+
 	!byte 0,0,3,0
 	!byte 2,0,3,0
 	!byte 1,0,3,0
@@ -438,6 +461,7 @@ interleave
 	!byte 2,2,3,0
 	!byte 1,2,3,0
 	!byte 3,2,3,0
+	
 	!byte 0,1,3,0
 	!byte 2,1,3,0
 	!byte 1,1,3,0
@@ -448,6 +472,12 @@ interleave
 	!byte 3,3,3,0
 
 endboot
+	; these are part of boot code but we're tight on space there.
++	sta RAMWRTOFF
+	sta RAMRDOFF
+	ldx slot_index
+	sta MOTOROFF,x
+
 !if COLUMNS=80 {
 	sta _80COLON
 	sta _80STOREON
