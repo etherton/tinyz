@@ -24,6 +24,11 @@ creating a new interface file with Linux-specific terminal access. Something sim
 probably also be done for the Windows console. The tools produce and can use Inform DEBF
 binary debug information files.
 
+There is also a work-in-progress interpreter that runs on an Apple 2+ or 2e. It requires the
+latest version of ACME from SourceForce (https://sourceforge.net/projects/acme-crossass/).
+The makefile currently references some external story files not included. The interpreter
+uses a fast full-track loader modeled heavily on qboot (https://github.com/peterferrie/qboot).
+
 The Language
 ============
 The compiler is written using Bison and a hand-crafted parser. It runs two passes over the code.
