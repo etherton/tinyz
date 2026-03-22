@@ -1507,9 +1507,49 @@ z_ill
 
 ; branch(var(operands[0].getS()).dec() < operands[1].getS()); break;
 z_dec_chk
-
-	jsr fatal_error
-	!text "dec_chk not impl",0
+	lda operands_lo+0
+	beq .dec_chk_tos
+!ifndef FRAME_USES_GLOBALS {
+	cmp #$10
+	bcs .dec_chk_global
+	; carry is clear here
+	adc frameptr
+	tax
+	lda stack_lo,X
+	sec
+	sbc #1
+	sta stack_lo,x
+	sta operands_lo+0
+	lda stack_hi,X
+	sbc #0
+	sta stack_hi,X
+	sta operands_hi+0
+	jmp z_jl
+.dec_chk_global
+}
+	tax
+	lda globals_lo,X
+	sec
+	sbc #1
+	sta globals_lo,X
+	sta operands_lo+0
+	lda globals_hi,X
+	sbc #0
+	sta globals_hi,X
+	sta operands_hi+0
+	jmp z_jl
+.dec_chk_tos
+	ldx stackptr
+	lda stack_lo-1,X
+	sec
+	sbc #1
+	sta stack_lo-1,X
+	sta operands_lo+0
+	lda stack_hi-1,X
+	sbc #0
+	sta stack_hi-1,X
+	sta operands_hi+0
+	jmp z_jl
 
 ; branch(var(operands[0].getS()).inc() > operands[1].getS()); break;
 z_inc_chk
