@@ -876,6 +876,7 @@ read_line
 	rts
 
 ; Portable code ZP use starts at $40
+mulSign = $45
 mulTemp = $46
 attr_bit = $47
 ztype = $48
@@ -1884,8 +1885,26 @@ z_mul
 	rts
 
 .z_mul_signed
-	jsr fatal_error
-	!text "only unsigned mul implemented",13,0
+	ldx #0
+	stx mulSign
+	lda operands_hi+0
+	bpl +
+	jsr negate_operand
+	inc mulSign
++	inx
+	lda operands_hi+1
+	bpl +
+	jsr negate_operand
+	inc mulSign
++	jsr .z_mul_16x16u
+	lda #1
+	bit mulSign
+	beq +
+	ldx #2
+	jsr negate_operand
++	lda operands_hi+2
+	ldx operands_lo+2
+	jmp store_common
 
 	; https://llx.com/Neil/a2/mult.html
 	; result in A (high) and X (low)
@@ -1902,6 +1921,16 @@ z_mul
 	bne -
 	ldx mulTemp
 	jmp store_common
+
+negate_operand
+	lda #0
+	sec
+	sbc operands_lo,x
+	sta operands_lo,X
+	lda #0
+	sbc operands_hi,x
+	sta operands_hi,X
+	rts
 
 z_random
 	lda operands_hi+1
@@ -3492,7 +3521,7 @@ z_print_num
 print_num
 	lda #0
 	sta mulTemp
-	cmp operands_hi+0
+	lda operands_hi+0
 	beq ++
 	bpl +
 	lda #'-'
