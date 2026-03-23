@@ -1431,7 +1431,6 @@ operand_variable
 	sta operands_hi,x
 	lda stack_lo,Y
 	sta operands_lo,x
-	+zeroy
 
 !ifdef DEBUG_TRACE {
 	jsr debug_print
@@ -1444,6 +1443,8 @@ operand_variable
 	jsr print_char
 	jsr print_operand
 }
+	+zeroy
+
 	inx
 	rts
 
@@ -1454,7 +1455,6 @@ operand_variable
 	sta operands_hi,X
 	lda globals_lo,Y
 	sta operands_lo,x
-	+zeroy
 
 !ifdef DEBUG_TRACE {
 	jsr debug_print
@@ -1467,6 +1467,7 @@ operand_variable
 	jsr print_char
 	jsr print_operand
 }
+	+zeroy
 	inx
 	rts
 
@@ -1591,7 +1592,7 @@ z_inc_chk
 	sta operands_hi+0
 	jmp z_jg
 
-	; is operands+0's parent operand+1?
+	; is operand+0's parent operand+1?
 z_jin
 	jsr get_object_addr
 	ldy #4 ; parent
@@ -2588,6 +2589,7 @@ z_loadb
 	sta load_addr+1
 	lda operands_hi+0
 	adc operands_hi+1
+	clc
 	adc #>HEADER
 	sta load_addr+2
 	+begin_dynamic
@@ -2604,6 +2606,7 @@ z_storeb
 	sta store_addr+1
 	lda operands_hi+0
 	adc operands_hi+1
+	clc
 	adc #>HEADER
 	sta store_addr+2
 	lda operands_lo+2
@@ -2614,14 +2617,15 @@ store_addr
 	jmp next_insn
 
 z_loadw
-	clc
 	asl operands_lo+1
 	rol operands_hi+1
+	clc
 	lda operands_lo+0
 	adc operands_lo+1
 	sta obj_ptr
 	lda operands_hi+0
 	adc operands_hi+1
+	clc
 	adc #>HEADER
 	sta obj_ptr+1
 	+begin_dynamic
@@ -2635,14 +2639,15 @@ z_loadw
 	jmp store_common
 
 z_storew
-	clc
 	asl operands_lo+1
 	rol operands_hi+1
+	clc
 	lda operands_lo+0
 	adc operands_lo+1
 	sta obj_ptr
 	lda operands_hi+0
 	adc operands_hi+1
+	clc
 	adc #>HEADER
 	sta obj_ptr+1
 	; TODO: if this crosses a 4k boundary we need multiple calls
@@ -3109,8 +3114,31 @@ z_not
 	jmp store_common
 
 z_load
-	jsr fatal_error
-	!text "z_load not impl",0
+	lda operands_lo+0
+	beq .load_tos
+!ifndef FRAME_USES_GLOBALS {
+	cmp #$10
+	bcs .load_global
+	; carry is clear here
+	adc frameptr
+	tay
+	lda stack_lo,y
+	tax
+	lda stack_hi,y
+	jmp store_result
+.load_global
+}
+	tay
+	lda globals_lo,y
+	tax
+	lda globals_hi,y
+	jmp store_result
+.load_tos
+	ldy stackptr
+	lda stack_lo-1,y
+	tax
+	lda stack_hi-1,Y
+	jmp store_result
 
 z_print
 	jsr z_print_inline_common
@@ -3356,12 +3384,18 @@ attr_setup
 
 	; operand+0 contains object number; return obj_mid, obj_ptr pointing at object
 get_object_addr
-	; compute objIndex * 9
-	lda operands_lo+0
+	; compute objIndex * 9 (*14 on V4+)
+	; 9x is 8x + x.  14x is 16x-2x or 2(8x-x)
+!if ZVERSION>3 {
+	lda operands_hi+0
 	bne +
+}
+	lda operands_lo+0
+	bne ++
 	jsr fatal_error
 	!text "get_object_addr 0 called",13,0
-+	sta obj_ptr+0
++	lda operands_lo+0
+++	sta obj_ptr+0
 	lda operands_hi+0
 	sta obj_ptr+1
 
@@ -3373,6 +3407,7 @@ get_object_addr
 	asl obj_ptr+0
 	rol obj_ptr+1
 
+!if ZVERSION=3 {
 	; finish objIndex * 9 computation (carry is always clear)
 	lda obj_ptr+0
 	adc operands_lo+0
@@ -3380,8 +3415,20 @@ get_object_addr
 	lda obj_ptr+1
 	adc operands_hi+0
 	sta obj_ptr+1
-
-	; convert to final memory address
+} else {
+	; 14x = 2(8x - x); compute 8x-x:
+	lda obj_ptr+0
+	sec
+	sbc operands_lo+0
+	sta obj_ptr+0
+	lda obj_ptr+1
+	sbc operands_hi+0
+	sta obj_ptr+1
+	; now double it
+	asl obj_ptr+0
+	rol obj_ptr+1
+}
+	; convert to final memory address (carry is always clear)
 	lda obj_ptr+0
 	adc obj_base
 	sta obj_ptr+0
