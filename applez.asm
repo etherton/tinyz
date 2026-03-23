@@ -230,6 +230,7 @@ RDBYTE6 = $C000	; bad value to make sure it's patched ($C08C + slot*16)
 ; have to start higher to avoid page crossing
 ; use this area because it swaps as same time as ZP and high memory
 twos_buffer = $12C
+char_buffer = $200
 
 ; returns A zero (and zero flag set) if it's the data part, nonzero if header part
 read_d5_aa
@@ -1273,6 +1274,8 @@ next_insn
 ++
 }
 
+; DEBUG_TRACE = 1
+
 !ifdef DEBUG_TRACE {
 	lda #13
 	jsr print_char
@@ -1942,8 +1945,8 @@ z_random
 	sta operands_hi+1
 	jsr divide
 	; increment result
-	lda operands_hi+0
-	ldx operands_lo+0
+	lda operands_hi+2
+	ldx operands_lo+2
 	inx
 	bne +
 	clc
@@ -1995,6 +1998,8 @@ z_clear_attr
 
 z_get_child
 	+begin_dynamic
+	lda operands_lo+0
+	beq .child_sibling_zero
 	jsr get_object_addr
 	ldy #6 ; child
 	bne +
@@ -2034,6 +2039,9 @@ z_remove_obj
 	jsr remove_obj
 	jmp next_insn
 	; operands_lo+4 is previous operands_lo+0
+	; operands_lo+0 is overwritten
+	; obj_ptr_alt is the object being removed 
+	; obj_ptr is the parent or previous sibling
 remove_obj
 	lda operands_lo+0
 	sta operands_lo+4
@@ -2058,9 +2066,11 @@ remove_obj
 	lda (obj_ptr_alt),Y	
 	ldy ysave
 	sta (obj_ptr),y		; parent's child is our sibling (or our predecessor's sibling is our sibling)
-	ldy #5
+	ldy #5	; sibling
 	lda #0
 	sta (obj_ptr_alt),Y	; zero out our sibling
+	dey
+	sta (obj_ptr_alt),y ; zero out our parent
 .remove_obj_no_parent
 	+end_dynamic
 	rts
@@ -2068,28 +2078,30 @@ remove_obj
 .remove_obj_not_direct
 	sta operands_lo+0
 	jsr get_object_addr
-	ldy #5
+	ldy #5	; sibling
 	bne .remove_obj_check_prev	; always take	
 
 z_insert_obj
-	jsr remove_obj
+	jsr remove_obj	; obj_ptr_alt is now the object we're inserting
 	; set our new parent
 	ldy #4		; parent
 	lda operands_lo+1
 	+begin_dynamic
 	sta (obj_ptr_alt),y
 	; our sibling is parent's child
-	lda operands_lo+1
+	; first, get the parent's child and put it aside in X
 	sta operands_lo+0
 	jsr get_object_addr
 	ldy #6 		; child
 	lda (obj_ptr),y
-	dey			; sibling
-	sta (obj_ptr_alt),Y
-	; parent's child is now us
+	tax
+	; update parent's child to us while we're here
 	lda operands_lo+4
-	iny			; child
 	sta (obj_ptr),Y
+	; write parent's child to our sibling
+	dey			; sibling
+	txa
+	sta (obj_ptr_alt),Y
 	+end_dynamic
 	jmp next_insn
 
@@ -3125,20 +3137,20 @@ z_load
 	lda stack_lo,y
 	tax
 	lda stack_hi,y
-	jmp store_result
+	jmp store_common
 .load_global
 }
 	tay
 	lda globals_lo,y
 	tax
 	lda globals_hi,y
-	jmp store_result
+	jmp store_common
 .load_tos
 	ldy stackptr
 	lda stack_lo-1,y
 	tax
 	lda stack_hi-1,Y
-	jmp store_result
+	jmp store_common
 
 z_print
 	jsr z_print_inline_common
@@ -3841,9 +3853,6 @@ _1opTbl +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_in
 _0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,z_ill,z_ill,z_ill
 
 _varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
-
-char_buffer !fill 32
-
 	; resist temptation to move these to $800 because that's banked RAM on apple 2e.
 	; stack is split into lower and upper bytes so we can treat the Y register as a stack pointer.
 	!align 255, 0
