@@ -185,7 +185,7 @@ stage1
 	sta _80STOREON
 	sta PAGE1	; switch to aux memory
 	sta RAMWRTON
-	; sta RAMRDON ; not necessary now that we do single read pass
+	sta RAMRDON ; not necessary now that we do single read pass
 
 	lda #$10
 	sta data_page
@@ -495,7 +495,7 @@ interleave
 endboot
 	; these are part of boot code but we're tight on space there.
 +	sta RAMWRTOFF
-	; sta RAMRDOFF
+	sta RAMRDOFF
 
 
 !if COLUMNS=80 {
@@ -898,12 +898,11 @@ obj_base = $6E		; 9 bytes before first object slot
 window_current = $71
 output_table = $72
 output_enables = $73
-zshift = $74		; one less than current shift value for ZSCII ($ff for none)
-abbrev = $75		; $FF if not halfway through abbreviation, else 0/32/64
-accum_char = $76
+shift = $74			; if nonzero, shifts next character
+abbrev = $75		; 0 if not halfway through abbreviation, else 32/64/96
+extended = $76
 stackptr = $78		; one past top of stack
 frameptr = $79		; one before first local (since locals are one-based)
-abbrev_ptr = $7A
 default_props_ptr = $7C
 dict_ptr = $7E
 parse_ptr = $80
@@ -1062,12 +1061,14 @@ HEADER = $1000
 	bit RAMRD
 	php
 	sta RAMRDOFF
+	sta RAMWRTOFF
 }
 ; remember old setting and if it was active, re-enable it. destroys flags.
 !macro end_dynamic {
 	plp
 	bpl +
 	sta RAMRDON
+	sta RAMWRTON
 +
 }
 }
@@ -1088,7 +1089,8 @@ increment_zpc_mid
 	lda #$FF
 	rts
 
-	; destroys A
+	; destroys A; uses current values of zpc_hi/zpc_mid
+	; to enable correct ram page and set zptr+1 pointing at it
 update_zptr
 	lda zpc_hi
 	bne .update_zptr_hi
@@ -1097,6 +1099,7 @@ update_zptr
 	bcs .update_zptr_upper
 	adc #>HEADER	; carry clear
 	sta RAMRDOFF
+	sta RAMWRTOFF
 	sta zptr+1
 	rts
 
@@ -1106,7 +1109,7 @@ update_zptr
 	sbc #$A0
 	sta zptr+1
 	sta RAMRDON
-	+bp
+	sta RAMWRTON
 	rts
 	; 100->60, 110->70, 120->80 etc 
 .update_zptr_hi
@@ -1115,7 +1118,7 @@ update_zptr
 	adc #$60
 	sta zptr+1
 	sta RAMRDON
-	+bp
+	sta RAMWRTON
 	rts
 
 zentry
@@ -2376,109 +2379,6 @@ z_get_prop_len
 	lda #0
 	jmp store_common
 
-!macro z_print_string_hi hi,mid,zp {
-	lda #$FF
-	sta zshift
-	sta abbrev
-	sta accum_char
-!ifdef TARGET_65C02 {
--	lda (zp)
-} else {
-	sty .restore_y+1
-	ldy #0
--	lda (zp),Y
-}
-	php		; remember if negative
-	and #$7C
-	lsr
-	lsr
-	jsr printz
-!ifdef TARGET_65C02 {
-	lda (zp)
-} else {
-	lda (zp),Y
-}
-	and #$3
-	sta xsave
-	inc zp
-	bne +
-	inc zp+1
-	inc mid
-	bne +
-	inc hi
-!ifdef TARGET_65C02 {
-+	lda (zp)
-} else {
-+	lda (zp),Y
-}
-	asl
-	rol xsave
-	asl
-	rol xsave
-	asl
-	rol xsave
-	lda xsave
-	jsr printz
-!ifdef TARGET_65C02 {
-	lda (zp)
-} else {
-	lda (zp),y
-}
-	inc zp
-	bne +
-	inc zp+1
-	inc mid
-	bne +
-	inc hi
-+	and #$1F
-	jsr printz
-	plp
-	bpl -
-!ifndef TARGET_65C02 {
-.restore_y
-	ldy #$12
-}
-}
-!macro z_print_string zp {
-	lda #$FF
-	sta zshift
-	sta abbrev
-	sta accum_char
-	sty .restore_y+1
-	ldy #0
--	lda (zp),y
-	php		; remember if negative
-	and #$7C
-	lsr
-	lsr
-	jsr printz
-	lda (zp),y
-	and #$3
-	sta xsave
-	iny
-	bne +
-	inc zp+1
-+	lda (zp),y
-	asl
-	rol xsave
-	asl
-	rol xsave
-	asl
-	rol xsave
-	lda xsave
-	jsr printz
-	lda (zp),Y
-	iny
-	bne +
-	inc zp+1
-+	and #$1F
-	jsr printz
-	plp
-	bpl -
-.restore_y
-	ldy #$12
-}
-
 z_print_obj
 	jsr print_obj
 	jmp next_insn
@@ -2500,7 +2400,45 @@ print_obj
 	+end_dynamic
 print_obj_ptr
 	+begin_dynamic
-	+z_print_string obj_ptr
+	lda #0
+	sta shift
+	sta abbrev
+	sta extended
+	tya
+	pha
+	ldy #0
+-	lda (obj_ptr),y
+	php		; remember if negative
+	and #$7C
+	lsr
+	lsr
+	jsr printz
+	lda (obj_ptr),y
+	and #$3
+	sta xsave
+	iny
+	bne +
+	inc obj_ptr+1
++	lda (obj_ptr),y
+	asl
+	rol xsave
+	asl
+	rol xsave
+	asl
+	rol xsave
+	lda xsave
+	jsr printz
+	lda (obj_ptr),Y
+	iny
+	bne +
+	inc obj_ptr+1
++	and #$1F
+	jsr printz
+	plp
+	bpl -
+.restore_y
+	pla
+	tay
 	+end_dynamic
 	rts
 
@@ -2515,120 +2453,143 @@ z_print_addr
 	jsr print_obj_ptr
 	jmp next_insn
 
-	; stores a packed address in operands+0 in four zp slots
-!macro get_mem_addr_packed hi,mid,ptr {
+operand_zero_to_zpc
 	lda operands_lo+0
-	sta ptr
+	sta zptr
 	lda operands_hi+0
-	sta mid
+	sta zpc_mid
 	lda #0
-	sta hi
-	asl ptr
-	rol mid
-	rol hi
+	sta zpc_hi
+	asl zptr
+	rol zpc_mid
+	rol zpc_hi
 !if ZVERSION>3 {
-	asl ptr
-	rol mid
-	rol hi
+	asl zptr
+	rol zpc_mid
+	rol zpc_hi
 !if ZVERSION=8 {
-	asl ptr
-	rol mid
-	rol hi
+	asl zptr
+	rol zpc_mid
+	rol zpc_hi
 }
 }
-	; carry always clear because zpc_hi cannot overflow
-	lda mid
-	adc #>HEADER
-	sta ptr+1
-}
+	jsr update_zptr
+	rts
 
 z_print_paddr
-	+get_mem_addr_packed obj_hi,obj_mid,obj_ptr
-	+z_print_string_hi obj_hi,obj_mid,obj_ptr
+	lda zpc_hi
+	pha
+	lda zpc_mid
+	pha
+	lda zptr
+	pha
+	jsr operand_zero_to_zpc
+	jsr z_print_inline_common
+	pla
+	sta zptr
+	pla
+	sta zpc_mid
+	pla
+	sta zpc_hi
+	jsr update_zptr
 	jmp next_insn
 
 	; destroys A,X
 	; 5, 6, N>>4, N encodes any character not in dictionary
 printz
 	ldx abbrev
-	bpl .print_abbrev
-	ldx accum_char
-	bmi .not_accum
-	asl accum_char
-	asl accum_char
-	asl accum_char
-	asl accum_char
-	asl accum_char
-	ora accum_char
-	sta accum_char
-	cmp #$20
-	bcc .print_shift_ret
-	ldx #$ff
-	stx accum_char
+	bne .print_abbrev
+	ldx extended
+	beq +
+	cpx #$FF
+	php
+	asl extended
+	asl extended
+	asl extended
+	asl extended
+	asl extended
+	ora extended
+	sta extended
+	plp
+	beq .print_shift_ret
+	ldx #0
+	stx extended
 	jmp print_char
-.not_accum
-	cmp #6
++	cmp #0
+	bne +
+	lda #32
+	jmp print_char
++	cmp #6
 	bcs .print_tabled
 	cmp #5
 	beq .print_shift_2
 	cmp #4
 	beq .print_shift_1
-	cmp #1
-	bcs .abbrev
-	; print a space
-	lda #$FF
-	sta zshift
-	lda #32
-	jmp print_char
+	; what remains must be an abbreviation. carry is clear.
+	asl
+	asl
+	asl
+	asl
+	asl
+	sta abbrev	; 32/64/96
+	rts
 .print_tabled
-	adc zshift 	; zshift is one less because carry always set
+	clc
+	adc shift
 	tax
-	lda #$FF
-	sta zshift
+	lda #0
+	sta shift
 	lda zalphabet-6,x
-	beq .escape
+	beq .begin_extended
+	cmp #127
+	bcc +
+	+bp
++
 	jmp print_char
 .print_shift_1
-	lda #(26-1)
+	lda #26
 	+skip_imm
 .print_shift_2
-	lda #(52-1)
-	sta zshift
+	lda #52
+	sta shift
 .print_shift_ret
 	rts
-.abbrev
-	sbc #1		; carry always set
-	asl
-	asl
-	asl
-	asl
-	asl
-	sta abbrev	; 0/32/64
+.begin_extended
+	lda #$FF
+	sta extended
 	rts
 .print_abbrev
 	clc
 	adc abbrev
-	asl
+	sbc #31
+	asl				; double to get word index
 	tax
+	lda obj_ptr+1
+	pha
+	lda obj_ptr
+	pha
+	+begin_dynamic
 abbrev_load
 	lda $1234,x
-	sta obj_ptr_alt+1
+	sta obj_ptr+1
 	inx
 abbrev_load2
 	lda $1234,x
-	sta obj_ptr_alt
+	+end_dynamic
+	sta obj_ptr
 	; abbreviations are word addresses
-	asl obj_ptr_alt
-	rol obj_ptr_alt+1
-	lda obj_ptr_alt+1
+	asl obj_ptr
+	rol obj_ptr+1
+	lda obj_ptr+1
 	adc #>HEADER
-	sta obj_ptr_alt+1
-	+z_print_string obj_ptr_alt
-	lda #$ff
-	sta zshift	; abbreviation might have had padding character
-	rts
-.escape
-	sta accum_char
+	sta obj_ptr+1
+	jsr print_obj_ptr
+	lda #0
+	sta shift	; abbreviation might have had padding character
+	pla
+	sta obj_ptr
+	pla
+	sta obj_ptr+1
 	rts
 
 	; loads must be in contiguous dynamic+static memory
@@ -3197,10 +3158,10 @@ z_print
 	jmp next_insn
 
 z_print_inline_common
-	lda #$FF
-	sta zshift
+	lda #0
+	sta shift
 	sta abbrev
-	sta accum_char
+	sta extended
 	+zeroy
 -	+next_insn_byte_y0
 	cmp #$80
@@ -3229,7 +3190,6 @@ z_print_inline_common
 	plp
 	bcc -
 	rts
-
 
 	; all call instructions route through here, x=1..7
 	; the current frame's locals are kept in globals array to simplify decode logic
@@ -3286,7 +3246,7 @@ z_call_vs
 	stx frameptr
 	inx
 
-	+get_mem_addr_packed zpc_hi,zpc_mid,zptr
+	jsr operand_zero_to_zpc
 	+zeroy
 	+next_insn_byte_y0
 	; get local count in A
