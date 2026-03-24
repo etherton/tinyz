@@ -149,7 +149,7 @@ Array mytable -> 256;
       .no_desc;
       f();
       print " Expected ", expected, "; got ", actual, "^^";
-      @quit;
+      !@quit;
    } else {
        p();
    }
@@ -170,7 +170,7 @@ Array mytable -> 256;
        @print_paddr op;
        print " ", a, ")";
        print " Expected ", expected, "; got ", actual, "^";
-       @quit;
+       !@quit;
     } else {
         p();
     }
@@ -188,7 +188,7 @@ Array mytable -> 256;
        @print_paddr op;
        print " ", b, ")";
        print " Expected ", expected, "; got ", actual, "^";
-       @quit;
+       !@quit;
     } else {
         p();
     }
