@@ -2183,12 +2183,18 @@ prop_common
 	sty mulTemp	
 	asl
 	rol mulTemp			; damn you czech testing really long object names!
-	adc #1
 	adc obj_ptr
 	sta obj_ptr
 	lda obj_ptr+1
 	adc mulTemp
 	sta obj_ptr+1
+	inc obj_ptr
+	bne +
+	inc obj_ptr+1
++	lda obj_ptr+1
+	sec
+	sbc #>HEADER
+	sta obj_mid
 	rts
 
 	; on input, prop_common must have been called (obj_ptr valid), and operands+1 is property index
@@ -2239,11 +2245,15 @@ find_property
 	sta obj_ptr
 	bcc find_property
 	inc obj_ptr+1
-	bne find_property
+	bne find_property	; always taken
 .matched_property
 	tya
 	+lsr5
 	tay
+	lda obj_ptr+1
+	sec
+	sbc #>HEADER
+	sta obj_mid
 	iny
 	rts			; zero flag clear
 .property_not_found
