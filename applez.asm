@@ -1933,16 +1933,16 @@ negate_operand
 	rts
 
 z_random
-	lda operands_hi+1
+	lda operands_hi+0
 	bmi .seed_random
 	bpl .random_range
-	ldx operands_lo+1
+	ldx operands_lo+0
 	bne .random_range
 	; random(0) should seed based on system randomness.
 	eor #$FF
 .seed_random
 	sta seed+1
-	ldx operands_lo+1
+	ldx operands_lo+0
 	stx seed
 	lda #0
 	ldx #0
@@ -3358,16 +3358,22 @@ z_push
 	sta stack_hi,Y
 	jmp next_insn
 
+	; var(operands[0].getS()) = pop() (stack[--stackptr])
+	; so if operands[0] is TOS, we use its current value *prior* to popping it
+	; this translates to stack[stackptr-1] = stack[--stackptr],
+	; which ultimately, turns into just --stackptr (leaving contents of stack untouched)
 z_pull
 	dec stackptr
+	lda operands_lo+0
+	beq +
 	ldy stackptr
 	lda stack_lo,Y
 	tax
 	lda stack_hi,Y
 	sta store_hi
 	lda operands_lo+0
-	jsr store_result_2
-	jmp next_insn
+	jsr store_result_3
++	jmp next_insn
 
 z_set_window
 	lda operands_lo+0
@@ -3740,12 +3746,24 @@ divide
 	jsr negate_operand
 +	rts
 
+
+
+	; var(operands[0].getS()) = operands[1];
+	; meaning, stack pointer doesn't (further) change if operands[0] is 0.
 z_store
 	lda operands_hi+1
 	sta store_hi
 	ldx operands_lo+1
 	lda operands_lo+0
-	jsr store_result_2
+	beq store_to_tos_no_change
+	jsr store_result_3
+	jmp next_insn
+store_to_tos_no_change
+	ldy stackptr
+	lda store_hi
+	sta stack_hi-1,Y
+	txa
+	sta stack_lo-1,y
 	jmp next_insn
 
 store_common
@@ -3760,6 +3778,7 @@ store_result
 store_result_2
 	cmp #$00
 	beq .store_tos
+store_result_3
 !ifndef FRAME_USES_GLOBALS {
 	cmp #$10
 	bcs .store_global
@@ -3916,7 +3935,7 @@ _2opTbl +table32 z_ill,z_je,z_jl,z_jg,z_dec_chk,z_inc_chk,z_jin,z_test,z_or,z_an
 
 _1opTbl +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_inc,z_dec,z_print_addr,z_ill,z_remove_obj,z_print_obj,z_ret,z_jump,z_print_paddr,z_load,z_not
 
-_0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,z_ill,z_ill,z_ill
+_0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,branch_passed,z_ill,z_ill
 
 _varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
 	; resist temptation to move these to $800 because that's banked RAM on apple 2e.
