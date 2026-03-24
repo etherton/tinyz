@@ -2497,7 +2497,9 @@ print_obj
 	txa
 	adc #>HEADER
 	sta obj_ptr+1
+	+end_dynamic
 print_obj_ptr
+	+begin_dynamic
 	+z_print_string obj_ptr
 	+end_dynamic
 	rts
@@ -2510,7 +2512,6 @@ z_print_addr
 	adc #>HEADER
 	sta obj_ptr+1
 	; obj_ptr contains address in dynamic/static memory
-z_print_common
 	jsr print_obj_ptr
 	jmp next_insn
 
