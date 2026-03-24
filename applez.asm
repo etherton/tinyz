@@ -1263,7 +1263,7 @@ zentry
 ; location and execute it from there. (eventually)
 	; !align 255,0
 next_insn
-!ifndef TARGET_APPLE2PLUS {
+!ifdef BENCHMARK {
 	lda $c019
 	bpl +			; not in vbl
 	ldx vblprev
@@ -2657,6 +2657,7 @@ store_addr
 	+end_dynamic
 	jmp next_insn
 
+	; return word of memory at operands[0] + operands[1]*2
 z_loadw
 	asl operands_lo+1
 	rol operands_hi+1
