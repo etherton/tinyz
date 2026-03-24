@@ -1,5 +1,5 @@
 all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3 advent.do advent.po demogame.do \
-	sieve_2p.do sieve_2e.do sieve_2ee.do cloak.do zork.do dejavu.do
+	sieve_2p.do sieve_2e.do sieve_2ee.do cloak.do zork.do dejavu.do hibernated.do czech.do
 
 tinyzcd: opcodes.h header.h tinyz.y debug.h debug.cpp Makefile
 	bison --debug tinyz.y -v -o tinyz.debug.tab.cpp && clang++ -DDEBUG_MEM=1 -g -std=c++17 tinyz.debug.tab.cpp debug.cpp -o tinyzcd
@@ -90,3 +90,12 @@ demogame.do: demogame.z3 applez_2e.bin Makefile makedsk
 
 dejavu.do: dejavu.z3 applez_2e.bin Makefile makedsk
 	./makedsk applez_2e.bin dejavu.z3 -o dejavu.do
+
+hibernated.do: hibernated1.z3 applez_2e.bin Makefile makedsk
+	./makedsk applez_2e.bin hibernated1.z3 -o hibernated.do
+
+czech.z3: czech.inf
+	inform -v3 czech.inf
+
+czech.do: czech.z3 applez_2e.bin Makefile makedsk
+	./makedsk applez_2e.bin czech.z3 -o czech.do
