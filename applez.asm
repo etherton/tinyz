@@ -1885,21 +1885,21 @@ z_mul
 	rts
 
 .z_mul_signed
-	ldx #0
+	ldx #1
 	stx mulSign
+	ldx #0
 	lda operands_hi+0
 	bpl +
 	jsr negate_operand
-	inc mulSign
+	dec mulSign
 +	inx
 	lda operands_hi+1
 	bpl +
 	jsr negate_operand
-	inc mulSign
+	dec mulSign
 +	jsr .z_mul_16x16u
-	lda #1
-	bit mulSign
-	beq +
+	lda mulSign
+	bne +
 	ldx #2
 	jsr negate_operand
 +	lda operands_hi+2
@@ -3680,8 +3680,22 @@ default_print_char
 	rts	
 	
 	; divide operands+0 by operands+1, quotient in operands+0, remainder in operands+2
+	; if signs are different, quotient is negative. remainder always has sign of the quotient.
 divide
 	lda #0
+	sta mulSign
+	lda operands_hi+0
+	bpl +
+	inc mulSign			; quotient is negative
+	ldx #0
+	jsr negate_operand
++	lda operands_hi+1
+	bpl +
+	inc mulSign			; dividend is negative
+	inc mulSign
+	ldx #1
+	jsr negate_operand
++	lda #0
 	sta operands_lo+2	; rem
 	sta operands_hi+2	; rem+1
 	ldx #16
@@ -3701,7 +3715,20 @@ divide
 	inc operands_lo+0	; num1	
 +	dex
 	bne -
-	rts
+	lda mulSign
+	; dividend is negative if signs were different (mulSign is 1 or 2)
+	beq +
+	cmp #3
+	beq +
+	ldx #0
+	jsr negate_operand
+	; remainder takes the original sign of the quotient
++	lda mulSign
+	and #1
+	beq +
+	ldx #2
+	jsr negate_operand
++	rts
 
 z_store
 	lda operands_hi+1
