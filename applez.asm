@@ -2178,19 +2178,18 @@ prop_common
 	!text ": object table addr",13,0
 }
 	; get object length byte
-!ifdef TARGET_65C02 {
-	lda (obj_ptr)
-} else {
 	ldy #0
 	lda (obj_ptr),y
-}
+	sty mulTemp	
 	asl
-	adc #1		; this won't handle extremely long object names
+	rol mulTemp			; damn you czech testing really long object names!
+	adc #1
 	adc obj_ptr
 	sta obj_ptr
-	bcc +
-	inc obj_ptr+1
-+	rts
+	lda obj_ptr+1
+	adc mulTemp
+	sta obj_ptr+1
+	rts
 
 	; on input, prop_common must have been called (obj_ptr valid), and operands+1 is property index
 	; on return, y is property length or zero if not found; obj_ptr points at the property payload.
@@ -2318,10 +2317,10 @@ z_get_next_prop
 	; if (!prop || !pv || (pv & 31) < prop) return byte2word(pv & 31);
 	and #31
 	beq .found_next_prop ; zero terminates list
-	ldy operands_lo+0
+	ldy operands_lo+1
 	beq .found_next_prop ; requesting next property of zero always returns first if any
 	; (pv & 31) < prop?
-	cmp operands_lo+0
+	cmp operands_lo+1
 	bcc .found_next_prop
 	; pa += 2 + (pv>>5);
 	txa
