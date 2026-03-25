@@ -2355,7 +2355,8 @@ const uint8_t* print_encoded_string(const uint8_t *src,void (*pr)(char ch)) {
 	return src;
 }
 
-static char captured_string[256];
+const unsigned maxString = 512;
+static char captured_string[maxString];
 static uint8_t captured_string_length;
 static void capture_string(char ch) {
 	captured_string[captured_string_length++] = ch;
@@ -3060,7 +3061,6 @@ int yylex_() {
 		}
 		case '`':
 		case '"': {
-			const unsigned maxString = 512;
 			char sval[maxString];
 			unsigned offset = 0;
 			char term = yych;
@@ -3087,6 +3087,8 @@ NEWLINE:
 						yych='"';
 					sval[offset++] = yych;
 				}
+				else
+					yyerror("String too long, would be truncated");
 			}
 			yynext();
 			sval[offset++] = 0;
