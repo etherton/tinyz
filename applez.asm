@@ -33,9 +33,46 @@ RAMWRTON	= $C005 ; write enable aux memory
 _80COLON	= $C00D
 AUXCHARSET	= $C00F
 RAMRD		= $C013	; bit 7 on if AUX memory active from $200-$BFFF
+RAMWRT		= $C014
 
 PAGE1		= $C054
 PAGE2		= $C055
+
+!ifdef TAGET_APPLE2SPLUS {
+!macro save_ram_state {
+}
+!macro restore_ram_state {
+}
+!macro begin_dynamic {
+}
+!macro end_dynamic {
+}
+} else {
+; begin dynamic memory reference; remember if we were using alt memory, then switch to main
+; modifies N/Z/V flags
+!macro save_ram_state {
+	bit RAMRD
+	php
+}
+!macro restore_ram_state {
+	plp
+	bpl +
+	sta RAMRDON
+	sta RAMWRTON
++
+}
+
+!macro begin_dynamic {
+	+save_ram_state
+	sta RAMRDOFF
+	sta RAMWRTOFF
+}
+; remember old setting and if it was active, re-enable it. destroys flags.
+!macro end_dynamic {
+	+restore_ram_state
+}
+}
+
 
 ; bge <=> bcs
 ; blt <=> bcc
@@ -500,7 +537,7 @@ endboot
 
 !if COLUMNS=80 {
 	sta _80COLON
-	sta _80STOREON
+	sta _80STOREON	; make sure this is on if story is small
 }
 	sta AUXCHARSET
 
@@ -673,6 +710,7 @@ scroll
 
 	; destroys A
 print_char_lower
+	+save_ram_state
 	sty ysave
 !if COLUMNS=80 {
 	stx xsave
@@ -720,6 +758,7 @@ print_char_lower
 	ldx xsave
 }
 	ldy ysave
+	+restore_ram_state
 	rts
 
 clear
@@ -857,7 +896,9 @@ read_line
 	bcs .notupper2
 	adc #32
 .notupper2
+	+begin_dynamic
 	sta (text_ptr),y
+	+end_dynamic
 	jmp .update_cursor
 .backsp
 	cpy #0
@@ -872,7 +913,9 @@ read_line
 	jsr print_char
 	lda #0
 	iny
+	+begin_dynamic
 	sta (text_ptr),y
+	+end_dynamic
 	rts
 
 ; Portable code ZP use starts at $40
@@ -1041,6 +1084,8 @@ HEADER = $1000
 }
 
 !macro next_insn_byte_y0 {
+	;jsr update_zptr
+	;ldy #0
 	lda (zptr),y
 	inc zptr
 	bne +
@@ -1049,29 +1094,6 @@ HEADER = $1000
 }
 }
 
-!ifdef TAGET_APPLE2SPLUS {
-!macro begin_dynamic {
-}
-!macro end_dynamic {
-}
-} else {
-; begin dynamic memory reference; remember if we were using alt memory, then switch to main
-; modifies N/Z/V flags
-!macro begin_dynamic {
-	bit RAMRD
-	php
-	sta RAMRDOFF
-	sta RAMWRTOFF
-}
-; remember old setting and if it was active, re-enable it. destroys flags.
-!macro end_dynamic {
-	plp
-	bpl +
-	sta RAMRDON
-	sta RAMWRTON
-+
-}
-}
 	; preserves A/X/Y
 	; if high byte of zptr is $C0, we need to update the TLB
 increment_zpc_mid
@@ -1079,14 +1101,12 @@ increment_zpc_mid
 	bne +
 	inc zpc_hi
 +	inc zptr+1
-	sta .update_zpc_restorea+1
+	pha
 	lda zptr+1
 	cmp #$C0
-	bne .update_zpc_restorea
-.update_zptr
+	bne +
 	jsr update_zptr
-.update_zpc_restorea
-	lda #$FF
++	pla
 	rts
 
 	; destroys A; uses current values of zpc_hi/zpc_mid
@@ -2398,8 +2418,10 @@ print_obj
 	adc #>HEADER
 	sta obj_ptr+1
 	+end_dynamic
+
+	; obj_ptr points at string to display. destroys A.
+	; this function needs to be re-entrant
 print_obj_ptr
-	+begin_dynamic
 	lda #0
 	sta shift
 	sta abbrev
@@ -2407,19 +2429,24 @@ print_obj_ptr
 	tya
 	pha
 	ldy #0
--	lda (obj_ptr),y
-	php		; remember if negative
+-	+begin_dynamic
+	lda (obj_ptr),y
+	sta $ff
+	+end_dynamic
 	and #$7C
 	lsr
 	lsr
 	jsr printz
-	lda (obj_ptr),y
+	lda $ff
 	and #$3
+	; xsave is only used locally before we call printz again
 	sta xsave
-	iny
+	inc obj_ptr
 	bne +
 	inc obj_ptr+1
-+	lda (obj_ptr),y
++	+begin_dynamic
+	lda (obj_ptr),y
+	+end_dynamic
 	asl
 	rol xsave
 	asl
@@ -2428,18 +2455,18 @@ print_obj_ptr
 	rol xsave
 	lda xsave
 	jsr printz
+	+begin_dynamic
 	lda (obj_ptr),Y
-	iny
+	+end_dynamic
+	inc obj_ptr
 	bne +
 	inc obj_ptr+1
 +	and #$1F
 	jsr printz
-	plp
+	lda $ff
 	bpl -
-.restore_y
 	pla
 	tay
-	+end_dynamic
 	rts
 
 z_print_addr
@@ -2496,6 +2523,7 @@ z_print_paddr
 
 	; destroys A,X
 	; 5, 6, N>>4, N encodes any character not in dictionary
+	; this function needs to be re-entrant for abbreviations to work.
 printz
 	ldx abbrev
 	bne .print_abbrev
@@ -2541,10 +2569,7 @@ printz
 	sta shift
 	lda zalphabet-6,x
 	beq .begin_extended
-	cmp #127
-	bcc +
-	+bp
-+
+
 	jmp print_char
 .print_shift_1
 	lda #26
@@ -2579,7 +2604,7 @@ abbrev_load2
 	sta obj_ptr
 	; abbreviations are word addresses
 	asl obj_ptr
-	rol obj_ptr+1
+	rol obj_ptr+1	; carry always clear
 	lda obj_ptr+1
 	adc #>HEADER
 	sta obj_ptr+1
@@ -3552,6 +3577,8 @@ z_show_status
 	jmp next_insn
 
 show_status
+	jsr flush_main_window
+
 	lda #<print_char_upper
 	sta print_char+1
 	lda #>print_char_upper
@@ -3628,6 +3655,8 @@ buffered_print_char
 	cmp #$0D
 	beq .break
 	cmp #$20
+	beq .break
+	cmp #'.'
 	beq .break
 	sty ysave
 	ldy chars_stored
