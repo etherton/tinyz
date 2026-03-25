@@ -222,7 +222,6 @@ stage1
 	sta _80STOREON
 	sta PAGE1	; switch to aux memory
 	sta RAMWRTON
-	sta RAMRDON ; not necessary now that we do single read pass
 
 	lda #$10
 	sta data_page
@@ -267,7 +266,7 @@ RDBYTE6 = $C000	; bad value to make sure it's patched ($C08C + slot*16)
 ; have to start higher to avoid page crossing
 ; use this area because it swaps as same time as ZP and high memory
 twos_buffer = $12C
-char_buffer = $200
+char_buffer = $100
 
 ; returns A zero (and zero flag set) if it's the data part, nonzero if header part
 read_d5_aa
@@ -2429,24 +2428,21 @@ print_obj_ptr
 	tya
 	pha
 	ldy #0
--	+begin_dynamic
-	lda (obj_ptr),y
-	sta $ff
-	+end_dynamic
+	+begin_dynamic
+-	lda (obj_ptr),y
+	php
 	and #$7C
 	lsr
 	lsr
 	jsr printz
-	lda $ff
+	lda (obj_ptr),y
 	and #$3
 	; xsave is only used locally before we call printz again
 	sta xsave
 	inc obj_ptr
 	bne +
 	inc obj_ptr+1
-+	+begin_dynamic
-	lda (obj_ptr),y
-	+end_dynamic
++	lda (obj_ptr),y
 	asl
 	rol xsave
 	asl
@@ -2455,16 +2451,15 @@ print_obj_ptr
 	rol xsave
 	lda xsave
 	jsr printz
-	+begin_dynamic
 	lda (obj_ptr),Y
-	+end_dynamic
 	inc obj_ptr
 	bne +
 	inc obj_ptr+1
 +	and #$1F
 	jsr printz
-	lda $ff
+	plp
 	bpl -
+	+end_dynamic
 	pla
 	tay
 	rts
