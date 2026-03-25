@@ -369,9 +369,9 @@ int main(int argc,char **argv) {
 	printf("abbreviations: %x\n",story->abbreviationsAddr.getU());
 	if (report & 16) {
 		for (int i=0; i<96; i++) {
-			printf("%d:[",i);
+			printf("Abbreviate \"");
 			print_zscii((uint8_t*)story,abbreviations[i].getU2());
-			printf("]\n");
+			printf("\"; ! text at %06x\n",abbreviations[i].getU2());
 		}
 	}
 	printf("story length: %x (%dk)\n",story->storyLength.getU() * storyScales[story->version],
