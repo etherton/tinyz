@@ -136,18 +136,19 @@ BANKB_ROMRD_WE	= $C089
 BANKB_ROMRD_WP	= $C08A
 BANKB_RAMRD_WE	= $C08B
 
+LOAD_ADDR = $D000
 
-	*=$E000		; actually loads at $800 hence the magic numbers in .copy below
+	*=LOAD_ADDR		; actually loads at $800 hence the magic numbers in .copy below
 	!byte 3		; this is the sector to stop loading at (rest of our code and lookup tables)
 
 	sta BANKA_RAMRD_WE	; +1
 	sta BANKA_RAMRD_WE	; +4
 
-	; We load the first 4k track at $800, and immediately relocate everything to $e000
+	; We load the first 4k track at $800, and immediately relocate everything to LOAD_ADDR
 	; y is zero
 .copy
 	lda $800,Y			; +7
-	sta $E000,Y			; +10
+	sta LOAD_ADDR,Y			; +10
 	iny
 	bne .copy
 	inc $809
@@ -169,14 +170,15 @@ stage1
 
 	; read rest of track with our faster code
 	sty track
-	lda #$E0
+	lda #>LOAD_ADDR
 	sta data_page
 	lda #$F8				; already read first three sectors
 	sta sector_map_lo
 
 	jsr read_rest_track_1
 
-	; read second half of interpreter
+	; read rest of interpreter
+	jsr read_next_track
 	jsr read_next_track
 
 	; read first track of story to get entire size
@@ -1279,7 +1281,61 @@ zentry
 ; (branch offset)
 ; (text to print)
 
+; DEBUG_TRACE = 1
 
+!ifdef DEBUG_TRACE {
+; obj_ptr points at table, a contains opcode to print
+print_opcode_data
+	+bp
+	stx operand_count
+	pha
+	tay
+	iny
+	iny
+	lda (obj_ptr),y			; get offset of next string
+	sec
+	dey
+	sbc (obj_ptr),Y
+	tax						; x contains length
+	lda (obj_ptr),Y			; get offset of this string again
+	ldy #0
+	clc
+	adc (obj_ptr),Y			; add the table size to get first character
+	tay
+-	lda (obj_ptr),Y
+	jsr print_char
+	iny
+	dex
+	bne -
+	lda #32
+	jsr print_char
+	ldy #0
+	cpy operand_count
+	beq +
+-	lda operands_hi,Y
+	jsr print_hex_byte
+	lda operands_lo,Y
+	jsr print_hex_byte
+	iny
+	cpy operand_count
+	beq +
+	lda #','
+	jsr print_char
+	jmp -
++	lda #32
+	jsr print_char
+	+zeroy
+	pla
+	rts
+
+!macro print_opcode tblName {
+	ldy #<tblName
+	sty obj_ptr
+	ldy #>tblName
+	sty obj_ptr+1
+	jsr print_opcode_data
+}
+}
 
 ; if an instruction would cross a non-contiguous 4k boundary (rare), we copy the entire instruction into a temporary
 ; location and execute it from there. (eventually)
@@ -1296,9 +1352,6 @@ next_insn
 +	sta vblprev
 ++
 }
-
-; DEBUG_TRACE = 1
-
 !ifdef DEBUG_TRACE {
 	lda #13
 	jsr print_char
@@ -1308,6 +1361,8 @@ next_insn
 	jsr print_hex_byte
 	lda zptr
 	jsr print_hex_byte
+	lda #32
+	jsr print_char
 }
 	+zeroy
 	+next_insn_byte_y0
@@ -1355,6 +1410,9 @@ _2op_v_v
 ._2op_common_2
 	lda zinsn
 	and #$1F
+!ifdef DEBUG_TRACE {
+	+print_opcode _2opNames
+}
 	+dispatch32 _2opTbl
 _2op_var
 	jsr decode_types
@@ -1363,6 +1421,9 @@ _vop
 	jsr decode_types
 	lda zinsn
 	and #$1F
+!ifdef DEBUG_TRACE {
+	+print_opcode _varNames
+}
 	+dispatch32 _varTbl
 
 _1op_large
@@ -1379,11 +1440,18 @@ _1op_variable
 ._1op_common
 	lda zinsn
 	and #$f
+!ifdef DEBUG_TRACE {
+	+print_opcode _1opNames
+}
 	+dispatch16 _1opTbl
 
 _0op
 	lda zinsn
 	and #$f
+!ifdef DEBUG_TRACE {
+	ldx #0
+	+print_opcode _0opNames
+}
 	+dispatch16 _0opTbl
 
 decode_types
@@ -1422,28 +1490,12 @@ operand_small
 	sta operands_hi,x
 	+next_insn_byte_y0
 	sta operands_lo,x
-
-!ifdef DEBUG_TRACE {
-	jsr debug_print
-	!text " op ",0
-	txa
-	jsr print_hex_byte
-	jsr debug_print
-	!text " is ",0
-	jsr print_operand
-}
 	inx
 	rts
 
 	; operand_variable destroys y so it needs to be reloaded from znext
 	; if there are more types to decode
 operand_variable	
-!ifdef DEBUG_TRACE {
-	jsr debug_print
-	!text " op ",0
-	txa
-	jsr print_hex_byte
-}
 	+next_insn_byte_y0
 	cmp #$00
 	beq .read_tos
@@ -1457,23 +1509,9 @@ operand_variable
 	sta operands_hi,x
 	lda stack_lo,Y
 	sta operands_lo,x
-
-!ifdef DEBUG_TRACE {
-	jsr debug_print
-	!text " is local ",0
-	tya
-	clc
-	sbc frameptr
-	jsr print_hex_byte
-	lda #'='
-	jsr print_char
-	jsr print_operand
-}
 	+zeroy
-
 	inx
 	rts
-
 .read_global
 }
 	tay
@@ -1481,18 +1519,6 @@ operand_variable
 	sta operands_hi,X
 	lda globals_lo,Y
 	sta operands_lo,x
-
-!ifdef DEBUG_TRACE {
-	jsr debug_print
-	!text " is global ",0
-	tya
-	sec
-	sbc #$10
-	jsr print_hex_byte
-	lda #'='
-	jsr print_char
-	jsr print_operand
-}
 	+zeroy
 	inx
 	rts
@@ -1505,24 +1531,8 @@ operand_variable
 	lda stack_lo,Y
 	sta operands_lo,X
 	+zeroy
-
-!ifdef DEBUG_TRACE {
-	jsr debug_print
-	!text " is TOS=",0
-	jsr print_operand
-}
 	inx
 	rts
-
-!ifdef DEBUG_TRACE {
-print_operand
-	lda operands_hi,X
-	jsr print_hex_byte
-	lda operands_lo,X
-	jsr print_hex_byte
-	lda #32
-	jmp print_char
-}
 
 z_ill
 	lda zinsn
@@ -1648,7 +1658,7 @@ z_rfalse
 	dey
 	sty stackptr
 
-!ifdef DEBUG_TRACE {
+!ifdef nDEBUG_TRACE {
 	jsr debug_print
 	!text "sp value during return is ",0
 	lda stackptr
@@ -3238,7 +3248,7 @@ z_call_vs
 	+next_insn_byte_y0		; get storage location
 	sta mulTemp				; set it aside for now
 
-!ifdef DEBUG_TRACE {
+!ifdef nDEBUG_TRACE {
 	jsr debug_print
 	!text "call_vs sp is ",0
 	lda stackptr
@@ -3651,8 +3661,8 @@ buffered_print_char
 	beq .break
 	cmp #$20
 	beq .break
-	;cmp #'.'
-	;beq .break
+	cmp #','
+	beq .break
 	sty ysave
 	ldy chars_stored
 	sta char_buffer,Y
@@ -3776,20 +3786,16 @@ store_result_3
 	sta stack_lo,y
 
 !ifdef DEBUG_TRACE {
-	jsr debug_print
-	!text "store ",0
 	lda stack_hi,y
 	jsr print_hex_byte
 	lda stack_lo,Y
 	jsr print_hex_byte
 	jsr debug_print
-	!text " to local ",0
+	!text "->L",0
 	tya
 	clc	; need to subtract an additional 1 to get local index back
 	sbc frameptr
 	jsr print_hex_byte
-	lda #$d
-	jsr print_char
 }
 	rts
 .store_global
@@ -3801,20 +3807,16 @@ store_result_3
 	sta globals_lo,y
 
 !ifdef DEBUG_TRACE {
-	jsr debug_print
-	!text "store ",0
 	lda globals_hi,y
 	jsr print_hex_byte
 	lda globals_lo,Y
 	jsr print_hex_byte
 	jsr debug_print
-	!text " to global ",0
+	!text "->G",0
 	tya
 	sec
 	sbc #$10
 	jsr print_hex_byte
-	lda #$d
-	jsr print_char
 }
 	rts
 .store_tos
@@ -3827,14 +3829,12 @@ store_result_3
 	beq +
 
 !ifdef DEBUG_TRACE {
-	jsr debug_print
-	!text "store ",0
 	lda stack_hi,y
 	jsr print_hex_byte
 	lda stack_lo,Y
 	jsr print_hex_byte
 	jsr debug_print
-	!text " to TOS",0
+	!text "->TOS",0
 }
 	rts
 + 	jsr fatal_error
@@ -3889,6 +3889,24 @@ debug_print
 	rts
 ;}
 
+!ifdef DEBUG_TRACE {
+_2opNames 
+	!byte 34,0,1,3,5,7,14,21,24,28,30,33,42,50,60,65,75
+	!byte 80,85,93,106,119,122,125,128,131,133,135,137,139,141,143,145,147
+	!text "0jejljgdec_chkinc_chkjintestorandtest_attrset_attrclear_attrstoreinsert_objloadwloadbget_propget_prop_addr"
+	!text "get_next_propaddsubmuldiv25262728293031"
+_1opNames
+	!byte 18,0,2,13,22,32,44,47,50,60,61,71,80,83,87,98,102,105
+	!text "jzget_siblingget_childget_parentget_prop_lenincdecprint_addr9remove_objprint_objretjumpprint_paddrloadnot"
+_0opNames
+	!byte 18,0,5,11,16,24,27,31,38,45,55,58,62,70,81,87,89,91
+	!text "rtruerfalseprintprint_retnopsaverestorerestartret_poppedpopquitnew_lineshow_statusverify3031"
+_varNames
+	!byte 14,0,7,13,19,27,32,42,51,57,61,65,77,87
+	!text "call_vsstorewstorebput_propsreadprint_charprint_numrandompush"
+	!text "pullsplit_windowset_window"
+}
+
 	!align 255, 512 - 100 - (26*3) - 96
 dec2hex 
 	!byte $00,$01,$02,$03,$04,$05,$06,$07,$08,$09,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
@@ -3935,4 +3953,4 @@ globals_lo	!fill 256
 globals_hi	!fill 256
 
 	; round interpreter up to next 4k boundary for alignment (we start at 2k)
-	!align 4095, 0
+	!align 8191, 0
