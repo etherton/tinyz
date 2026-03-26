@@ -3651,8 +3651,8 @@ buffered_print_char
 	beq .break
 	cmp #$20
 	beq .break
-	cmp #'.'
-	beq .break
+	;cmp #'.'
+	;beq .break
 	sty ysave
 	ldy chars_stored
 	sta char_buffer,Y
