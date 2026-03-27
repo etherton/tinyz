@@ -15,7 +15,7 @@ typedef unsigned int u32;
 typedef unsigned long u64;
 
 struct generic_6502 {
-    generic_6502(): cpu_cycles(0), pc(0), a(0), x(0), y(0), s(0), p(0) {
+    generic_6502(): cpu_cycles(0), pc(0), a(0), x(0), y(0), s(0xff), p(0) {
 #if DEBUGGER
         singlestep = trace = false;
         bpaddr = bpraddr = bpwaddr = ~0U;
