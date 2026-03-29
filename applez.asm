@@ -921,6 +921,7 @@ read_line
 	rts
 
 ; Portable code ZP use starts at $40
+call_storage = $44
 mulSign = $45
 mulTemp = $46
 attr_bit = $47
@@ -3303,7 +3304,7 @@ z_call_vs
 	; new stack ptr is just past last local
 +	+zeroy
 	+next_insn_byte_y0		; get storage location
-	sta mulTemp				; set it aside for now
+	sta call_storage		; set it aside for now
 
 !ifdef nDEBUG_TRACE {
 	jsr debug_print
@@ -3327,12 +3328,11 @@ z_call_vs
 
 	; location to store result
 	inx
-	lda mulTemp
+	lda call_storage
 	sta stack_lo,x
 
 	stx frameptr
 	inx
-
 
 !ifdef DEBUG_TRACE {
 	cmp #0
@@ -3874,12 +3874,12 @@ store_result_3
 	sta stack_lo,y
 
 !ifdef DEBUG_TRACE {
-	lda stack_hi,y
-	jsr print_hex_byte
-	lda stack_lo,Y
-	jsr print_hex_byte
+	;lda stack_hi,y
+	;jsr print_hex_byte
+	;lda stack_lo,Y
+	;jsr print_hex_byte
 	jsr debug_print
-	!text " -> L",0
+	!text "-> L",0
 	tya
 	clc	; need to subtract an additional 1 to get local index back
 	sbc frameptr
@@ -3895,12 +3895,12 @@ store_result_3
 	sta globals_lo,y
 
 !ifdef DEBUG_TRACE {
-	lda globals_hi,y
-	jsr print_hex_byte
-	lda globals_lo,Y
-	jsr print_hex_byte
+	;lda globals_hi,y
+	;jsr print_hex_byte
+	;lda globals_lo,Y
+	;jsr print_hex_byte
 	jsr debug_print
-	!text " -> G",0
+	!text "-> G",0
 	tya
 	sec
 	sbc #$10
@@ -3917,12 +3917,12 @@ store_result_3
 	beq +
 
 !ifdef DEBUG_TRACE {
-	lda stack_hi,y
-	jsr print_hex_byte
-	lda stack_lo,Y
-	jsr print_hex_byte
+	;lda stack_hi,y
+	;jsr print_hex_byte
+	;lda stack_lo,Y
+	;jsr print_hex_byte
 	jsr debug_print
-	!text " -> (sp)++",0
+	!text "-> (sp)++",0
 }
 	rts
 + 	jsr fatal_error
@@ -3956,13 +3956,14 @@ space
 	pla
 	rts
 
-	; destroys A
+	; preserves A/X/Y
 debug_print
+	sta .debug_print_restore+1
 	pla
 	sta stringptr
 	pla
 	sta stringptr+1
-	sty .debug_print_restore+1
+	sty .debug_print_restore+3
 	ldy #1
 -	lda (stringptr),y
 	beq +
@@ -3980,6 +3981,7 @@ debug_print
 	lda stringptr
 	pha
 .debug_print_restore
+	lda #$12
 	ldy #$12
 	rts
 ;}
@@ -3994,7 +3996,7 @@ _1opNames
 	!byte 18,0,2,13,22,32,44,47,50,60,61,71,80,83,87,98,102,105
 	!text "jzget_siblingget_childget_parentget_prop_lenincdecprint_addr9remove_objprint_objretjumpprint_paddrloadnot"
 _0opNames
-	!byte 18,0,5,11,16,24,27,31,38,45,55,58,62,70,81,87,89,91
+	!byte 18,0,5,11,16,25,28,32,39,46,56,59,63,71,82,88,90,92
 	!text "rtruerfalseprintprint_retnopsaverestorerestartret_poppedpopquitnew_lineshow_statusverify3031"
 _varNames
 	!byte 34,0,7,13,19,27,32,42,51,57,61,65,77,87,0,0,0
