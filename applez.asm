@@ -530,7 +530,7 @@ interleave
 	!byte 1,3,3,0
 	!byte 3,3,3,0
 
-endboot
+endboot ; 0x?300
 	; these are part of boot code but we're tight on space there.
 +	sta RAMWRTOFF
 	sta RAMRDOFF
@@ -711,6 +711,7 @@ scroll
 
 	; destroys A
 print_char_lower
+	sta $c0ff
 	+save_ram_state
 	sty ysave
 !if COLUMNS=80 {
@@ -1281,14 +1282,16 @@ zentry
 ; (branch offset)
 ; (text to print)
 
-; DEBUG_TRACE = 1
+DEBUG_TRACE = 1
 
 !ifdef DEBUG_TRACE {
-; obj_ptr points at table, a contains opcode to print
+; obj_ptr points at table, zinsn contains instruction, destroys A/X, Y is zero
 print_opcode_data
-	+bp
-	stx operand_count
-	pha
+	ldy #0
+	lda (obj_ptr),Y			; get table size (also insn mask+3)
+	sec
+	sbc #3
+	and zinsn
 	tay
 	iny
 	iny
@@ -1307,25 +1310,8 @@ print_opcode_data
 	iny
 	dex
 	bne -
-	lda #32
-	jsr print_char
+	jsr space
 	ldy #0
-	cpy operand_count
-	beq +
--	lda operands_hi,Y
-	jsr print_hex_byte
-	lda operands_lo,Y
-	jsr print_hex_byte
-	iny
-	cpy operand_count
-	beq +
-	lda #','
-	jsr print_char
-	jmp -
-+	lda #32
-	jsr print_char
-	+zeroy
-	pla
 	rts
 
 !macro print_opcode tblName {
@@ -1361,8 +1347,7 @@ next_insn
 	jsr print_hex_byte
 	lda zptr
 	jsr print_hex_byte
-	lda #32
-	jsr print_char
+	jsr space
 }
 	+zeroy
 	+next_insn_byte_y0
@@ -1387,21 +1372,33 @@ next_insn
 ; Y contains instruction
 ; X contains operand count
 _2op_s_s
+!ifdef DEBUG_TRACE {
+	+print_opcode _2opNames
+}
 	ldx #0
 	jsr operand_small
 	jsr operand_small
 	bne ._2op_common ; always taken
 _2op_s_v
+!ifdef DEBUG_TRACE {
+	+print_opcode _2opNames
+}
 	ldx #0
 	jsr operand_small
 	jsr operand_variable
 	bne ._2op_common ; always taken
 _2op_v_s
+!ifdef DEBUG_TRACE {
+	+print_opcode _2opNames
+}
 	ldx #0
 	jsr operand_variable
 	jsr operand_small
 	bne ._2op_common ; always taken
 _2op_v_v
+!ifdef DEBUG_TRACE {
+	+print_opcode _2opNames
+}
 	ldx #0
 	jsr operand_variable
 	jsr operand_variable
@@ -1410,48 +1407,53 @@ _2op_v_v
 ._2op_common_2
 	lda zinsn
 	and #$1F
+	+dispatch32 _2opTbl
+_2op_var
 !ifdef DEBUG_TRACE {
 	+print_opcode _2opNames
 }
-	+dispatch32 _2opTbl
-_2op_var
 	jsr decode_types
 	jmp ._2op_common_2
 _vop
-	jsr decode_types
-	lda zinsn
-	and #$1F
 !ifdef DEBUG_TRACE {
 	+print_opcode _varNames
 }
+	jsr decode_types
+	lda zinsn
+	and #$1F
 	+dispatch32 _varTbl
 
 _1op_large
+!ifdef DEBUG_TRACE {
+	+print_opcode _1opNames
+}
 	ldx #0
 	jsr operand_large
 	bne ._1op_common ; always taken
 _1op_small
+!ifdef DEBUG_TRACE {
+	+print_opcode _1opNames
+}
 	ldx #0
 	jsr operand_small
 	bne ._1op_common ; always taken
 _1op_variable
+!ifdef DEBUG_TRACE {
+	+print_opcode _1opNames
+}
 	ldx #0
 	jsr operand_variable
 ._1op_common
 	lda zinsn
 	and #$f
-!ifdef DEBUG_TRACE {
-	+print_opcode _1opNames
-}
 	+dispatch16 _1opTbl
 
 _0op
-	lda zinsn
-	and #$f
 !ifdef DEBUG_TRACE {
-	ldx #0
 	+print_opcode _0opNames
 }
+	lda zinsn
+	and #$f
 	+dispatch16 _0opTbl
 
 decode_types
@@ -1483,6 +1485,9 @@ decode_types
 	; all operand handlers inx before return and so the zero flag is always clear.
 operand_large
 	+next_insn_byte_y0
+!ifdef DEBUG_TRACE {
+	jsr print_hex_byte
+}
 	+skip_imm
 	; zero flag clear on return (x never zero)
 operand_small
@@ -1490,6 +1495,10 @@ operand_small
 	sta operands_hi,x
 	+next_insn_byte_y0
 	sta operands_lo,x
+!ifdef DEBUG_TRACE {
+	jsr print_hex_byte
+	jsr space
+}
 	inx
 	rts
 
@@ -1503,11 +1512,32 @@ operand_variable
 	cmp #$10
 	bcs .read_global
 	; read local
+!ifdef DEBUG_TRACE {
+	pha
+	lda #'L'
+	jsr print_char
+	pla
+	pha
+	sec
+	sbc #1
+	jsr print_hex_byte
+	lda #'='
+	jsr print_char
+	pla
+	clc
+}
 	adc frameptr
 	tay
 	lda stack_hi,Y
+!ifdef DEBUG_TRACE {
+	jsr print_hex_byte
+}
 	sta operands_hi,x
 	lda stack_lo,Y
+!ifdef DEBUG_TRACE {
+	jsr print_hex_byte
+	jsr space
+}
 	sta operands_lo,x
 	+zeroy
 	inx
@@ -1515,20 +1545,48 @@ operand_variable
 .read_global
 }
 	tay
+!ifdef DEBUG_TRACE {
+	lda #'G'
+	jsr print_char
+	tya
+	sec
+	sbc #$10
+	jsr print_hex_byte
+	lda #'='
+	jsr print_char
+}
 	lda globals_hi,Y
+!ifdef DEBUG_TRACE {
+	jsr print_hex_byte
+}
 	sta operands_hi,X
 	lda globals_lo,Y
+!ifdef DEBUG_TRACE {
+	jsr print_hex_byte
+	jsr space
+}
 	sta operands_lo,x
 	+zeroy
 	inx
 	rts
 
 .read_tos
+!ifdef DEBUG_TRACE {
+	jsr debug_print
+	!text "--(sp)=",0
+}
 	dec stackptr
 	ldy stackptr
 	lda stack_hi,Y
+!ifdef DEBUG_TRACE {
+	jsr print_hex_byte
+}
 	sta operands_hi,x
 	lda stack_lo,Y
+!ifdef DEBUG_TRACE {
+	jsr print_hex_byte
+	jsr space
+}
 	sta operands_lo,X
 	+zeroy
 	inx
@@ -1537,8 +1595,7 @@ operand_variable
 z_ill
 	lda zinsn
 	jsr print_hex_byte
-	lda #32
-	jsr print_char
+	jsr space
 	jsr fatal_error
 	!text "unimplemented insn",13,0
 
@@ -3276,6 +3333,31 @@ z_call_vs
 	stx frameptr
 	inx
 
+
+!ifdef DEBUG_TRACE {
+	cmp #0
+	beq .call_st_tos
+	cmp #$10
+	bcs .call_st_global
+	jsr debug_print
+	!text " -> L",0
+	sec
+	sbc #1 ; carry clear
+	jsr print_hex_byte
+	jmp +
+.call_st_global
+	jsr debug_print
+	!text " -> G",0
+	sec
+	sbc #$10
+	jsr print_hex_byte
+	jmp +
+.call_st_tos
+	jsr debug_print
+	!text " -> (sp)++",0
++
+}
+
 	jsr operand_zero_to_zpc
 	+zeroy
 	+next_insn_byte_y0
@@ -3553,6 +3635,7 @@ print_num
 	bcs print_hex_byte
 	ldy mulTemp
 	beq print_hex_digit
+	; preserves A
 print_hex_byte
 	pha
 	lsr
@@ -3561,13 +3644,18 @@ print_hex_byte
 	lsr
 	jsr print_hex_digit
 	pla
+	pha
 	and #$f
+	jsr print_hex_digit
+	pla
+	rts
 print_hex_digit
 	ora #$30
 	cmp #$3A
 	bcc +
 	adc #$6	; carry is always set
 +	jmp print_char
+
 
 z_new_line
 	lda #13
@@ -3791,7 +3879,7 @@ store_result_3
 	lda stack_lo,Y
 	jsr print_hex_byte
 	jsr debug_print
-	!text "->L",0
+	!text " -> L",0
 	tya
 	clc	; need to subtract an additional 1 to get local index back
 	sbc frameptr
@@ -3812,7 +3900,7 @@ store_result_3
 	lda globals_lo,Y
 	jsr print_hex_byte
 	jsr debug_print
-	!text "->G",0
+	!text " -> G",0
 	tya
 	sec
 	sbc #$10
@@ -3834,7 +3922,7 @@ store_result_3
 	lda stack_lo,Y
 	jsr print_hex_byte
 	jsr debug_print
-	!text "->TOS",0
+	!text " -> (sp)++",0
 }
 	rts
 + 	jsr fatal_error
@@ -3861,6 +3949,13 @@ fatal_error
 	bne -		; always taken
 
 ;!ifdef DEBUG_TRACE {
+space
+	pha
+	lda #32
+	jsr print_char
+	pla
+	rts
+
 	; destroys A
 debug_print
 	pla
@@ -3902,7 +3997,8 @@ _0opNames
 	!byte 18,0,5,11,16,24,27,31,38,45,55,58,62,70,81,87,89,91
 	!text "rtruerfalseprintprint_retnopsaverestorerestartret_poppedpopquitnew_lineshow_statusverify3031"
 _varNames
-	!byte 14,0,7,13,19,27,32,42,51,57,61,65,77,87
+	!byte 34,0,7,13,19,27,32,42,51,57,61,65,77,87,0,0,0
+	!byte 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 	!text "call_vsstorewstorebput_propsreadprint_charprint_numrandompush"
 	!text "pullsplit_windowset_window"
 }

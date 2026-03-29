@@ -48,7 +48,7 @@ void machine::init(const void *data,bool debug,bool strict) {
 	m_objCount = m_header->version<4
 		? (m_objectSmall->objTable[0].propAddr.getU() - (m_header->objectTableAddr.getU() + 31*2))/9
 		: (m_objectLarge->objTable[0].propAddr.getU() - (m_header->objectTableAddr.getU() + 63*2))/14;
-#if ENABLE_DEBUG
+#if ENABLE_DEBUG && 0
 	if (debug) {
 		printf("%d objects detected in story\n",m_objCount);
 		printObjTree();
@@ -665,7 +665,7 @@ void machine::run(uint32_t pc) {
 		if (m_debug) {
 			char addrBuf[64];
 			di.resolveAddress(addrBuf,sizeof(addrBuf),m_faultpc);
-			printf("%s: %*.*s ",addrBuf,opcodeLen,opcodeLen,opcode_names[opcode]);
+			printf("%06X %*.*s ",m_faultpc,opcodeLen,opcodeLen,opcode_names[opcode]);
 		}
 #endif
 		uint16_t types = opTypes[opcode >> 4] << 8;
@@ -685,35 +685,35 @@ void machine::run(uint32_t pc) {
 			uint8_t op = read_mem8(pc++);
 #if ENABLE_DEBUG
 			if (m_debug && opCount)
-				printf(", ");
+				printf(" ");
 #endif
 			switch (types & 0xC000) {
 				case 0x0000: 
 					operands[opCount++].setHL(op,read_mem8(pc++)); 
 #if ENABLE_DEBUG
 					if (m_debug) 
-						printf("$%04x",operands[opCount-1].getU()); 
+						printf("%04X",operands[opCount-1].getU()); 
 #endif
 					break;
 				case 0x4000: 
 					operands[opCount++].setByte(op); 
 #if ENABLE_DEBUG
 					if (m_debug)
-						printf("$%02x",op);
+						printf("%02X",op);
 #endif
 					break;
 				case 0x8000: 
 #if ENABLE_DEBUG
 					if (m_debug) {
 						if (op==0) printf("--(sp)");
-						else if (op<16) printf("L%d",op-1);
-						else printf("G%d",op-16);
+						else if (op<16) printf("L%02X",op-1);
+						else printf("G%02X",op-16);
 					}
 #endif
 					operands[opCount++] = ref(op, false); 
 #if ENABLE_DEBUG
 					if (m_debug)
-						printf(" [$%04x]",operands[opCount-1].getU());
+						printf("=%04X",operands[opCount-1].getU());
 #endif
 					break;
 			}
@@ -748,8 +748,8 @@ void machine::run(uint32_t pc) {
 #if ENABLE_DEBUG
 			if (m_debug) {
 				if (!dest) printf(" -> (sp)++");
-				else if (dest < 16) printf(" -> L%d",dest-1);
-				else printf(" -> G%d",dest-16);
+				else if (dest < 16) printf(" -> L%02X",dest-1);
+				else printf(" -> G%02X",dest-16);
 			}
 #endif
 		}
