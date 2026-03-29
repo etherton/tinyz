@@ -119,6 +119,7 @@ void myapple2::write_byte(u16 addr,u8 value) {
             case 0xC089: if (writeprotect) --writeprotect;  ssw_bsreadram = 0x00; ssw_bsrbank2 = 0x80; break;
             case 0xC08A: writeprotect = 2;                  ssw_bsreadram = 0x00; ssw_bsrbank2 = 0x80; break;
             case 0xC08B: if (writeprotect) --writeprotect;  ssw_bsreadram = 0x80; ssw_bsrbank2 = 0x80; break;
+case 0xC0FF: putchar(value==13?10:value); break;
         }
     }
     else if ((ssw_ramwrt && addr >= 0x200 && addr < 0xc000) ||
@@ -265,20 +266,25 @@ bool myapple2::init_sdl() {
 
 int main(int argc,char **argv) {
 	myapple2 computer;
+	while (--argc&&**++argv=='-')
+		switch (argv[0][1]) {
+			case 't': computer.trace = true; break;
+		}
+		
     if (!computer.init_sdl())
         return 1;
     computer.init();
     // first parameter is emulator image, which loads at 0xD000
     // second parameter is story file, which loads at 0x1000 (and wraps back at 0xBFFF if longer)
     size_t interpreterSize, storySize;
-    auto interpreter = computer.read_file(argv[1],&interpreterSize);
+    auto interpreter = computer.read_file(argv[0],&interpreterSize);
     if (!interpreter || interpreterSize != 12 * 1024) {
         fprintf(stderr,"interpreter must be 12k\n");
         return 1;
     }
     memcpy(computer.ram + 0xD000, interpreter, 12 * 1024);
 
-    auto story = computer.read_file(argv[2],&storySize);
+    auto story = computer.read_file(argv[1],&storySize);
     if (!story || storySize > 88 * 1024) {
         fprintf(stderr,"story must be 88k or smaller\n");
         return 1;
@@ -293,7 +299,6 @@ int main(int argc,char **argv) {
     computer.pc = 0xD300;
     computer.writeprotect = 0;
     computer.ssw_bsreadram = 0x80;
-    computer.trace = true;
 
 	computer.exec();
 }
