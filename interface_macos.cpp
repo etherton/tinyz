@@ -131,6 +131,7 @@ void interface::init(int argc,char **argv) {
 }
 
 void interface::updateHeader(uint8_t *header) {
+	if (header[0] >= 5)
 		header[1] |= 0x1C;	// support bold, italic, fixed
 }
 
