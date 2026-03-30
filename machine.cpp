@@ -769,7 +769,7 @@ void machine::run(uint32_t pc) {
 				if (branch_offset==0||branch_offset==1)
 					printf(" ?%s%s",branch_cond?"":"~",branch_offset?"rtrue":"rfalse");
 				else
-					printf(" ?%s (%04d)",branch_cond?"":"~",branch_offset);
+					printf(" ?%s (%04X)",branch_cond?"":"~",branch_offset);
 			}
 #endif
 		}
