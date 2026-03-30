@@ -1,4 +1,6 @@
 
+; DEBUG_TRACE = 1
+
 !macro bp {
 	bit $c00e
 }
@@ -1283,8 +1285,6 @@ zentry
 ; (branch offset)
 ; (text to print)
 
-DEBUG_TRACE = 1
-
 !ifdef DEBUG_TRACE {
 ; obj_ptr points at table, zinsn contains instruction, destroys A/X, Y is zero
 print_opcode_data
@@ -1813,23 +1813,32 @@ z_je
 	jsr update_zptr
 	jmp next_insn
 
+	; for branches, MSB set indicates take the branch if true; clear means take it if false;
+	; next, 0x40 encodes a short forward branch (0=rfalse,1=rtrue,2+=forward). Otherwise,
+	; 0x20 indicates the sign of the branch, remaining bits are upper bits of sign, next byte is lower part.
 branch_failed
 	+zeroy
+!ifdef DEBUG_TRACE {
+	jsr print_offset
+}
 	+next_insn_byte_y0
 	cmp #$80
-	bcc .branch_passed
-.branch_failed
+	bcc .take_branch	; if byte < 0x80, invert sense of the branch
+.skip_branch
 	and #$40
-	bne .short_branch_failed
+	bne .skip_short_branch
 	+skip_insn_byte
-.short_branch_failed
+.skip_short_branch
 	jmp next_insn
 branch_passed
 	+zeroy
+!ifdef DEBUG_TRACE {
+	jsr print_offset
+}
 	+next_insn_byte_y0
 	cmp #$80
-	bcc .branch_failed
-.branch_passed
+	bcc .skip_branch	; if byte < 0x80, invert sense of the branch
+.take_branch
 	and #$7f
 	ldx #0
 	cmp #$40
@@ -1876,14 +1885,14 @@ z_jl
 	bcc branch_passed
 	bcs branch_failed	; always taken
 
-; same as above but with operands reversed
+; same as above but with operands reversed (jl a,b == jg b,a)
 z_jg
 	sec
 	lda operands_hi+1
 	sbc operands_hi+0
 	bvc +
 	eor #$80
-+	bmi branch_passed ; op1_h < op0_h?
++	bmi branch_passed ; op1_h < op0_h? (op0_h > op1_h)
 	bvc +
 	eor #$80
 +	bne branch_failed	; if op1_h != op0_h then op1 > op0
@@ -1891,6 +1900,51 @@ z_jg
 	sbc operands_lo+0
 	bcc branch_passed
 	jmp branch_failed	; always taken
+
+!ifdef DEBUG_TRACE {
+print_offset
+	lda #'?'
+	jsr print_char
+	lda (zptr),Y
+	bmi +
+	lda #'~'
+	jsr print_char
++	jsr space
+	lda #'('
+	jsr print_char
+	lda (zptr),y
+	and #$40
+	bne +
+	lda (zptr),Y
+	and #$3F
+	jsr print_hex_byte
+	iny
+	lda (zptr),Y
+	jsr print_hex_byte
+	dey
+-	lda #')'
+	jmp print_char
++	lda (zptr),Y
+	and #$3F
+	cmp #$00
+	beq print_rfalse
+	cmp #$01
+	beq print_rtrue
+	pha
+	lda #0
+	jsr print_hex_byte
+	pla
+	jsr print_hex_byte
+	jmp -
+print_rfalse
+	jsr debug_print
+	!text "rfalse",0
+	jmp -
+print_rtrue
+	jsr debug_print
+	!text "rtrue",0
+	jmp -
+}
 
 z_or
 	lda operands_lo+0
@@ -2233,6 +2287,8 @@ z_get_prop_addr
 	lda obj_mid
 	jmp store_common
 
+; DEBUG_PROP_COMMON=1
+
 	; on input, operands+0 is object number; returns with obj_ptr pointing at first property
 prop_common
 !ifdef DEBUG_PROP_COMMON {
@@ -2326,7 +2382,7 @@ find_property
 }
 	cmp operands_lo+1
 	beq .matched_property
-	; if operands_lo+1 > current property, it's not here
+	; if current propery < operands_lo+1, it's not here
 	bcc .property_not_found
 	jsr .matched_property	; get length in Y
 	tya
@@ -2335,7 +2391,8 @@ find_property
 	sta obj_ptr
 	bcc find_property
 	inc obj_ptr+1
-	bne find_property	; always taken
+	bne find_property	; always taken (object can't be in high memory)
+	; obj_ptr points at length byte; return value is length in bytes
 .matched_property
 	tya
 	+lsr5
@@ -2348,6 +2405,8 @@ find_property
 	rts			; zero flag clear
 .property_not_found
 	ldy #0
+	sty obj_ptr
+	sty obj_mid
 	rts			; zero flag set
 
 z_get_prop
@@ -2425,7 +2484,8 @@ z_get_next_prop
 	; pa += 2 + (pv>>5);
 	txa
 	+lsr5
-	adc #2 	; carry still clear
+	clc
+	adc #2
 	adc obj_ptr
 	sta obj_ptr
 	bcc .search_next_prop
@@ -2461,7 +2521,8 @@ z_get_prop_len
 }
 	+end_dynamic
 	+lsr5
-	adc #1		; carry always clear from lsr
+	clc
+	adc #1
 	tax
 	lda #0
 	jmp store_common
@@ -3943,10 +4004,13 @@ fatal_error
 	sta stringptr+1
 	ldy #1
 -	lda (stringptr),Y
---	beq --		; hang forever
+	beq dead		; hang forever
 	jsr print_char
 	iny
 	bne -		; always taken
+dead
+	sta $c0ff
+	beq dead
 
 ;!ifdef DEBUG_TRACE {
 space
