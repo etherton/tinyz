@@ -58,30 +58,8 @@ struct generic_6502 {
 		a = sum & 255;
 	}
 	void subtract_with_carry(u8 v) {
-		int diff;
-		if (p & DF)
-		{
-			diff = (a & 0xF) - (v & 0xF) - 1 + (p & CF);
-			int halfCarry = 0;
-			if (diff < 0)
-			{
-				diff += 10;
-				halfCarry = 0x10;
-			}
-			diff += (a & 0xF0) - (v & 0xF0) - halfCarry;
-			if (diff < 0)
-				diff += 0x1A0;		// underflow, no carry
-			// carry will be set correctly by the common epilogue below.
-			// printf("[%d] %02x - %02x = %03x\n",p&CF,a,v,diff);
-		}
-		else
-			diff = a - v - 1 + (p & CF);
-		p = (p & ~(SF|VF|ZF|CF)) | (((diff >> 8) & CF) ^ CF) |
-			((diff & 255)? 0 : ZF) | (diff & SF) | 
-			(((a ^ diff) & (v ^ diff) & SF) >> 1);	// if the sign of the sum is opposite both inputs, we had overflow
-		a = diff & 255;
+		return add_with_carry(~v);
 	}
-
 	void fault();
 
 	virtual u8 read_byte(u16 addr) const = 0; // like read, but with no cycle counts or bankswitching
