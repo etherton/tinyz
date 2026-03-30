@@ -247,7 +247,7 @@ void dump_properties(const storyHeader *h,int addr) {
 			uint8_t sb = b[addr];
 			if (!sb)
 				break;
-			printf("\tproperty %d (%s) is %d bytes\n",sb & 31,di.properties[sb & 31].c_str(),(sb >> 5)+1);
+			printf("\tproperty %d (%s) is %d bytes (at %0004x)\n",sb & 31,di.properties[sb & 31].c_str(),(sb >> 5)+1,addr);
 			addr = addr + 1 + (sb >> 5) + 1;
 		}
 	}
@@ -259,7 +259,7 @@ void dump_properties(const storyHeader *h,int addr) {
 			uint8_t ps = pn&128? b[addr++] & 63 : (pn>>6)+1;
 			pn &= 63;
 			if (ps==0) ps=64; // why wasn't size-1 stored here?
-			printf("\tproperty %d (%s) is %d bytes\n",pn,di.properties[pn].c_str(),ps);
+			printf("\tproperty %d (%s) is %d bytes (at %0004x)\n",pn,di.properties[pn].c_str(),ps,addr);
 			addr = addr + ps;
 		}
 	}
