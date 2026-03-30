@@ -119,7 +119,7 @@ void myapple2::write_byte(u16 addr,u8 value) {
             case 0xC089: if (writeprotect) --writeprotect;  ssw_bsreadram = 0x00; ssw_bsrbank2 = 0x80; break;
             case 0xC08A: writeprotect = 2;                  ssw_bsreadram = 0x00; ssw_bsrbank2 = 0x80; break;
             case 0xC08B: if (writeprotect) --writeprotect;  ssw_bsreadram = 0x80; ssw_bsrbank2 = 0x80; break;
-case 0xC0FF: putchar(value==13?10:value); break;
+            case 0xC0FF: if (!value) exit(1); putchar(value==13?10:value); break;
         }
     }
     else if ((ssw_ramwrt && addr >= 0x200 && addr < 0xc000) ||
