@@ -575,9 +575,9 @@ setpos	; input x, destroys a
 	sta dest_ptr+1
 	rts
 
-;!if COLUMNS=40 {
+!if COLUMNS=40 {
 	FAST_SCROLL=1
-;}
+}
 
 ; scroll returns with negative flag always set, so bmi is always taken.
 !ifdef FAST_SCROLL {
