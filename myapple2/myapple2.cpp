@@ -29,6 +29,7 @@ struct myapple2: public generic_6502 {
     u8 *ram, *rom;
     const char **symbols;
     u8 writeprotect;
+    mutable u8 keylatch;
     union {
         u8 ssw[32];
         struct {
@@ -71,12 +72,19 @@ u8 myapple2::read_byte(u16 addr) const {
         return ram[0x10000 + addr];
     }
     else if (addr >= 0xc000 && addr < 0xd000) {
-        if (addr == 0xc000)
-            return 0; // keyboard
+        if (addr == 0xc000) {
+            if (!keylatch) {
+                keylatch = fgetc(stdin) | 0x80;
+                if (keylatch == 0x8A)
+                    keylatch = 0x8D;
+            }
+            return keylatch;
+        }
+        else if (addr == 0xc010)
+            keylatch = 0;
         else if (addr < 0xc020)
             return ssw[addr & 31];
-        else
-            return 0;
+        return 0;
     }
     else if (addr >= 0xd000) {
         if (ssw_bsreadram) {
@@ -169,6 +177,7 @@ void myapple2::init() {
     ram = znew(65536);
     memset(ssw,0,sizeof(ssw));
     writeprotect = 2;
+    keylatch = 0;
     symbols = (const char**)memset(new const char*[65536],0,65536*sizeof(const char*));
     init_symbol(0xC000,"_80STOREOFF");
     init_symbol(0xC001,"_80STOREON");
