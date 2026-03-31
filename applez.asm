@@ -60,14 +60,14 @@ PAGE2		= $C055
 	plp
 	bpl +
 	sta RAMRDON
-	sta RAMWRTON
+	;sta RAMWRTON
 +
 }
 
 !macro begin_dynamic {
 	+save_ram_state
 	sta RAMRDOFF
-	sta RAMWRTOFF
+	;sta RAMWRTOFF
 }
 ; remember old setting and if it was active, re-enable it. destroys flags.
 !macro end_dynamic {
@@ -575,9 +575,9 @@ setpos	; input x, destroys a
 	sta dest_ptr+1
 	rts
 
-!if COLUMNS=40 {
+;!if COLUMNS=40 {
 	FAST_SCROLL=1
-}
+;}
 
 ; scroll returns with negative flag always set, so bmi is always taken.
 !ifdef FAST_SCROLL {
@@ -1089,8 +1089,6 @@ HEADER = $1000
 }
 
 !macro next_insn_byte_y0 {
-	;jsr update_zptr
-	;ldy #0
 	lda (zptr),y
 	inc zptr
 	bne +
@@ -1134,7 +1132,7 @@ update_zptr
 	sbc #$A0
 	sta zptr+1
 	sta RAMRDON
-	sta RAMWRTON
+	;sta RAMWRTON
 	rts
 	; 100->60, 110->70, 120->80 etc 
 .update_zptr_hi
@@ -1143,7 +1141,7 @@ update_zptr
 	adc #$60
 	sta zptr+1
 	sta RAMRDON
-	sta RAMWRTON
+	;sta RAMWRTON
 	rts
 
 zentry
@@ -3553,6 +3551,8 @@ z_output_stream
 z_quit
 	jsr debug_print
 	!text "* End session *",13,0
+	lda #0
+	sta $c0ff
 	jmp *
 
 attr_bits !byte $80,$40,$20,$10,$08,$04,$02,$01
