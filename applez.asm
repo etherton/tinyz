@@ -942,7 +942,7 @@ obj_ptr_alt = $62
 obj_hi = $6A
 obj_mid = $6B
 obj_ptr = $6C
-obj_base = $6E		; 9 bytes before first object slot
+obj_base = $6E		; 9/14 bytes before first object slot
 window_current = $71
 output_table = $72
 output_enables = $73
@@ -1045,6 +1045,15 @@ DICT_WORD_LEN = 6
 
 } // endif
 
+
+; We support four memory models
+; MEM_MODEL=0: Stories are limited to 44k total. No banking.
+; MEM_MODEL=1: Stories are limited to 88k total, dynamic+static limited to 44k.
+; MEM_MODEL=2: Stories are limited to 128k total, dynamic+static limited to 44k. All alt ram is VM backed by disk.
+; MEM_MODEL=3: Stories have normal Z5/Z8 liimits. Dynamic limited to 44k. Static and high backed by disk.
+; The difference between 2 and 3 is that in model 3, static memory can be paged, which affects loadb, loadw,
+; and tokenisation.
+
 HEADER = $1000
 ;  +0 version
 ;  +1 flags
@@ -1060,7 +1069,12 @@ HEADER = $1000
 !macro skip_insn_byte {
 	inc zptr
 	bne +
+!if MEM_MODEL > 0 {
 	jsr increment_zpc_mid
+} else {
+	inc zpc_mid
+	inc zptr+1
+}
 +
 }
 
@@ -1071,7 +1085,12 @@ HEADER = $1000
 	lda (zptr)
 	inc zptr
 	bne +
+!if MEM_MODEL > 0 {
 	jsr increment_zpc_mid
+} else {
+	inc zpc_mid
+	inc zptr+1
+}
 +
 }
 
@@ -1080,7 +1099,12 @@ HEADER = $1000
 !macro skip_insn_byte {
 	inc zptr
 	bne +
+!if MEM_MODEL > 0 {
 	jsr increment_zpc_mid
+} else {
+	inc zpc_mid
+	inc zptr+1
+}
 +
 }
 
@@ -1092,11 +1116,18 @@ HEADER = $1000
 	lda (zptr),y
 	inc zptr
 	bne +
+!if MEM_MODEL > 0 {
 	jsr increment_zpc_mid
+} else {
+	inc zpc_mid
+	inc zptr+1
+}
 +
 }
 }
 
+
+!if MEM_MODEL > 0 {
 	; preserves A/X/Y
 	; if high byte of zptr is $C0, we need to update the TLB
 increment_zpc_mid
@@ -1121,8 +1152,8 @@ update_zptr
 	cmp #$B0
 	bcs .update_zptr_upper
 	adc #>HEADER	; carry clear
-	sta RAMRDOFF
-	sta RAMWRTOFF
+	;sta RAMRDOFF
+	;sta RAMWRTOFF
 	sta zptr+1
 	rts
 
@@ -1143,6 +1174,14 @@ update_zptr
 	sta RAMRDON
 	;sta RAMWRTON
 	rts
+} else {
+update_zptr
+	lda zpc_mid
+	clc
+	adc #>HEADER	; carry clear
+	sta zptr+1
+	rts
+}
 
 zentry
 	; copy globals into our own shadow storage
