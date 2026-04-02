@@ -40,7 +40,7 @@ RAMWRT		= $C014
 PAGE1		= $C054
 PAGE2		= $C055
 
-!ifdef TAGET_APPLE2SPLUS {
+!if MEM_MODEL=0 {
 !macro save_ram_state {
 }
 !macro restore_ram_state {
@@ -1053,6 +1053,19 @@ DICT_WORD_LEN = 6
 ; MEM_MODEL=3: Stories have normal Z5/Z8 liimits. Dynamic limited to 44k. Static and high backed by disk.
 ; The difference between 2 and 3 is that in model 3, static memory can be paged, which affects loadb, loadw,
 ; and tokenisation.
+; For any memory model past 1, we implement virtual memory. All virtual memory is kept in the aux 44k memory.
+; We adopt a page size to limit the size of our data structures. This is particularly important for static memory,
+; which is often accessed consecutively. For V3, the page size is 512 bytes. V5 is 1024, and V8 is 2048.
+; One table maps a (Z address >> 9) (for V3) to which page in aux memory ($10-$BE), or $00 if it's not resident.
+; For V3 stories, max size is 128k, of which 44k is permanent, so 84k is paged at 512 bytes each, or 168 slots.
+; On the other side, each of those 88 possible pages needs to maintain an age so that old pages can be evicted.
+; By happy coincidence, 168+88 is exactly 256, so it fits up against our other "large" data structures.
+; For V5, 256k-44k is 212k, with 1k pages, or 212 slots, and 44 pages of aux memory.
+; For V8, 256-44k is 468k, with 2k pages, or 234 slots, and 22 pages of aux memory. They all add up to 256.
+; It works because the amount of banked memory happens to exactly match the amount of the story that is
+; kept permanently resident.
+; If the page is already resident, reset its age to 0. Done.
+; If the page is not already resident, find an oldest page to replace, reset its age to 1, and then age all OTHER pages by 1
 
 HEADER = $1000
 ;  +0 version
@@ -1126,8 +1139,17 @@ HEADER = $1000
 }
 }
 
+!if MEM_MODEL=0 {
 
-!if MEM_MODEL > 0 {
+update_zptr
+	lda zpc_mid
+	clc
+	adc #>HEADER	; carry clear
+	sta zptr+1
+	rts
+
+} else if MEM_MODEL > 0 {
+
 	; preserves A/X/Y
 	; if high byte of zptr is $C0, we need to update the TLB
 increment_zpc_mid
@@ -1145,6 +1167,7 @@ increment_zpc_mid
 
 	; destroys A; uses current values of zpc_hi/zpc_mid
 	; to enable correct ram page and set zptr+1 pointing at it
+!if MEM_MODEL=1 {
 update_zptr
 	lda zpc_hi
 	bne .update_zptr_hi
@@ -1152,8 +1175,7 @@ update_zptr
 	cmp #$B0
 	bcs .update_zptr_upper
 	adc #>HEADER	; carry clear
-	;sta RAMRDOFF
-	;sta RAMWRTOFF
+	sta RAMRDOFF
 	sta zptr+1
 	rts
 
@@ -1163,7 +1185,6 @@ update_zptr
 	sbc #$A0
 	sta zptr+1
 	sta RAMRDON
-	;sta RAMWRTON
 	rts
 	; 100->60, 110->70, 120->80 etc 
 .update_zptr_hi
@@ -1172,15 +1193,38 @@ update_zptr
 	adc #$60
 	sta zptr+1
 	sta RAMRDON
-	;sta RAMWRTON
 	rts
-} else {
+} else if MEM_MODEL=2 {
+
 update_zptr
+	; convert zpc_mid/hi to an eight-bit page
+	lda zpc_hi
+	lsr				; carry is set if >64k
+	sta zpc_mid_low ; zero zpc_mid_low
 	lda zpc_mid
-	clc
-	adc #>HEADER	; carry clear
+	ror				; pull in carry bit
+	rol zpc_mid_low ; put carry bit in LSB
+	; carry is one if it's the "odd" page
+	sec
+	sbc #88				; now value beteen 0-167
+	bcs update_vram		; in vram?
+	sta RAMRDOFF
+	lda zpc_mid
+	adc #>HEADER		; carry already clear
 	sta zptr+1
 	rts
+update_vram
+	sty .y_recover+1
+	tay
+	lda vm_map,Y
+	beq page_miss
+	ora zpc_mid_low
+	sta zptr+1
+	sta RAMRDON
+
+
+
+} 
 }
 
 zentry
@@ -4152,6 +4196,19 @@ stack_hi	!fill 256
 	; stack on any call or return. first 16 bytes of each could be used for something else
 globals_lo	!fill 256
 globals_hi	!fill 256
+
+!if MEM_MODEL > 1 {
+!if ZVERSION=3 {
+page_ages	!fill 88		; 0 means this page is newest
+vm_map		!fill 168		; 0 if not resident, else address. 
+} else if ZVERSION<=5 {
+page_ages	!fill 44
+vm_map		!fill 212
+} else {
+page_ages	!fill 22
+vm_map		!fill 234
+}
+}
 
 	; round interpreter up to next 4k boundary for alignment (we start at 2k)
 	!align 8191, 0
