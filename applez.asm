@@ -923,6 +923,7 @@ read_line
 	rts
 
 ; Portable code ZP use starts at $40
+zpc_mid_low = $43
 call_storage = $44
 mulSign = $45
 mulTemp = $46
@@ -1220,8 +1221,25 @@ update_vram
 	beq page_miss
 	ora zpc_mid_low
 	sta zptr+1
+	; get page age index
+	sec
+	sbc #>HEADER
+	lsr
+	tay
+	lda #0
+	sta page_ages,y
+update_vram_exit
 	sta RAMRDON
-
+.y_recover
+	ldy #$12
+	rts
+page_miss
+	; find oldest page
+	; mark it not resident
+	; read new pages from disk
+	; this new page gets age 1
+	; all other pages grow older
+	jmp update_vram_exit
 
 
 } 

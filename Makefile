@@ -1,6 +1,6 @@
 all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3 advent.do advent.po demogame.do \
 	sieve_2p.do sieve_2e.do sieve_2ee.do cloak.do zork.do dejavu.do hibernated.do czech.do minimal.do loh.do \
-	applez_2e.bin applez_2e40_0.bin applez_2e40_1.bin
+	applez_2e.bin applez_2e40_0.bin applez_2e40_1.bin applez_2e40_2.bin
 
 tinyzcd: opcodes.h header.h tinyz.y debug.h debug.cpp Makefile
 	bison --debug tinyz.y -v -o tinyz.debug.tab.cpp && clang++ -DDEBUG_MEM=1 -g -std=c++17 tinyz.debug.tab.cpp debug.cpp -o tinyzcd
