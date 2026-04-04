@@ -61,6 +61,9 @@ int main(int argc,char **argv) {
 					}
 				}
 			}
+			else if (!strcmp(ext,".hdv")) {
+				fwrite(in, 35*16, 256, o);
+			}
 			else if (!strcmp(ext,".nib")) {
 				for (int track=0; track<35; track++) {
 					for (int sector=0; sector<16; sector++) {
