@@ -106,6 +106,7 @@ top_cursor_x = $2A
 slot_index	= $2B		; $60 for slot 6 (this comes from boot loader)
 prev_top_cursor_x = $2C
 text_ptr = $2D
+unit_number = $2E
 
 data_page = $30
 track = $31
@@ -138,9 +139,13 @@ BANKB_ROMRD_WE	= $C089
 BANKB_ROMRD_WP	= $C08A
 BANKB_RAMRD_WE	= $C08B
 
+char_buffer = $100
+
 LOAD_ADDR = $D000
 
 	*=LOAD_ADDR		; actually loads at $800 hence the magic numbers in .copy below
+
+!if LOAD_FROM_DISK_II {
 	!byte 3		; this is the sector to stop loading at (rest of our code and lookup tables)
 
 	sta BANKA_RAMRD_WE	; +1
@@ -149,8 +154,8 @@ LOAD_ADDR = $D000
 	; We load the first 4k track at $800, and immediately relocate everything to LOAD_ADDR
 	; y is zero
 .copy
-	lda $800,Y			; +7
-	sta LOAD_ADDR,Y			; +10
+	lda $800,Y			; +7 (9)
+	sta LOAD_ADDR,Y		; +10 (12)
 	iny
 	bne .copy
 	inc $809
@@ -158,6 +163,31 @@ LOAD_ADDR = $D000
 	dec $800
 	bne .copy
 	jmp stage1
+
+} else {
+	!byte 1		; this has to be 1 for whatever reason
+
+	sta BANKA_RAMRD_WE	; +1
+	sta BANKA_RAMRD_WE	; +4
+	sta unit_number		; +7
+	stx slot_index		; +9
+	ldx #4				; +11
+
+	; We load the first 4k track at $800, and immediately relocate everything to LOAD_ADDR
+	; y is zero
+.copy
+	lda $800,Y			; +13 (15)
+	sta LOAD_ADDR,Y		; +16 (18)
+	iny
+	bne .copy
+	inc $80F
+	inc $812
+	dex
+	bne .copy
+	jmp stage1
+}
+
+!if LOAD_FROM_DISK_II {
 
 stage1
 	; patch instructions before we reach time critical parts.
@@ -270,7 +300,6 @@ RDBYTE6 = $C000	; bad value to make sure it's patched ($C08C + slot*16)
 ; have to start higher to avoid page crossing
 ; use this area because it swaps as same time as ZP and high memory
 twos_buffer = $12C
-char_buffer = $100
 
 ; returns A zero (and zero flag set) if it's the data part, nonzero if header part
 read_d5_aa
@@ -531,6 +560,95 @@ interleave
 	!byte 2,3,3,0
 	!byte 1,3,3,0
 	!byte 3,3,3,0
+
+} else {		; not loading from disk ii
+
+stage1
+	lda slot_index
+	lsr
+	lsr
+	lsr
+	lsr
+	+bp
+	ora temp+2
+	sta temp+2
+	sta do_read+2
+temp
+	ldx $C0FF
+	inx
+	inx
+	inx
+	stx do_read+1
+	lda unit_number
+	sta read_params+1
+
+	+bp
+
+-	jsr do_read
+	inc read_block
+	inc read_dest+1
+	inc read_dest+1
+	bne -			; keep going until we wrap
+
+	+bp
+
+	lda #>HEADER
+	sta read_dest+1
+	jsr do_read
+
+	; round story size (which is half its actual value) up to next 512b multiple
+	; for V3 it's (size + $ff) >> 8
+	; for V4/5 it's (size + $7f) >> 8+1
+	; for V8 it's (size + $3f) >> 8+2
+	lda HEADER+27
+	clc
+!if ZVERSION=8 {
+	adc #$3F
+} else if (ZVERSION>3) {
+	adc #$7F
+} else {
+	adc #$FF
+}
+	lda HEADER+26
+	adc #0
+	; story size in 512b blocks (including the one we already read)
+	sta tracks_remaining		; actually blocks
+
+read_story
+	dec tracks_remaining	
+	beq ++
+	inc read_dest+1
+	inc read_dest+1
+	lda read_dest+1
+	cmp #$C0
+	bne +
+	; switch to aux memory
+	lda #>HEADER
+	sta read_dest+1
+	sta RAMRDON
+	sta RAMWRTON
++	inc read_block
+	bne +
+	inc read_block+1
++	jsr do_read
+	jmp read_story
+++	jmp endboot
+
+do_read
+	jsr $C000		; patched to hold SmartPort handler
+	!byte 1			; READ
+	!word read_params	; pointer to parameter buffered_print_char
+	rts
+read_params
+	!byte 3			; parameter count
+	!byte 1			; device index
+read_dest
+	!word $D400		; destination address
+read_block
+	!word $0002		; block number to read
+	!byte $00
+
+}
 
 endboot ; 0x?300
 	; these are part of boot code but we're tight on space there.
