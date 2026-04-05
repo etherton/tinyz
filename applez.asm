@@ -571,13 +571,13 @@ stage1
 	lsr
 	ora temp+2
 	sta temp+2
-	sta do_read+2
+	sta smart_port_jsr+2
 temp
 	ldx $C0FF
 	inx
 	inx
 	inx
-	stx do_read+1
+	stx smart_port_jsr+1
 	lda unit_number
 	sta read_params+1
 
@@ -641,9 +641,14 @@ read_story
 ++	jmp endboot
 
 do_read
+	lda #$5D
+	sta $400+39
+smart_port_jsr
 	jsr $C000		; patched to hold SmartPort handler
 	!byte 1			; READ
 	!word read_params	; pointer to parameter buffered_print_char
+	lda #$20
+	sta $400+39
 	rts
 read_params
 	!byte 3			; parameter count
@@ -1090,6 +1095,9 @@ chars_stored = $8C
 last_status_room = $8D
 zchar_hi = $8E
 zchar_lo = $8F
+desired_page = $90
+oldest_page_index = $92
+oldest_page_value = $93
 
 !if ZVERSION>4 {
 DICT_SIZE = 6
@@ -1325,48 +1333,105 @@ update_zptr
 	; convert zpc_mid/hi to an eight-bit page
 	lda zpc_hi
 	lsr				; carry is set if >64k
-	sta zpc_mid_low ; zero zpc_mid_low
+	sta zpc_mid_low ; zero zpc_mid_low (zpc_hi was always 0 or 1 for Z3)
 	lda zpc_mid
 	ror				; pull in carry bit
-	rol zpc_mid_low ; put carry bit in LSB
+	rol zpc_mid_low ; put carry bit (even/odd page) in LSB
 	; carry is one if it's the "odd" page
 	sec
 	sbc #88				; now value beteen 0-167
-	bcs update_vram		; in vram?
-	sta RAMRDOFF
+	bcs update_vmem		; in virtual memory?
+	sta RAMRDOFF		; nope, it's in dynamic (resident) memory.
 	lda zpc_mid
 	adc #>HEADER		; carry already clear
 	sta zptr+1
 	rts
-update_vram
+update_vmem
+	; desired page is in A, 0-167
 	sty .y_recover+1
 	tay
 	lda vm_map,Y
 	beq page_miss
 	ora zpc_mid_low
 	sta zptr+1
-	; get page age index
-	sec
-	sbc #>HEADER
-	lsr
-	tay
+	lsr			; divide upper byte of address by two to get page index
+	tay			; get page index (biased by HEADER)
 	lda #0
-	sta page_ages,y
-update_vram_exit
-	sta RAMRDON
+	sta page_ages-(>HEADER/2),y		; account for HEADER offset
+	sta RAMRDON						; it's in virtual (aux) memory
 .y_recover
 	ldy #$12
 	rts
 page_miss
-	; find oldest page
-	; mark it not resident
-	; read new pages from disk
-	; this new page gets age 1
-	; all other pages grow older
-	+bp
-	jmp update_vram_exit
+	; y contains page (512b block, starting from 88 in story) we want to make resident
+	sty desired_page
+	sty RAMRDON
+	sty RAMWRTON		; enable aux memory for both read and write so we can fill it (smartport needs checksums)
 
+	; sty $c0fe ;; enable trace
 
+	; find oldest page (and age all pages once)
+	ldy #87
+	lda page_ages,Y
+	clc
+	adc #1
+	sta oldest_page_value
+	sta page_ages,y
+	sty oldest_page_index
+-	dey
+	bmi +
+	lda page_ages,Y
+	clc
+	adc #1
+	sta page_ages,y
+	cmp oldest_page_value
+	bcc -
+	beq -
+	sta oldest_page_value
+	sty oldest_page_index
+	bcs -
+
+	; mark this page not resident
++	ldy oldest_page_index
+	lda page_owners_lo,Y		; this is index into vm_map that owns us
+	tay
+	lda #0
+	sta vm_map,Y
+
+	; change owner of this vm page to new page, reset age to 1
+	ldy oldest_page_index
+	lda desired_page			; 0-167
+	sta page_owners_lo,y		; that page owns this slot (0-87)
+	lda #1
+	sta page_ages,y				; update the page age
+
+	; remember where to find this page in the future
+	tya
+	asl							; double page index to get high byte of address
+	adc #>HEADER				; account for header base address (carry always clear)
+	ldy desired_page
+	sta vm_map,y
+
+	; set destination for read
+	sta read_dest+1
+
+	; update zptr+1 now, remembering whether original address was even or odd
+	ora zpc_mid_low
+	sta zptr+1
+
+	; figure out block to read
+	lda desired_page
+	adc #(24+88)		; interpreter is 24 blocks, resident is 88 blocks (carry still clear)
+	sta read_block
+	lda #0
+	adc #0
+	sta read_block+1
+	stx .x_recover+1
+	jsr do_read
+.x_recover
+	ldx #$12
+	sta RAMWRTOFF
+	jmp .y_recover
 } 
 }
 
@@ -4344,8 +4409,25 @@ globals_lo	!fill 256
 globals_hi	!fill 256
 
 !if MEM_MODEL > 1 {
-!if ZVERSION=3 {
-page_ages	!fill 88,1		; 0 means this page is newest
+; this contains the age of each 512b page
+; it's tempting to use larger pages on V5 and V8 but that will likely
+; lead to a lot more disk thrashing.
+page_ages	!fill 88,1			; 0 is freshly used
+page_owners_lo
+			!byte  0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15
+			!byte 16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+			!byte 32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47
+			!byte 48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63
+			!byte 64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79
+			!byte 80,81,82,83,84,85,86,87
+!if ZVERSION>3 {
+page_owners_hi
+			!fill 88
+}
+
+; the initial vm_map is always the next 44k of the story. we always use 512b blocks,
+; since that is the minimum read size for smartport. this allows us to determine if
+; a page is already resident in O(1) time. 
 vm_map		!byte $10,$12,$14,$16,$18,$1A,$1C,$1E
 			!byte $20,$22,$24,$26,$28,$2A,$2C,$2E
 			!byte $30,$32,$34,$36,$38,$3A,$3C,$3E
@@ -4357,15 +4439,16 @@ vm_map		!byte $10,$12,$14,$16,$18,$1A,$1C,$1E
 			!byte $90,$92,$94,$96,$98,$9A,$9C,$9E
 			!byte $A0,$A2,$A4,$A6,$A8,$AA,$AC,$AE
 			!byte $B0,$B2,$B4,$B6,$B8,$BA,$BC,$BE
-			!fill (168-88),0 
-} else if ZVERSION<=5 {
-page_ages	!fill 44
-vm_map		!fill 212
+!if ZVERSION=3 {
+			; story size in kilobytes minus 44k dynamic and 44k initial vram, at two 512b blocks per kilobyte.
+			!fill (128-88)*2,0
+} else if (ZVERSION<=5) {
+			!fill (256-88)*2,0
 } else {
-page_ages	!fill 22
-vm_map		!fill 234
+			!fill (512-88)*2,0
 }
-}
+} ; MEM_MODEL>1
 
-	; round interpreter up to next 4k boundary for alignment (we start at 2k)
+	; round interpreter up to next 8k boundary for alignment (we start at 4k)
+	; the non-debug version of the interpreter fits in 8k though.
 	!align 8191, 0
