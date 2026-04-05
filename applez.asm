@@ -1289,6 +1289,8 @@ increment_zpc_mid
 	inc zpc_mid
 	bne +
 	inc zpc_hi
+
+!if MEM_MODEL = 1 {
 +	inc zptr+1
 	pha
 	lda zptr+1
@@ -1296,6 +1298,11 @@ increment_zpc_mid
 	bne +
 	jsr update_zptr
 +	pla
+} else {
++	pha
+	jsr update_zptr
+	pla
+}
 	rts
 
 	; destroys A; uses current values of zpc_hi/zpc_mid
