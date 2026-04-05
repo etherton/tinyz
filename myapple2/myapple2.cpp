@@ -63,6 +63,9 @@ void myapple2::cpu_cycle() {
     ssw_vblank = (cpu_cycles % 17030 < 12480) << 7;
 }
 
+u8 *interpreter, *story;
+size_t interpreterSize, storySize;
+
 u8 myapple2::read_byte(u16 addr) const {
     if (ssw_80store && addr >= 0x400 && addr < 0x800) {
         return ram[ssw_page2? 0x10000 + addr : addr];
@@ -84,6 +87,28 @@ u8 myapple2::read_byte(u16 addr) const {
             keylatch = 0;
         else if (addr < 0xc020)
             return ssw[addr & 31];
+        // detect SmartPort call (normal reads to rom area return 0, so C503 + ($C5FF) is 3.
+        else if (addr == 0xc503 || addr == 0xc603) {
+            myapple2 *that = const_cast<myapple2*>(this);
+            // get return address
+            u16 rv = read_word(0x101+s);
+            u8 cmd = read_byte(rv+1);
+            if (cmd!=1) {
+                fprintf(stderr,"only smartport reads supported, not %d\n",cmd);
+                that->p |= 1;
+            }
+            else {
+                u16 pb = read_word(rv+2);
+                u16 dest = read_word(pb+2);
+                u16 block = read_word(pb+4);
+                u8 *base = (block < 24)? interpreter + block * 512 : story + (block-24) * 512;
+                for (int i=0; i<512; i++)
+                    that->write_byte(dest+i,base[i]);
+                that-> p &= ~1; // clear carry
+            }
+            that->write_word(0x101+s,rv+3); // fix return address
+            return 0x60;        // rts
+        }
         return 0;
     }
     else if (addr >= 0xd000) {
@@ -285,29 +310,38 @@ int main(int argc,char **argv) {
     computer.init();
     // first parameter is emulator image, which loads at 0xD000
     // second parameter is story file, which loads at 0x1000 (and wraps back at 0xBFFF if longer)
-    size_t interpreterSize, storySize;
-    auto interpreter = computer.read_file(argv[0],&interpreterSize);
+    interpreter = computer.read_file(argv[0],&interpreterSize);
     if (!interpreter || interpreterSize != 12 * 1024) {
         fprintf(stderr,"interpreter must be 12k\n");
         return 1;
     }
-    memcpy(computer.ram + 0xD000, interpreter, 12 * 1024);
 
-    auto story = computer.read_file(argv[1],&storySize);
-    if (!story || storySize > 88 * 1024) {
-        fprintf(stderr,"story must be 88k or smaller\n");
+    story = computer.read_file(argv[1],&storySize);
+    if (!story) {
+        fprintf(stderr,"story not found\n");
         return 1;
     }
-    size_t lowPart = storySize > 0xB000? 0xB000 : storySize;
-    size_t highPart = storySize - lowPart;
-    printf("loading story into %zu bytes of main memory and %zu bytes of aux memory\n",lowPart,highPart);
-    memcpy(computer.ram + 0x1000, story, lowPart);
-    memcpy(computer.ram + 0x11000, story + lowPart, highPart);
 
     // for now hack appropriate initial state and jump to zentry
-    computer.pc = 0xD300;
-    computer.writeprotect = 0;
-    computer.ssw_bsreadram = 0x80;
+    // are we emulating a disk drive load?
+    if (interpreter[0]==3) {
+        memcpy(computer.ram + 0xD000, interpreter, 12 * 1024);
+        size_t lowPart = storySize > 0xB000? 0xB000 : storySize;
+        size_t highPart = storySize - lowPart;
+        printf("loading story into %zu bytes of main memory and %zu bytes of aux memory\n",lowPart,highPart);
+        memcpy(computer.ram + 0x1000, story, lowPart);
+        memcpy(computer.ram + 0x11000, story + lowPart, highPart);
+        computer.pc = 0xD300;
+        computer.writeprotect = 0;
+        computer.ssw_bsreadram = 0x80;
+    }
+    else {  // nope, smartport boot
+        memcpy(computer.ram + 0x800, interpreter, 1024);
+        computer.pc = 0x801;
+        computer.a = 0x01;
+        computer.x = 0x50;
+        computer.y = 0x00;
+    }
 
 	computer.exec();
 }

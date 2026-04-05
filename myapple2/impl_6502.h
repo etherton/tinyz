@@ -69,6 +69,10 @@ struct generic_6502 {
 	u16 read_word(u16 addr) const {
 		return read_byte(addr) | (read_byte(addr+1)<<8);
 	}
+	void write_word(u16 addr,u16 v) {
+		write_byte(addr,v);
+		write_byte(addr+1,v>>8);
+	}
 	virtual void cpu_cycle() = 0;
 	u8 read(u16 addr) {
 		cpu_cycle();
