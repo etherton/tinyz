@@ -4364,10 +4364,12 @@ _0opNames
 	!byte 18,0,5,11,16,25,28,32,39,46,56,59,63,71,82,88,90,92
 	!text "rtruerfalseprintprint_retnopsaverestorerestartret_poppedpopquitnew_lineshow_statusverify3031"
 _varNames
-	!byte 34,0,7,13,19,27,32,42,51,57,61,65,77,87,0,0,0
-	!byte 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	!byte 34,0,7,13,19,27,32,42,51,57,61,65,77,87,95,107,117
+	!byte 128,138,152,163,176,188,200,209,219,222,229,237,246,248,250,252,255
 	!text "call_vsstorewstorebput_propsreadprint_charprint_numrandompush"
-	!text "pullsplit_windowset_window"
+	!text "pullsplit_windowset_windowcall_vs2erase_windowerase_lineset_cursorget_cursorset_text_style"
+	!text "buffer_modeoutput_streaminput_streamsound_effectread_charscan_tablenotcall_vncall_vn2tokenise"
+	!text "etctptcac"
 }
 
 	!align 255, 512 - 100 - (26*3) - 96
@@ -4403,7 +4405,7 @@ _1opTbl +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_in
 
 _0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,branch_passed,z_ill,z_ill
 
-_varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
+_varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_ill,next_insn,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
 	; resist temptation to move these to $800 because that's banked RAM on apple 2e.
 	; stack is split into lower and upper bytes so we can treat the Y register as a stack pointer.
 	!align 255, 0
