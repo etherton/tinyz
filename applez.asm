@@ -1680,6 +1680,10 @@ _0op
 	and #$f
 	+dispatch16 _0opTbl
 
+!if >_2op_s_s != >_0op {
+	!error "initial dispatches not on same page"
+}
+
 decode_types
 	+next_insn_byte_y0
 	sta ztype
