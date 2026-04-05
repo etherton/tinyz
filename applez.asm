@@ -569,7 +569,6 @@ stage1
 	lsr
 	lsr
 	lsr
-	+bp
 	ora temp+2
 	sta temp+2
 	sta do_read+2
@@ -582,15 +581,11 @@ temp
 	lda unit_number
 	sta read_params+1
 
-	+bp
-
 -	jsr do_read
 	inc read_block
 	inc read_dest+1
 	inc read_dest+1
 	bne -			; keep going until we wrap
-
-	+bp
 
 	lda #>HEADER
 	sta read_dest+1
@@ -612,6 +607,13 @@ temp
 	lda HEADER+26
 	adc #0
 	; story size in 512b blocks (including the one we already read)
+	; for higher memory models, we fill aux memory too so vm is "full"
+!if MEM_MODEL > 1 {
+	cmp #$B0
+	bcc +
+	lda #$B0
++
+}
 	sta tracks_remaining		; actually blocks
 
 read_story
@@ -620,6 +622,8 @@ read_story
 	inc read_dest+1
 	inc read_dest+1
 	lda read_dest+1
+	; for memory model 1, which supports stories up to 88k, we fill banked memory too.
+!if MEM_MODEL > 0 {
 	cmp #$C0
 	bne +
 	; switch to aux memory
@@ -627,7 +631,9 @@ read_story
 	sta read_dest+1
 	sta RAMRDON
 	sta RAMWRTON
-+	inc read_block
++	
+}
+	inc read_block
 	bne +
 	inc read_block+1
 +	jsr do_read
@@ -643,9 +649,9 @@ read_params
 	!byte 3			; parameter count
 	!byte 1			; device index
 read_dest
-	!word $D400		; destination address
+	!word $D400		; destination address (start past what is already loaded by bootstrap)
 read_block
-	!word $0002		; block number to read
+	!word $0002		; block number to read (start past what is already loaded by bootstrap)
 	!byte $00
 
 }
@@ -1357,6 +1363,7 @@ page_miss
 	; read new pages from disk
 	; this new page gets age 1
 	; all other pages grow older
+	+bp
 	jmp update_vram_exit
 
 
@@ -1431,16 +1438,15 @@ zentry
 	adc #>HEADER
 	sta dict_ptr+1
 	ldy #0
-	lda (dict_ptr),y
-	cmp #3
-	beq +		; also sets carry
-	jsr fatal_error
-	!text "dictionary does not have three separators",13,0
-+	ldy #4
+	lda (dict_ptr),y	; get number of separators
+	tay
+	iny					; +1
 	lda (dict_ptr),Y
 	sta entry_size
-	lda dict_ptr
-	adc #$6			; carry is always set, so add 7
+	tya					; get number of separators + 1 back in
+	clc
+	adc #3 				; skip to first word (this will never carry)
+	adc dict_ptr
 	sta entry_ptr
 	lda dict_ptr+1
 	adc #0
@@ -4335,8 +4341,19 @@ globals_hi	!fill 256
 
 !if MEM_MODEL > 1 {
 !if ZVERSION=3 {
-page_ages	!fill 88		; 0 means this page is newest
-vm_map		!fill 168		; 0 if not resident, else address. 
+page_ages	!fill 88,1		; 0 means this page is newest
+vm_map		!byte $10,$12,$14,$16,$18,$1A,$1C,$1E
+			!byte $20,$22,$24,$26,$28,$2A,$2C,$2E
+			!byte $30,$32,$34,$36,$38,$3A,$3C,$3E
+			!byte $40,$42,$44,$46,$48,$4A,$4C,$4E
+			!byte $50,$52,$54,$56,$58,$5A,$5C,$5E
+			!byte $60,$62,$64,$66,$68,$6A,$6C,$6E
+			!byte $70,$72,$74,$76,$78,$7A,$7C,$7E
+			!byte $80,$82,$84,$86,$88,$8A,$8C,$8E
+			!byte $90,$92,$94,$96,$98,$9A,$9C,$9E
+			!byte $A0,$A2,$A4,$A6,$A8,$AA,$AC,$AE
+			!byte $B0,$B2,$B4,$B6,$B8,$BA,$BC,$BE
+			!fill (168-88),0 
 } else if ZVERSION<=5 {
 page_ages	!fill 44
 vm_map		!fill 212
