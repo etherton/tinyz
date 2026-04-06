@@ -195,8 +195,12 @@ private:
 			return byte2word(0);
 		if (!o || o>m_objCount)
 			fault("get_prop object %d out of range",o);
-		if (!prop || prop>(m_header->version<4? 31 : 63))
-			fault("get_prop property index %d out of range",prop);
+		if (!prop || prop>(m_header->version<4? 31 : 63)) {
+			if (m_strict)
+				fault("get_prop property index %d out of range",prop);
+			else
+				return byte2word(0);
+		}
 		// this is the only one that returns a default property if it's not present
 		// properties are stored in descending order.
 		if (m_header->version < 4) {
@@ -243,8 +247,12 @@ private:
 	word objGetPropertyAddr(uint16_t o,uint16_t prop) const {
 		if (!o || o>m_objCount)
 			fault("get_prop_addr object %d out of range",o);
-		if (!prop || prop>(m_header->version < 4? 31 : 63))
-			fault("get_prop_addr property index %d out of range",prop);
+		if (!prop || prop>(m_header->version < 4? 31 : 63)) {
+			if (m_strict)
+				fault("get_prop_addr property index %d out of range",prop);
+			else
+				return byte2word(0);
+		}
 		// properties are stored in descending order.
 		if (m_header->version < 4) {
 			uint16_t pa = m_objectSmall->objTable[o-1].propAddr.getU();
