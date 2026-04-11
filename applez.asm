@@ -1623,6 +1623,7 @@ print_opcode_data
 ; location and execute it from there. (eventually)
 	; !align 255,0
 next_insn
+z_input_stream ; for now
 !ifdef BENCHMARK {
 	lda $c019
 	bpl +			; not in vbl
@@ -2468,44 +2469,82 @@ z_clear_attr
 	+end_dynamic
 	jmp next_insn
 
+!if ZVERSION=3 {
+PARENT = 4
+SIBLING = 5
+CHILD = 6
+PROP_ADDR = 8
+} else {
+PARENT = 7
+SIBLING = 9
+CHILD = 11
+PROP_ADDR = 13
+}
+
 z_get_child
 	+begin_dynamic
 	lda operands_lo+0
+!if ZVERSION>3 {
+	ora operands_hi+0
+}
 	beq .child_sibling_zero
 	jsr get_object_addr
-	ldy #6 ; child
-	bne +
+	ldy #CHILD
+	bne +		; always taken
 z_get_sibling
 	+begin_dynamic
 	jsr get_object_addr
-	ldy #$5 ; sibling
-+	lda (obj_ptr),Y
-	+end_dynamic
-	cmp #0
-	beq .child_sibling_zero
+	ldy #SIBLING
++	
+!if ZVERSION>3 {
+	lda (obj_ptr),Y
+	tax
+	dey
+	lda (obj_ptr),Y
+} else {
+	lda (obj_ptr),Y
 	tax
 	lda #0
-	jsr store_result
-	jmp branch_passed
+}
+	+end_dynamic
+!if ZVERSION>3 {
+	cmp #0
+	bne .child_sibling_nonzero
+}
+	cpx #0
+	bne .child_sibling_nonzero
 .child_sibling_zero
 	tax
 	jsr store_result
 	jmp branch_failed
+.child_sibling_nonzero
+	jsr store_result
+	jmp branch_passed
 
 	; get_parent doesn't branch
 z_get_parent
 	; get_parent(0) is always 0.
 	lda operands_lo+0
+!if ZVERSION>3 {
+	ora operands_hi+0
+}
 	beq +
 	; otherwise get object address
 	+begin_dynamic
 	jsr get_object_addr
-	ldy #4 ; parent
+	ldy #PARENT
+!if ZVERSION>3 {
 	lda (obj_ptr),Y
-	+end_dynamic
-+	tax
+	tax
+	dey
+	lda (obj_ptr),y
+} else {
+	lda (obj_ptr),Y
+	tax
 	lda #0
-	jmp store_common
+}
+	+end_dynamic
++	jmp store_common
 
 z_remove_obj
 	jsr remove_obj
@@ -2517,55 +2556,132 @@ z_remove_obj
 remove_obj
 	lda operands_lo+0
 	sta operands_lo+4
+!if ZVERSION>3 {
+	lda operands_hi+0
+	sta operands_hi+4
+}
 	+begin_dynamic
 	jsr get_object_addr
 	lda obj_ptr
 	sta obj_ptr_alt
 	lda obj_ptr+1
 	sta obj_ptr_alt+1
-	ldy #4 ; parent
+	ldy #PARENT
 	lda (obj_ptr),Y
+!if ZVERSION > 3 {
+	sta operands_hi+0
+	dey
+	lda (obj_ptr),y
+	sta operands_lo+0
+	ora operands_hi+0
+	beq .remove_obj_no_parent
+} else {
 	beq .remove_obj_no_parent
 	sta operands_lo+0
+}
 	jsr get_object_addr
-	ldy #6 ; child
+	ldy #CHILD
 .remove_obj_check_prev
+!if ZVERSION>3 {
+	lda (obj_ptr),Y
+	dey
+	cmp operands_hi+4
+	bne .remove_obj_not_direct
+}
 	lda (obj_ptr),Y
 	cmp operands_lo+4
 	bne .remove_obj_not_direct
+
 	sty ysave
-	ldy #5	; sibling
+	ldy #SIBLING
 	lda (obj_ptr_alt),Y	
 	ldy ysave
-	sta (obj_ptr),y		; parent's child is our sibling (or our predecessor's sibling is our sibling)
-	ldy #5	; sibling
+	; parent's child is our sibling (or our predecessor's sibling is our sibling)
+!if ZVERSION>3 {
+	iny
+	sta (obj_ptr),y
+	ldy #SIBLING-1
+	lda (obj_ptr_alt),Y
+	ldy ysave
+	sta (obj_ptr),Y
+} else {
+	sta (obj_ptr),Y
+}
+	ldy #SIBLING	; sibling
 	lda #0
 	sta (obj_ptr_alt),Y	; zero out our sibling
 	dey
+!if ZVERSION>3 {
+	sta (obj_ptr_alt),Y
+	dey
+}
 	sta (obj_ptr_alt),y ; zero out our parent
+!if ZVERSION>3 {
+	sta (obj_ptr_alt),Y
+	dey
+}
 .remove_obj_no_parent
 	+end_dynamic
 	rts
 	; walk next sibling in the list instead
 .remove_obj_not_direct
+!if ZVERSION>3 {
+	lda (obj_ptr),Y
 	sta operands_lo+0
+	iny
+	lda (obj_ptr),y
+	sta operands_hi+0
+} else {
+	sta operands_lo+0
+}
 	jsr get_object_addr
-	ldy #5	; sibling
+	ldy #SIBLING
 	bne .remove_obj_check_prev	; always take	
 
 z_insert_obj
 	jsr remove_obj	; obj_ptr_alt is now the object we're inserting
 	; set our new parent
-	ldy #4		; parent
-	lda operands_lo+1
 	+begin_dynamic
+	ldy #PARENT		; parent
+!if ZVERSION > 3 {
+	lda operands_hi+1
+	sta (obj_ptr_alt),Y
+	dey
+}
+	lda operands_lo+1
 	sta (obj_ptr_alt),y
 	; our sibling is parent's child
 	; first, get the parent's child and put it aside in X
 	sta operands_lo+0
 	jsr get_object_addr
-	ldy #6 		; child
+	ldy #CHILD
 	lda (obj_ptr),y
+!if ZVERSION>3 {
+	sta operands_hi+5
+	lda operands_hi+4
+	sta (obj_ptr),Y
+	dey
+	lda (obj_ptr),Y
+	sta operands_lo+5
+	lda operands_lo+4
+	sta (obj_ptr),Y
+
+	; update parent's child to us while we're here
+	iny
+	lda operands_hi+4
+	sta (obj_ptr),Y
+	dey
+	lda operands_lo+4
+	sta (obj_ptr),Y
+
+	; write parent's child to our sibling
+	dey
+	lda operands_hi+5
+	sta (obj_ptr_alt),Y
+	dey
+	lda operands_lo+5
+	sta (obj_ptr_alt),y
+} else {
 	tax
 	; update parent's child to us while we're here
 	lda operands_lo+4
@@ -2574,6 +2690,7 @@ z_insert_obj
 	dey			; sibling
 	txa
 	sta (obj_ptr_alt),Y
+}
 	+end_dynamic
 	jmp next_insn
 
@@ -3639,6 +3756,19 @@ z_print_inline_common
 	bcc -
 	rts
 
+z_call_1n
+z_call_2n
+z_call_vn
+z_call_vn2
+	lda operands_lo+0
+	ora operands_hi+0
+	bne +
+	; call to zero does nothing
+	jmp next_insn
++	+zeroy
+	lda #15			; remember not to store result
+	bne .set_call_storage
+
 	; all call instructions route through here, x=1..7
 	; the current frame's locals are kept in globals array to simplify decode logic
 	; this means that when making a call, we need to copy as many variables as the
@@ -3648,6 +3778,9 @@ z_print_inline_common
 	; of improving the access speed of any local or global variable.
 	; since all calls are variable typed (for now, not on V5) the arg count is in xsave
 z_call_vs
+z_call_vs2
+z_call_1s
+z_call_2s
 	lda operands_lo+0
 	ora operands_hi+0
 	bne +
@@ -3664,6 +3797,11 @@ z_call_vs
 	; new stack ptr is just past last local
 +	+zeroy
 	+next_insn_byte_y0		; get storage location
+	cmp #15
+	bne .set_call_storage
+	jsr fatal_error
+	!text "cannot call store to L15",13,0
+.set_call_storage
 	sta call_storage		; set it aside for now
 
 !ifdef nDEBUG_TRACE {
@@ -3723,12 +3861,20 @@ z_call_vs
 	+next_insn_byte_y0
 	; get local count in A
 	sta mulTemp
+	cmp #0
+	beq +
 !if ZVERSION>3 {
 	; zero out the locals
+	lda #0
+-	sta stack_hi,X
+	sta stack_lo,X
+	inx
+	dec mulTemp
+	bne -
++	stx stackptr
 } else {
 	; copy local values
-	cmp #$0
-	beq +
+
 -	+next_insn_byte_y0	; local high byte
 	sta stack_hi,x
 	+next_insn_byte_y0	; local low byte
@@ -4028,9 +4174,12 @@ z_print_char
 	jmp next_insn
 
 z_show_status
+!if ZVERSION=3 {
 	jsr show_status
+}
 	jmp next_insn
 
+!if ZVERSION=3 {
 show_status
 	jsr flush_main_window
 
@@ -4090,6 +4239,7 @@ show_status
 	lda #32
 	jsr print_char_upper
 	jmp -
+}
 
 flush_main_window
 	sty flush_restore_y+1
@@ -4399,13 +4549,29 @@ zalphabet
 	!align 255, 0
 dispatch +table16 _2op_s_s,_2op_s_s,_2op_s_v,_2op_s_v,_2op_v_s,_2op_v_s,_2op_v_v,_2op_v_v,_1op_large,_1op_small,_1op_variable,_0op,_2op_var,_2op_var,_vop,_vop
 
+!if ZVERSION>3 {
+_2opTbl +table32 z_ill,z_je,z_jl,z_jg,z_dec_chk,z_inc_chk,z_jin,z_test,z_or,z_and,z_test_attr,z_set_attr,z_clear_attr,z_store,z_insert_obj,z_loadw,z_loadb,z_get_prop,z_get_prop_addr,z_get_next_prop,z_add,z_sub,z_mul,z_div,z_mod,z_call_2s,z_call_2n,z_set_colour,z_throw,z_ill,z_ill,z_ill
+} else {
 _2opTbl +table32 z_ill,z_je,z_jl,z_jg,z_dec_chk,z_inc_chk,z_jin,z_test,z_or,z_and,z_test_attr,z_set_attr,z_clear_attr,z_store,z_insert_obj,z_loadw,z_loadb,z_get_prop,z_get_prop_addr,z_get_next_prop,z_add,z_sub,z_mul,z_div,z_mod,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
+}
 
+!if ZVERSION>3 {
+_1opTbl +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_inc,z_dec,z_print_addr,z_call_1s,z_remove_obj,z_print_obj,z_ret,z_jump,z_print_paddr,z_load,z_call_1n
+} else {
 _1opTbl +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_inc,z_dec,z_print_addr,z_ill,z_remove_obj,z_print_obj,z_ret,z_jump,z_print_paddr,z_load,z_not
+}
 
+!if ZVERSION>3 {
+_0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,branch_passed,z_ill,branch_passed
+} else {
 _0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,branch_passed,z_ill,z_ill
+}
 
-_varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_ill,next_insn,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
+!if ZVERSION>3 {
+_varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_call_vs2,z_erase_window,z_erase_line,z_set_cursor,z_get_cursor,z_set_text_style,z_buffer_mode,z_output_stream,z_input_stream,next_insn,z_read_char,z_scan_table,z_not,z_call_vn,z_call_vn2,z_tokenise,z_encode_text,z_copy_table,z_print_table,z_check_arg_count
+} else {
+_varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_input_stream,next_insn,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
+}	
 	; resist temptation to move these to $800 because that's banked RAM on apple 2e.
 	; stack is split into lower and upper bytes so we can treat the Y register as a stack pointer.
 	!align 255, 0
