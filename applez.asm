@@ -1061,6 +1061,7 @@ call_storage = $44
 mulSign = $45
 mulTemp = $46
 attr_bit = $47
+ztype2 = $47
 ztype = $48
 zinsn = $49
 zpc_hi = $4A		; upper two bytes of offset in story (big-endian)
@@ -1718,9 +1719,21 @@ _vop
 !ifdef DEBUG_TRACE {
 	+print_opcode _varNames
 }
+!if ZVERSION>3 {
+	lda zinsn
+	cmp #$EC
+	beq .extra_types
+	cmp #$FA 
+	bne .no_extra_types
+.extra_types
+	jsr decode_xtypes
+	lda zinsn
+	bne +
+.no_extra_types
+}
 	jsr decode_types
 	lda zinsn
-	and #$1F
++	and #$1F
 	+dispatch32 _varTbl
 
 _1op_large
@@ -1766,11 +1779,26 @@ _0op
 	!error "initial dispatches not on same page"
 }
 
-decode_types
+!if ZVERSION>3 {
+decode_xtypes
 	+next_insn_byte_y0
 	sta ztype
+	+next_insn_byte_y0
+	sta ztype2
+	jmp decode_type_byte
+}
+decode_types
+!if ZVERSION>3 {
+	ldx #$FF
+	stx ztype2
+	inx
+} else {
 	ldx #0
--	bit ztype
+}
+	+next_insn_byte_y0
+	sta ztype
+decode_type_byte
+	bit ztype
 	; large=00, small=01, variable=10, omitted=11
 	bmi .var_omit
 	bvs .small
@@ -1787,9 +1815,19 @@ decode_types
 	rol ztype
 	sec
 	rol ztype
-	bne -			; always taken
+	bne decode_type_byte			; always taken
 .decode_done
 	stx operand_count ; je and call_vs need arg count
+!if ZVERSION>3 {
+	lda ztype2
+	cmp #$FF
+	beq +
+	sta ztype
+	lda #$FF
+	sta ztype2
+	bne decode_type_byte ; always taken
++
+}
 	rts
 
 	; all operand handlers inx before return and so the zero flag is always clear.
@@ -4454,6 +4492,61 @@ z_input_stream
 	jmp next_insn
 
 !if ZVERSION>3 {
+z_extended
+	+zeroy
+	+next_insn_byte_y0
+!if DEBUG_TRACE {
+	jsr print_hex_byte
+}
+	tay
+	lda _extTbl,Y
+	sta .extDispatch+1
+	jsr operand_variable
+.extDispatch
+	jmp z_xsave
+
+z_xsave
+z_xrestore
+	jmp z_ill
+
+z_log_shift
+	lda operands_lo+1
+	bmi .log_shift_right
+	beq .shift_done
+.shift_left_common
+	asl operands_lo+0
+	rol operands_hi+0
+	dec operands_lo+1
+	bne .shift_left_common
+.shift_done
+	ldx operands_lo+0
+	lda operands_hi+0
+	jmp store_common
+.log_shift_right
+	lsr operands_hi+0
+	ror operands_lo+0
+	inc operands_lo+1
+	bne .log_shift_right
+	beq .shift_done
+
+z_art_shift
+	lda operands_lo+1
+	beq .shift_done
+	bpl .shift_left_common
+	lda operands_hi+1
+	bpl .log_shift_right
+.art_shift_right
+	sec
+	ror operands_hi+0
+	ror operands_lo+0
+	inc operands_lo+1
+	bne .art_shift_right
+	beq .shift_done
+
+!if >z_xsave != >z_art_shift {
+	!error "extended dispatches not on same page"
+}
+
 z_set_colour ; we could support normal and Inverse
 	jmp next_insn
 
@@ -4620,7 +4713,7 @@ _1opTbl +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_in
 }
 
 !if ZVERSION>3 {
-_0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,branch_passed,z_ill,branch_passed
+_0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,branch_passed,z_extended,branch_passed
 } else {
 _0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,branch_passed,z_ill,z_ill
 }
@@ -4630,6 +4723,12 @@ _varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_p
 } else {
 _varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_input_stream,next_insn,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
 }	
+
+!if ZVERSION>3 {
+_extTbl
+	!byte <z_xsave,<z_xrestore,<z_log_shift,<z_art_shift
+}
+
 	; resist temptation to move these to $800 because that's banked RAM on apple 2e.
 	; stack is split into lower and upper bytes so we can treat the Y register as a stack pointer.
 	!align 255, 0
