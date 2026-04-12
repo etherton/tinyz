@@ -1,5 +1,5 @@
 
-DEBUG_TRACE = 1
+; DEBUG_TRACE = 1
 
 !macro bp {
 	bit $c00e
@@ -3852,14 +3852,6 @@ z_call_2s
 .set_call_storage
 	sta call_storage		; set it aside for now
 
-!ifdef nDEBUG_TRACE {
-	jsr debug_print
-	!text "call_vs sp is ",0
-	lda stackptr
-	jsr print_hex_byte
-	lda #$d
-	jsr print_char
-}
 	ldx stackptr
 	lda zpc_mid
 	sta stack_hi,x
@@ -3874,6 +3866,10 @@ z_call_2s
 
 	; location to store result
 	inx
+!if ZVERSION>3 {
+	lda operand_count
+	sta stack_hi,x
+}
 	lda call_storage
 	sta stack_lo,x
 
@@ -4495,13 +4491,14 @@ z_input_stream
 z_extended
 	+zeroy
 	+next_insn_byte_y0
-!if DEBUG_TRACE {
+!ifdef DEBUG_TRACE {
 	jsr print_hex_byte
 }
 	tay
 	lda _extTbl,Y
 	sta .extDispatch+1
-	jsr operand_variable
+	+zeroy
+	jsr decode_types
 .extDispatch
 	jmp z_xsave
 
@@ -4533,7 +4530,7 @@ z_art_shift
 	lda operands_lo+1
 	beq .shift_done
 	bpl .shift_left_common
-	lda operands_hi+1
+	lda operands_hi+0
 	bpl .log_shift_right
 .art_shift_right
 	sec
@@ -4591,7 +4588,12 @@ z_print_table
 
 z_check_arg_count
 	; examine arg count in current stack frame
-	jmp z_ill
+	ldy stackptr
+	lda stack_hi-1,y
+	cmp operands_lo+0
+	bcc +
+	jmp branch_passed
++	jmp branch_failed
 }
 
 
