@@ -1,5 +1,5 @@
 
-; DEBUG_TRACE = 1
+DEBUG_TRACE = 1
 
 !macro bp {
 	bit $c00e
@@ -25,6 +25,10 @@
 	lsr
 	lsr
 }
+
+; magic number which means don't store result from call.
+; needs to resolve to a storage location that is never used in any story.
+DONT_STORE_RESULT = 15
 
 _80STOREOFF	= $C000
 _80STOREON	= $C001
@@ -1623,7 +1627,6 @@ print_opcode_data
 ; location and execute it from there. (eventually)
 	; !align 255,0
 next_insn
-z_input_stream ; for now
 !ifdef BENCHMARK {
 	lda $c019
 	bpl +			; not in vbl
@@ -1726,6 +1729,9 @@ _1op_large
 }
 	ldx #0
 	jsr operand_large
+!if ZVERSION>3 {
+	stx operand_count
+}
 	bne ._1op_common ; always taken
 _1op_small
 !ifdef DEBUG_TRACE {
@@ -1733,6 +1739,9 @@ _1op_small
 }
 	ldx #0
 	jsr operand_small
+!if ZVERSION>3 {
+	stx operand_count
+}
 	bne ._1op_common ; always taken
 _1op_variable
 !ifdef DEBUG_TRACE {
@@ -2036,9 +2045,10 @@ z_rfalse
 	jsr update_zptr
 
 	lda stack_lo+2,Y
-	; TODO: On V4+, might be a non-storing call
+	cmp #DONT_STORE_RESULT
+	beq +
 	jsr store_result_2
-	jmp next_insn
++	jmp next_insn
 
 z_ret
 	ldx operands_lo+0
@@ -3766,7 +3776,7 @@ z_call_vn2
 	; call to zero does nothing
 	jmp next_insn
 +	+zeroy
-	lda #15			; remember not to store result
+	lda #DONT_STORE_RESULT			; remember not to store result
 	bne .set_call_storage
 
 	; all call instructions route through here, x=1..7
@@ -3797,7 +3807,7 @@ z_call_2s
 	; new stack ptr is just past last local
 +	+zeroy
 	+next_insn_byte_y0		; get storage location
-	cmp #15
+	cmp #DONT_STORE_RESULT
 	bne .set_call_storage
 	jsr fatal_error
 	!text "cannot call store to L15",13,0
@@ -4440,6 +4450,58 @@ store_result_3
 + 	jsr fatal_error
 	!text "stack overflow",13,0
 
+z_input_stream
+	jmp next_insn
+
+!if ZVERSION>3 {
+z_set_colour ; we could support normal and Inverse
+	jmp next_insn
+
+z_set_text_style ; we could support normal and Inverse
+	jmp next_insn
+
+z_buffer_mode
+	jmp z_ill 
+
+z_throw
+	jmp z_ill ; todo, needs to restore stack
+
+z_erase_window
+	jmp next_insn
+
+z_erase_line
+	jmp next_insn
+
+z_set_cursor
+	jmp next_insn
+
+z_get_cursor
+	jmp next_insn
+
+z_read_char
+	jsr read_char
+	tax
+	lda #0
+	jmp store_common
+
+z_scan_table
+	jmp z_ill
+
+z_encode_text
+	jmp z_ill
+
+z_copy_table
+	jmp z_ill
+
+z_print_table
+	jmp z_ill
+
+z_check_arg_count
+	; examine arg count in current stack frame
+	jmp z_ill
+}
+
+
 fatal_error
 	lda zpc_hi
 	jsr print_hex_byte
@@ -4502,26 +4564,22 @@ debug_print
 ;}
 
 !ifdef DEBUG_TRACE {
-_2opNames 
-	!byte 34,0,1,3,5,7,14,21,24,28,30,33,42,50,60,65,75
-	!byte 80,85,93,106,119,122,125,128,131,133,135,137,139,141,143,145,147
-	!text "0jejljgdec_chkinc_chkjintestorandtest_attrset_attrclear_attrstoreinsert_objloadwloadbget_propget_prop_addr"
-	!text "get_next_propaddsubmuldiv25262728293031"
+_2opNames
+	!source "table_2op.inc"
+	
 _1opNames
-	!byte 18,0,2,13,22,32,44,47,50,60,61,71,80,83,87,98,102,105
-	!text "jzget_siblingget_childget_parentget_prop_lenincdecprint_addr9remove_objprint_objretjumpprint_paddrloadnot"
-_0opNames
-	!byte 18,0,5,11,16,25,28,32,39,46,56,59,63,71,82,88,90,92
-	!text "rtruerfalseprintprint_retnopsaverestorerestartret_poppedpopquitnew_lineshow_statusverify3031"
-_varNames
-	!byte 34,0,7,13,19,27,32,42,51,57,61,65,77,87,95,107,117
-	!byte 128,138,152,163,176,188,200,209,219,222,229,237,246,248,250,252,255
-	!text "call_vsstorewstorebput_propsreadprint_charprint_numrandompush"
-	!text "pullsplit_windowset_windowcall_vs2erase_windowerase_lineset_cursorget_cursorset_text_style"
-	!text "buffer_modeoutput_streaminput_streamsound_effectread_charscan_tablenotcall_vncall_vn2tokenise"
-	!text "etctptcac"
+!if ZVERSION>3 {
+	!source "table_1op_v5.inc"
+} else {
+	!source "table_1op_v3.inc"
 }
 
+_0opNames
+	!source "table_0op.inc"
+
+_varNames
+	!source "table_varop.inc"
+}
 	!align 255, 512 - 100 - (26*3) - 96
 dec2hex 
 	!byte $00,$01,$02,$03,$04,$05,$06,$07,$08,$09,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24

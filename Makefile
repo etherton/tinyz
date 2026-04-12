@@ -1,6 +1,6 @@
 all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3 advent.do advent.po demogame.do \
 	sieve_2p.do sieve_2e.do sieve_2ee.do cloak.do zork.do dejavu.do hibernated.do czech.do minimal.do loh.do \
-	applez_2e.bin applez_2e40_0.bin applez_2e40_1.bin applez_2e40_2.bin
+	applez_2e.bin applez_2e40_0.bin applez_2e40_1.bin applez_2e40_2.bin applez_2e_2.bin applez_2e_v5.bin
 
 tinyzcd: opcodes.h header.h tinyz.y debug.h debug.cpp Makefile
 	bison --debug tinyz.y -v -o tinyz.debug.tab.cpp && clang++ -DDEBUG_MEM=1 -g -std=c++17 tinyz.debug.tab.cpp debug.cpp -o tinyzcd
@@ -62,6 +62,9 @@ applez_2p.bin: applez.asm Makefile
 applez_2e.bin: applez.asm Makefile
 	acme -f plain --cpu 6502 -DCOLUMNS=80 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DZVERSION=3 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=1 -r applez_2e.lst -o applez_2e.bin applez.asm
 
+applez_2e_v5.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DZVERSION=5 -DMEM_MODEL=0 -DLOAD_FROM_DISK_II=1 -r applez_2e_v5.lst -o applez_2e_v5.bin applez.asm
+
 applez_2e40_0.bin: applez.asm Makefile
 	acme -f plain --cpu 6502 -DCOLUMNS=40 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DZVERSION=3 -DMEM_MODEL=0 -DLOAD_FROM_DISK_II=0  -r applez_2e40_0.lst -o applez_2e40_0.bin applez.asm
 
@@ -70,6 +73,9 @@ applez_2e40_1.bin: applez.asm Makefile
 
 applez_2e40_2.bin: applez.asm Makefile
 	acme -f plain --cpu 6502 -DCOLUMNS=40 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DZVERSION=3 -DMEM_MODEL=2 -DLOAD_FROM_DISK_II=0 -r applez_2e40_2.lst -o applez_2e40_2.bin applez.asm
+
+applez_2e_2.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DZVERSION=3 -DMEM_MODEL=2 -DLOAD_FROM_DISK_II=0 -r applez_2e40_2.lst -o applez_2e_2.bin applez.asm
 
 applez_2ee.bin: applez.asm Makefile
 	acme -f plain --cpu 65c02 -DCOLUMNS=80 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DTARGET_65C02=1 -DZVERSION=3 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=1 -r applez_2ee.lst -o applez_2ee.bin applez.asm
@@ -121,4 +127,27 @@ czech.do: czech.z3 applez_2e.bin Makefile makedsk
 
 loh.do: library_of_horror.z3 applez_2e.bin Makefile makedsk
 	./makedsk applez_2e.bin library_of_horror.z3 -o loh.do
+
+maketable: maketable.cpp Makefile
+	clang++ maketable.cpp -o maketable
+
+table_2op.inc: Makefile
+	./maketable 0 je jl jg dec_chk inc_chk jin test or and test_attr set_attr clear_attr store insert_obj loadw loadb \
+get_prop get_prop_addr get_next_prop add sub mul div mod call_2s call_2n set_colour throw 29 30 31 > table_2op.inc
+
+table_1op_v3.inc: Makefile
+	./maketable jz get_sibling get_child get_parent get_prop_len inc dec print_addr 9 remove_obj print_obj ret jump print_paddr load not > table_1op_v3.inc
+
+table_1op_v5.inc: Makefile
+	./maketable jz get_sibling get_child get_parent get_prop_len inc dec print_addr 9 remove_obj print_obj ret jump print_paddr load call_1n > table_1op_v5.inc
+
+table_0op.inc: Makefile
+	./maketable rtrue rfalse print print_ret nop save restore restart ret_popped pop quit new_line show_status verify 30 31 > table_0op.inc
+
+table_varop.inc: Makefile
+	./maketable call_vs storew storeb put_prop sread print_char print_num random push pull split_wnd set_wnd call_vs2 era_wnd \
+era_ln set_curs get_curs set_txt_style buffer_mode out_strm inp_strm sfx read_char scan_table not call_vn call_vn2 tokenise \
+encode_text copy_table print_table chk_arg_ct > table_varop.inc
+
+applez.asm: table_0op.inc table_1op_v3.inc table_1op_v5.inc table_2op.inc table_varop.inc
 
