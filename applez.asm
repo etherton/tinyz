@@ -1586,7 +1586,7 @@ zentry
 ; (text to print)
 
 !ifdef DEBUG_TRACE {
-; obj_ptr points at table, zinsn contains instruction, destroys A/X, Y is zero
+; obj_ptr points at table, zinsn contains instruction, destroys A, X/Y is zero
 print_opcode_data
 	ldy #0
 	lda (obj_ptr),Y			; get table size (also insn mask+3)
@@ -1785,7 +1785,8 @@ decode_xtypes
 	sta ztype
 	+next_insn_byte_y0
 	sta ztype2
-	jmp decode_type_byte
+	ldx #0
+	beq decode_type_byte
 }
 decode_types
 !if ZVERSION>3 {
@@ -4502,6 +4503,7 @@ z_extended
 .extDispatch
 	jmp z_xsave
 
+;	!align 255, 0
 z_xsave
 z_xrestore
 	jmp z_ill
