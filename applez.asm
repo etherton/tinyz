@@ -4590,10 +4590,10 @@ z_print_table
 
 z_check_arg_count
 	; examine arg count in current stack frame
-	ldy stackptr
-	lda stack_hi-1,y
-	cmp operands_lo+0
-	bcc +
+	ldy frameptr
+	lda operands_lo+0
+	cmp stack_hi,y
+	bcs +
 	jmp branch_passed
 +	jmp branch_failed
 }
