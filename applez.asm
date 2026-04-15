@@ -2037,12 +2037,18 @@ z_inc_chk
 	; is operand+0's parent operand+1?
 z_jin
 	jsr get_object_addr
-	ldy #4 ; parent
-	lda (obj_ptr),y
+	ldy #PARENT
+	lda (obj_ptr),Y
 	cmp operands_lo+1
-	beq +
-	jmp branch_failed
-+	jmp branch_passed
+	bne +
+!if ZVERSION>3 {
+	dey
+	lda (obj_ptr),Y
+	cmp operands_hi+1
+	bne +
+}
+	jmp branch_passed
++	jmp branch_failed
 
 z_print_ret
 	jsr z_print_inline_common
