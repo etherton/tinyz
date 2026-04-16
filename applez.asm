@@ -3051,7 +3051,7 @@ z_print_obj
 print_obj
 	+begin_dynamic
 	jsr get_object_addr
-	ldy #7
+	ldy #PROP_ADDR-1
 	lda (obj_ptr),y	; high byte
 	tax
 	iny
@@ -3965,10 +3965,7 @@ z_call_2s
 	lda #0
 -	sta stack_hi,X
 	sta stack_lo,X
-	inx
-	dec mulTemp
-	bne -
-+	stx stackptr
+
 } else {
 	; copy local values
 
@@ -3976,11 +3973,13 @@ z_call_2s
 	sta stack_hi,x
 	+next_insn_byte_y0	; local low byte
 	sta stack_lo,x
+
+}
 	inx
 	dec mulTemp
 	bne -
 +	stx stackptr
-}
+
 	; now copy incoming parameters over previous locals
 	dec operand_count
 	beq +
