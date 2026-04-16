@@ -137,23 +137,23 @@ loh.do: library_of_horror.z3 applez_2e.bin Makefile makedsk
 maketable: maketable.cpp Makefile
 	clang++ maketable.cpp -o maketable
 
-table_2op.inc: Makefile
+table_2op.inc: maketable
 	./maketable x00 je jl jg dec_chk inc_chk jin test or and test_attr set_attr clear_attr store insert_obj loadw loadb \
 get_prop get_prop_addr get_next_prop add sub mul div mod call_2s call_2n set_colour throw x1d x1e x1f > table_2op.inc
 
-table_1op_v3.inc: Makefile
+table_1op_v3.inc: maketable
 	./maketable jz get_sibling get_child get_parent get_prop_len inc dec print_addr call_1s remove_obj print_obj ret jump print_paddr load not > table_1op_v3.inc
 
-table_1op_v5.inc: Makefile
+table_1op_v5.inc: maketable
 	./maketable jz get_sibling get_child get_parent get_prop_len inc dec print_addr call_1s remove_obj print_obj ret jump print_paddr load call_1n > table_1op_v5.inc
 
-table_0op.inc: Makefile
+table_0op.inc: maketable
 	./maketable rtrue rfalse print print_ret nop save restore restart ret_popped pop quit new_line show_status verify extended piracy > table_0op.inc
 
-table_varop.inc: Makefile
+table_varop.inc: maketable
 	./maketable call_vs storew storeb put_prop sread print_char print_num random push pull split_wnd set_wnd call_vs2 era_wnd \
 era_ln set_curs get_curs set_txt_style buffer_mode out_strm inp_strm sfx read_char scan_table not call_vn call_vn2 tokenise \
 encode_text copy_table print_table chk_arg_ct > table_varop.inc
 
-applez.asm: table_0op.inc table_1op_v3.inc table_1op_v5.inc table_2op.inc table_varop.inc
+applez.asm: maketable table_0op.inc table_1op_v3.inc table_1op_v5.inc table_2op.inc table_varop.inc
 
