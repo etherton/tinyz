@@ -57,28 +57,28 @@ sieve.z3: sieve.tz
 	./tinyzc sieve.tz
 
 applez_2p.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=40 -DTARGET_APPLE2PLUS=1 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DZVERSION=3 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=1 -r applez_2p.lst -o applez_2p.bin applez.asm
+	acme -f plain --cpu 6502 -DCOLUMNS=40 -DTARGET_APPLE2PLUS=1 -DZVERSION=3 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=1 -r applez_2p.lst -o applez_2p.bin applez.asm
 
 applez_2e.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=80 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DZVERSION=3 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=1 -r applez_2e.lst -o applez_2e.bin applez.asm
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=3 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=1 -r applez_2e.lst -o applez_2e.bin applez.asm
 
 applez_2e_v5.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=80 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DZVERSION=5 -DMEM_MODEL=0 -DLOAD_FROM_DISK_II=1 -r applez_2e_v5.lst -o applez_2e_v5.bin applez.asm
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=1 -r applez_2e_v5.lst -o applez_2e_v5.bin applez.asm
 
 applez_2e40_0.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=40 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DZVERSION=3 -DMEM_MODEL=0 -DLOAD_FROM_DISK_II=0  -r applez_2e40_0.lst -o applez_2e40_0.bin applez.asm
+	acme -f plain --cpu 6502 -DCOLUMNS=40 -DZVERSION=3 -DMEM_MODEL=0 -DLOAD_FROM_DISK_II=0  -r applez_2e40_0.lst -o applez_2e40_0.bin applez.asm
 
 applez_2e40_1.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=40 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DZVERSION=3 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=0 -r applez_2e40_1.lst -o applez_2e40_1.bin applez.asm
+	acme -f plain --cpu 6502 -DCOLUMNS=40 -DZVERSION=3 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=0 -r applez_2e40_1.lst -o applez_2e40_1.bin applez.asm
 
 applez_2e40_2.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=40 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DZVERSION=3 -DMEM_MODEL=2 -DLOAD_FROM_DISK_II=0 -r applez_2e40_2.lst -o applez_2e40_2.bin applez.asm
+	acme -f plain --cpu 6502 -DCOLUMNS=40 -DZVERSION=3 -DMEM_MODEL=2 -DLOAD_FROM_DISK_II=0 -r applez_2e40_2.lst -o applez_2e40_2.bin applez.asm
 
 applez_2e_2.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=80 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DZVERSION=3 -DMEM_MODEL=2 -DLOAD_FROM_DISK_II=0 -r applez_2e40_2.lst -o applez_2e_2.bin applez.asm
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=3 -DMEM_MODEL=2 -DLOAD_FROM_DISK_II=0 -r applez_2e40_2.lst -o applez_2e_2.bin applez.asm
 
 applez_2ee.bin: applez.asm Makefile
-	acme -f plain --cpu 65c02 -DCOLUMNS=80 -DNDEBUG_TRACE=1 -DNDEBUG_PROP_COMMON=1 -DTARGET_65C02=1 -DZVERSION=3 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=1 -r applez_2ee.lst -o applez_2ee.bin applez.asm
+	acme -f plain --cpu 65c02 -DCOLUMNS=80 -DTARGET_65C02=1 -DZVERSION=3 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=1 -r applez_2ee.lst -o applez_2ee.bin applez.asm
 
 sieve_2p.do: sieve.z3 applez_2p.bin makedsk
 	./makedsk applez_2p.bin sieve.z3 -o sieve_2p.do

@@ -1,5 +1,8 @@
 
-; DEBUG_TRACE = 1
+DEBUG_TRACE = 0
+DEBUG_PROP_COMMON = 0
+DEBUG_TOKENISE = 0
+DEBUG_TOKENISE_VERBOSE = 0
 
 !macro bp {
 	bit $c00e
@@ -1586,7 +1589,7 @@ zentry
 ; (branch offset)
 ; (text to print)
 
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 ; obj_ptr points at table, zinsn contains instruction, destroys A, X/Y is zero
 print_opcode_data
 	ldy #0
@@ -1640,7 +1643,7 @@ next_insn
 +	sta vblprev
 ++
 }
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	lda #13
 	jsr print_char
 	lda zpc_hi
@@ -1674,7 +1677,7 @@ next_insn
 ; Y contains instruction
 ; X contains operand count
 _2op_s_s
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	+print_opcode _2opNames
 }
 	ldx #0
@@ -1682,7 +1685,7 @@ _2op_s_s
 	jsr operand_small
 	bne ._2op_common ; always taken
 _2op_s_v
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	+print_opcode _2opNames
 }
 	ldx #0
@@ -1690,7 +1693,7 @@ _2op_s_v
 	jsr operand_variable
 	bne ._2op_common ; always taken
 _2op_v_s
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	+print_opcode _2opNames
 }
 	ldx #0
@@ -1698,7 +1701,7 @@ _2op_v_s
 	jsr operand_small
 	bne ._2op_common ; always taken
 _2op_v_v
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	+print_opcode _2opNames
 }
 	ldx #0
@@ -1711,13 +1714,13 @@ _2op_v_v
 	and #$1F
 	+dispatch32 _2opTbl
 _2op_var
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	+print_opcode _2opNames
 }
 	jsr decode_types
 	jmp ._2op_common_2
 _vop
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	+print_opcode _varNames
 }
 !if ZVERSION>3 {
@@ -1738,7 +1741,7 @@ _vop
 	+dispatch32 _varTbl
 
 _1op_large
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	+print_opcode _1opNames
 }
 	ldx #0
@@ -1748,7 +1751,7 @@ _1op_large
 }
 	bne ._1op_common ; always taken
 _1op_small
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	+print_opcode _1opNames
 }
 	ldx #0
@@ -1758,7 +1761,7 @@ _1op_small
 }
 	bne ._1op_common ; always taken
 _1op_variable
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	+print_opcode _1opNames
 }
 	ldx #0
@@ -1769,7 +1772,7 @@ _1op_variable
 	+dispatch16 _1opTbl
 
 _0op
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	+print_opcode _0opNames
 }
 	lda zinsn
@@ -1835,7 +1838,7 @@ decode_type_byte
 	; all operand handlers inx before return and so the zero flag is always clear.
 operand_large
 	+next_insn_byte_y0
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	jsr print_hex_byte
 }
 	+skip_2b
@@ -1845,7 +1848,7 @@ operand_small
 	sta operands_hi,x
 	+next_insn_byte_y0
 	sta operands_lo,x
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	jsr print_hex_byte
 	jsr space
 }
@@ -1862,7 +1865,7 @@ operand_variable
 	cmp #$10
 	bcs .read_global
 	; read local
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	pha
 	lda #'L'
 	jsr print_char
@@ -1879,12 +1882,12 @@ operand_variable
 	adc frameptr
 	tay
 	lda stack_hi,Y
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	jsr print_hex_byte
 }
 	sta operands_hi,x
 	lda stack_lo,Y
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	jsr print_hex_byte
 	jsr space
 }
@@ -1895,7 +1898,7 @@ operand_variable
 .read_global
 }
 	tay
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	lda #'G'
 	jsr print_char
 	tya
@@ -1906,12 +1909,12 @@ operand_variable
 	jsr print_char
 }
 	lda globals_hi,Y
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	jsr print_hex_byte
 }
 	sta operands_hi,X
 	lda globals_lo,Y
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	jsr print_hex_byte
 	jsr space
 }
@@ -1921,19 +1924,19 @@ operand_variable
 	rts
 
 .read_tos
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	jsr debug_print
 	!text "--(sp)=",0
 }
 	dec stackptr
 	ldy stackptr
 	lda stack_hi,Y
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	jsr print_hex_byte
 }
 	sta operands_hi,x
 	lda stack_lo,Y
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	jsr print_hex_byte
 	jsr space
 }
@@ -2071,7 +2074,7 @@ z_rfalse
 	dey
 	sty stackptr
 
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	jsr debug_print
 	!text "sp=",0
 	lda stackptr
@@ -2174,7 +2177,7 @@ z_je
 	; 0x20 indicates the sign of the branch, remaining bits are upper bits of sign, next byte is lower part.
 branch_failed
 	+zeroy
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	jsr print_offset
 }
 	+next_insn_byte_y0
@@ -2188,7 +2191,7 @@ branch_failed
 	jmp next_insn
 branch_passed
 	+zeroy
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	jsr print_offset
 }
 	+next_insn_byte_y0
@@ -2257,7 +2260,7 @@ z_jg
 	bcc branch_passed
 	jmp branch_failed	; always taken
 
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 print_offset
 	lda #'?'
 	jsr print_char
@@ -2764,11 +2767,9 @@ z_get_prop_addr
 	lda obj_mid
 	jmp store_common
 
-; DEBUG_PROP_COMMON=1
-
 	; on input, operands+0 is object number; returns with obj_ptr pointing at first property
 prop_common
-!ifdef DEBUG_PROP_COMMON {
+!if DEBUG_PROP_COMMON {
 	lda operands_lo+0
 	jsr print_hex_byte
 	lda #','
@@ -2792,7 +2793,7 @@ prop_common
 	sta obj_ptr+1
 	stx obj_ptr
 
-!ifdef DEBUG_PROP_COMMON {
+!if DEBUG_PROP_COMMON {
 	lda obj_ptr+1
 	jsr print_hex_byte
 	lda obj_ptr
@@ -2827,7 +2828,7 @@ prop_common
 	; on V4+, lower 6 bits are property index, 1-63. If MSB is set, size is 6 LSB's of next byte (0 is 64) (and MSB there is set too)
 	; if MSB is clear, bit 6 is set for a size of 2, else clear for a size of 1.
 find_property
-!ifdef DEBUG_PROP_COMMON {
+!if DEBUG_PROP_COMMON {
 	lda obj_ptr+1
 	jsr print_hex_byte
 	lda obj_ptr
@@ -2884,7 +2885,7 @@ find_property
 	and #MAX_PROP
 	beq .property_not_found
 
-!ifdef DEBUG_PROP_COMMON {
+!if DEBUG_PROP_COMMON {
 	pha
 	jsr print_hex_byte
 	lda #'='
@@ -3367,7 +3368,7 @@ tokenise
 	clc
 	adc #>HEADER
 	sta parse_ptr+1
-!ifdef Z5PLUS {
+!if ZVERSION>=5 {
 	ldy #2
 } else {
 	ldy #1
@@ -3395,7 +3396,7 @@ tokenise
 	; the dictionary words themselves follow
 
 .next_word
-!ifdef DEBUG_TOKENISE {
+!if DEBUG_TOKENISE {
 	jsr debug_print
 	!text "text_offset = ",0
 	lda text_offset
@@ -3411,7 +3412,7 @@ tokenise
 	ldy text_offset
 	lda (text_ptr),Y
 	bne +
-!ifdef DEBUG_TOKENISE {
+!if DEBUG_TOKENISE {
 	jsr debug_print
 	!text "max parsed=",0
 	ldy #0
@@ -3532,7 +3533,7 @@ tokenise
 }
 	lda encode_buffer,x
 	jsr encode_three_final
-!ifdef DEBUG_TOKENISE {
+!if DEBUG_TOKENISE {
 	jsr debug_print
 	!text "encoded word [",0
 	lda encode_buffer+0
@@ -3563,7 +3564,7 @@ tokenise
 
 	; returns entry_ptr pointing at matching word or 0:0 if no match
 bsearch
-!ifdef DEBUG_TOKENISE_VERBOSE {
+!if DEBUG_TOKENISE_VERBOSE {
 	jsr debug_print
 	!text "low_index = ",0
 	lda low_index+1
@@ -3927,7 +3928,7 @@ z_call_2s
 	stx frameptr
 	inx
 
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	cmp #0
 	beq .call_st_tos
 	cmp #$10
@@ -3998,7 +3999,7 @@ z_call_2s
 	bcc +
 	sty stackptr
 +	
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	jsr debug_print
 	!text " sp=",0
 	lda stackptr
@@ -4487,7 +4488,7 @@ store_result_3
 	txa
 	sta stack_lo,y
 
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	;lda stack_hi,y
 	;jsr print_hex_byte
 	;lda stack_lo,Y
@@ -4508,7 +4509,7 @@ store_result_3
 	txa
 	sta globals_lo,y
 
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	;lda globals_hi,y
 	;jsr print_hex_byte
 	;lda globals_lo,Y
@@ -4530,7 +4531,7 @@ store_result_3
 	inc stackptr
 	beq +
 
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	;lda stack_hi,y
 	;jsr print_hex_byte
 	;lda stack_lo,Y
@@ -4593,7 +4594,7 @@ z_art_shift
 z_extended
 	+zeroy
 	+next_insn_byte_y0
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 	jsr print_hex_byte
 }
 	tay
@@ -4683,7 +4684,7 @@ dead
 	sta $c0ff
 	beq dead
 
-;!ifdef DEBUG_TRACE {
+;!if DEBUG_TRACE {
 space
 	pha
 	lda #32
@@ -4721,7 +4722,7 @@ debug_print
 	rts
 ;}
 
-!ifdef DEBUG_TRACE {
+!if DEBUG_TRACE {
 _2opNames
 	!source "table_2op.inc"
 	
