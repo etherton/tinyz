@@ -30,9 +30,6 @@
 	lsr
 }
 
-; magic number which means don't store result from call.
-; needs to resolve to a storage location that is never used in any story.
-DONT_STORE_RESULT = 15
 
 _80STOREOFF	= $C000
 _80STOREON	= $C001
@@ -999,7 +996,7 @@ read_line
 	lda (text_ptr),Y
 }
 	sta .max_length+1
-!ifdef V5PLUS {
+!if ZVERSION>=5 {
 	ldy #1
 	lda (text_ptr),y
 	tay
@@ -2074,13 +2071,12 @@ z_rfalse
 	dey
 	sty stackptr
 
-!ifdef nDEBUG_TRACE {
+!ifdef DEBUG_TRACE {
 	jsr debug_print
-	!text "sp value during return is ",0
+	!text "sp=",0
 	lda stackptr
 	jsr print_hex_byte
-	lda #$d
-	jsr print_char
+	jsr space
 }
 	lda stack_lo,Y
 	sta zptr
@@ -2093,9 +2089,10 @@ z_rfalse
 	
 	jsr update_zptr
 
+	lda stack_hi+2,Y
+	bmi +
 	lda stack_lo+2,Y
-	cmp #DONT_STORE_RESULT
-	beq +
+
 	jsr store_result_2
 +	jmp next_insn
 
@@ -3867,8 +3864,11 @@ z_call_vn2
 	; call to zero does nothing
 	jmp next_insn
 +	+zeroy
-	lda #DONT_STORE_RESULT			; remember not to store result
-	bne .set_call_storage
+	lda #$80
+	sta call_storage
+	ora operand_count
+	sta operand_count
+	bne .no_store_result	; always taken
 
 	; all call instructions route through here, x=1..7
 	; the current frame's locals are kept in globals array to simplify decode logic
@@ -3898,13 +3898,9 @@ z_call_2s
 	; new stack ptr is just past last local
 +	+zeroy
 	+next_insn_byte_y0		; get storage location
-	cmp #DONT_STORE_RESULT
-	bne .set_call_storage
-	jsr fatal_error
-	!text "cannot call store to L15",13,0
-.set_call_storage
 	sta call_storage		; set it aside for now
 
+.no_store_result
 	ldx stackptr
 	lda zpc_mid
 	sta stack_hi,x
@@ -3922,6 +3918,8 @@ z_call_2s
 !if ZVERSION>3 {
 	lda operand_count
 	sta stack_hi,x
+	and #$7F
+	sta operand_count
 }
 	lda call_storage
 	sta stack_lo,x
@@ -3999,7 +3997,15 @@ z_call_2s
 	cpy stackptr
 	bcc +
 	sty stackptr
-+	jmp next_insn
++	
+!ifdef DEBUG_TRACE {
+	jsr debug_print
+	!text " sp=",0
+	lda stackptr
+	jsr print_hex_byte
+	jsr space
+}
+	jmp next_insn
 
 z_save
 	jsr fatal_error
@@ -4581,7 +4587,7 @@ z_art_shift
 	beq .shift_done
 
 !if >z_xsave != >z_art_shift {
-	!error "extended dispatches not on same page"
+;	!error "extended dispatches not on same page"
 }
 
 z_extended
@@ -4644,9 +4650,11 @@ z_print_table
 z_check_arg_count
 	; examine arg count in current stack frame
 	ldy frameptr
-	lda operands_lo+0
-	cmp stack_hi,y
-	bcs +
+	lda stack_hi,Y
+	and #$F
+	cmp operands_lo+0
+	bcc +
+	beq +
 	jmp branch_passed
 +	jmp branch_failed
 }
