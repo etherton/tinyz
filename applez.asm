@@ -5,7 +5,11 @@
 	bit $c00e
 }
 
-!macro skip_imm {
+!macro skip_1b {
+	!byte $24 ; bit ZP causes next byte to be skipped
+}
+
+!macro skip_2b {
 	!byte $2C ; bit NNNN causes next two bytes to be skipped
 }
 
@@ -1837,7 +1841,7 @@ operand_large
 !ifdef DEBUG_TRACE {
 	jsr print_hex_byte
 }
-	+skip_imm
+	+skip_2b
 	; zero flag clear on return (x never zero)
 operand_small
 	lda #$0
@@ -2056,7 +2060,7 @@ z_print_ret
 	jsr print_char
 z_rtrue
 	ldx #1
-	+skip_imm
+	+skip_2b
 z_rfalse
 	ldx #0
 	lda #0
@@ -2153,7 +2157,7 @@ z_je
 	cpx #0
 	bpl +
 	ldy #$FF
-	+skip_imm
+	+skip_2b
 +	ldy #0
 
 	clc
@@ -2529,11 +2533,13 @@ PARENT = 4
 SIBLING = 5
 CHILD = 6
 PROP_ADDR = 8
+MAX_PROP = 31
 } else {
 PARENT = 7
 SIBLING = 9
 CHILD = 11
 PROP_ADDR = 13
+MAX_PROP = 63
 }
 
 z_get_child
@@ -2773,7 +2779,7 @@ prop_common
 	!text ": prop_common object",13,0
 }
 	jsr get_object_addr
-	ldy #8		; property addr
+	ldy #PROP_ADDR		; property addr
 	lda (obj_ptr),Y
 	tax
 	dey
@@ -2818,6 +2824,8 @@ prop_common
 	; on return, y is property length or zero if not found; obj_ptr points at the property payload.
 	; now we're at the first property; they are in descending order, terminated with zero
 	; on V3, upper 3 bits are size-1, lower 5 bits are property index, 1-31
+	; on V4+, lower 6 bits are property index, 1-63. If MSB is set, size is 6 LSB's of next byte (0 is 64) (and MSB there is set too)
+	; if MSB is clear, bit 6 is set for a size of 2, else clear for a size of 1.
 find_property
 !ifdef DEBUG_PROP_COMMON {
 	lda obj_ptr+1
@@ -2833,11 +2841,43 @@ find_property
 	ldy #0
 	lda (obj_ptr),y
 }
-	tay
+	; get property in A, length in Y, and obj_ptr points at paload
+!if ZVERSION=3 {
 	inc obj_ptr
 	bne +
 	inc obj_ptr+1
-+	and #$1F
++	pha
+	+lsr5
+	tay
+	iny
+	pla
+} else {
+	bmi .twobyte	; length in second byte
+	ldy #1
+	cmp #$40
+	bcc .havelen
+	iny
+	bne .havelen	; always taken
+.twobyte
+	pha
+	inc obj_ptr
+	bne +
+	inc obj_ptr+1
++	
+!ifdef TARGET_65C02 {
+	lda (obj_ptr)
+} else {
+	lda (obj_ptr),y
+}
+	and #$3F
+	bne +
+	ldy #$40
+	+skip_1b
++	tay
+	pla
+.havelen
+}
+	and #MAX_PROP
 	beq .property_not_found
 
 !ifdef DEBUG_PROP_COMMON {
@@ -2855,8 +2895,7 @@ find_property
 	beq .matched_property
 	; if current propery < operands_lo+1, it's not here
 	bcc .property_not_found
-	jsr .matched_property	; get length in Y
-	tya
+	tya		; get length so we can skip this payload
 	clc
 	adc obj_ptr
 	sta obj_ptr
@@ -2865,15 +2904,11 @@ find_property
 	bne find_property	; always taken (object can't be in high memory)
 	; obj_ptr points at length byte; return value is length in bytes
 .matched_property
-	tya
-	+lsr5
-	tay
 	lda obj_ptr+1
 	sec
 	sbc #>HEADER
 	sta obj_mid
-	iny
-	rts			; zero flag clear
+	rts			; zero flag clear (obj_ptr can't be in zero page)
 .property_not_found
 	ldy #0
 	sty obj_ptr
@@ -2891,12 +2926,12 @@ z_get_prop
 	dey
 	bmi +
 	lda (obj_ptr),y
-	+skip_imm
+	+skip_2b
 +	lda #0
 	+end_dynamic
 	jmp store_common
 
-	; get the property index again (properties are between 1-31)
+	; get the property index again (properties are between 1-31 or 1-63)
 .default_prop
 	lda operands_lo+1
 	asl
@@ -2935,34 +2970,23 @@ z_get_next_prop
 	jsr prop_common
 	; obj_ptr points at propery table now
 	; operands+1 is property index to match
-	; uint8_t pv = read_mem8(pa);
-.search_next_prop
+	lda operands_lo+1
+	beq +		; if zero, obj_ptr is already correct.
+	jsr find_property	; otherwise find this property
+	tya					; and skip past it
+	clc
+	adc obj_ptr
+	sta obj_ptr
+	bcc +
+	inc obj_ptr+1
++	
 !ifdef TARGET_65C02 {
 	lda (obj_ptr)
 } else {
 	ldy #0
 	lda (obj_ptr),Y
-}
-	tax		; preserve full value
-	; if (!prop || !pv || (pv & 31) < prop) return byte2word(pv & 31);
-	and #31
-	beq .found_next_prop ; zero terminates list
-	ldy operands_lo+1
-	beq .found_next_prop ; requesting next property of zero always returns first if any
-	; (pv & 31) < prop?
-	cmp operands_lo+1
-	bcc .found_next_prop
-	; pa += 2 + (pv>>5);
-	txa
-	+lsr5
-	clc
-	adc #2
-	adc obj_ptr
-	sta obj_ptr
-	bcc .search_next_prop
-	inc obj_ptr+1
-	bne .search_next_prop		; always taken
-.found_next_prop
+}	
+	and #MAX_PROP
 	tax
 	lda #0
 	+end_dynamic
@@ -2991,11 +3015,26 @@ z_get_prop_len
 	lda (obj_ptr),Y
 }
 	+end_dynamic
+!if ZVERSION=3 {
 	+lsr5
 	clc
 	adc #1
 	tax
-	lda #0
+} else {
+	cmp #$80
+	bcs ++		; length is in second byte
+	ldx #1
+	cmp #$40
+	bcc +
+	inx
+	bne +		; always taken
+++	and #$3f
+	bne	+++
+	ldx #$40
+	+skip_1b
++++ tax
+}
++	lda #0
 	jmp store_common
 
 z_print_obj
@@ -3168,7 +3207,7 @@ printz
 	jmp print_char
 .print_shift_1
 	lda #26
-	+skip_imm
+	+skip_2b
 .print_shift_2
 	lda #52
 	sta shift
@@ -3651,7 +3690,7 @@ is_separator
 	; x points at unshifted input (3 bytes per call), y points at shifted output (2 bytes per call)
 encode_three
 	lda encode_buffer,X
-	+skip_imm
+	+skip_2b
 encode_three_final
 	ora #$20
 	asl
@@ -4218,7 +4257,7 @@ print_hex_digit
 
 z_new_line
 	lda #13
-	+skip_imm
+	+skip_2b
 z_print_char
 	lda operands_lo+0
 	jsr print_char
