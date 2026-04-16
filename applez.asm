@@ -2630,11 +2630,11 @@ remove_obj
 	ldy #PARENT
 	lda (obj_ptr),Y
 !if ZVERSION > 3 {
-	sta operands_hi+0
+	sta operands_lo+0
 	dey
 	lda (obj_ptr),y
-	sta operands_lo+0
-	ora operands_hi+0
+	sta operands_hi+0
+	ora operands_lo+0
 	beq .remove_obj_no_parent
 } else {
 	beq .remove_obj_no_parent
@@ -2643,16 +2643,17 @@ remove_obj
 	jsr get_object_addr
 	ldy #CHILD
 .remove_obj_check_prev
+	lda (obj_ptr),Y
+!if ZVERSION>3 {
+	dey
+}
+	cmp operands_lo+4
+	bne .remove_obj_not_direct	; Z4+: y points at hi byte
 !if ZVERSION>3 {
 	lda (obj_ptr),Y
-	dey
 	cmp operands_hi+4
 	bne .remove_obj_not_direct
 }
-	lda (obj_ptr),Y
-	cmp operands_lo+4
-	bne .remove_obj_not_direct
-
 	sty ysave
 	ldy #SIBLING
 	lda (obj_ptr_alt),Y	
@@ -2688,29 +2689,30 @@ remove_obj
 .remove_obj_not_direct
 !if ZVERSION>3 {
 	lda (obj_ptr),Y
-	sta operands_lo+0
+	sta operands_hi+0
 	iny
 	lda (obj_ptr),y
-	sta operands_hi+0
+	sta operands_lo+0
 } else {
 	sta operands_lo+0
 }
 	jsr get_object_addr
 	ldy #SIBLING
-	bne .remove_obj_check_prev	; always take	
+	bne .remove_obj_check_prev	; always taken
 
 z_insert_obj
 	jsr remove_obj	; obj_ptr_alt is now the object we're inserting
 	; set our new parent
 	+begin_dynamic
 	ldy #PARENT		; parent
+	lda operands_lo+1
+	sta (obj_ptr_alt),y
 !if ZVERSION > 3 {
+	dey
 	lda operands_hi+1
 	sta (obj_ptr_alt),Y
 	dey
 }
-	lda operands_lo+1
-	sta (obj_ptr_alt),y
 	; our sibling is parent's child
 	; first, get the parent's child and put it aside in X
 	sta operands_lo+0
