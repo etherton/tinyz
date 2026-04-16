@@ -2876,6 +2876,10 @@ find_property
 +	tay
 	pla
 .havelen
+	inc obj_ptr
+	bne +
+	inc obj_ptr+1
++	
 }
 	and #MAX_PROP
 	beq .property_not_found
@@ -4534,19 +4538,6 @@ z_input_stream
 	jmp next_insn
 
 !if ZVERSION>3 {
-z_extended
-	+zeroy
-	+next_insn_byte_y0
-!ifdef DEBUG_TRACE {
-	jsr print_hex_byte
-}
-	tay
-	lda _extTbl,Y
-	sta .extDispatch+1
-	+zeroy
-	jsr decode_types
-.extDispatch
-	jmp z_xsave
 
 ;	!align 255, 0
 z_xsave
@@ -4590,6 +4581,21 @@ z_art_shift
 !if >z_xsave != >z_art_shift {
 	!error "extended dispatches not on same page"
 }
+
+z_extended
+	+zeroy
+	+next_insn_byte_y0
+!ifdef DEBUG_TRACE {
+	jsr print_hex_byte
+}
+	tay
+	lda _extTbl,Y
+	sta .extDispatch+1
+	+zeroy
+	jsr decode_types
+.extDispatch
+	jmp z_xsave
+
 
 z_set_colour ; we could support normal and Inverse
 	jmp next_insn
