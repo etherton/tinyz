@@ -2707,42 +2707,43 @@ z_insert_obj
 	ldy #PARENT		; parent
 	lda operands_lo+1
 	sta (obj_ptr_alt),y
+	sta operands_lo+0
+
 !if ZVERSION > 3 {
 	dey
 	lda operands_hi+1
 	sta (obj_ptr_alt),Y
-	dey
+	sta operands_hi+0
 }
 	; our sibling is parent's child
 	; first, get the parent's child and put it aside in X
-	sta operands_lo+0
 	jsr get_object_addr
 	ldy #CHILD
 	lda (obj_ptr),y
 !if ZVERSION>3 {
-	sta operands_hi+5
-	lda operands_hi+4
+	sta operands_lo+5
+	lda operands_lo+4
 	sta (obj_ptr),Y
 	dey
 	lda (obj_ptr),Y
-	sta operands_lo+5
-	lda operands_lo+4
+	sta operands_hi+5
+	lda operands_hi+4
 	sta (obj_ptr),Y
 
 	; update parent's child to us while we're here
 	iny
-	lda operands_hi+4
+	lda operands_lo+4
 	sta (obj_ptr),Y
 	dey
-	lda operands_lo+4
+	lda operands_hi+4
 	sta (obj_ptr),Y
 
 	; write parent's child to our sibling
 	dey
-	lda operands_hi+5
+	lda operands_lo+5
 	sta (obj_ptr_alt),Y
 	dey
-	lda operands_lo+5
+	lda operands_hi+5
 	sta (obj_ptr_alt),y
 } else {
 	tax
