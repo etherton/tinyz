@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 
 int main(int argc,char **argv) {
 	--argc,++argv;
@@ -18,9 +19,38 @@ int main(int argc,char **argv) {
 		fprintf(stderr,"table too large by %d bytes\n",offset-255);
 		return 1;
 	}
+#if 1
 	printf("    !text \"");
 	for (int i=0; i<argc; i++)
 		printf("%s",argv[i]);
 	printf("\"\n");
+#else
+	int accum = 0, bits = 0, first = 1;
+	printf("    !byte");
+	for (int i=0; i<argc; i++) {
+		for (int j=0; j<strlen(argv[i]); j++) {
+			int ch = argv[i][j];
+			if (ch>='_'&&ch<='z')
+				ch -= '_';
+			else if (ch>='0'&&ch<='3')
+				ch = 28 + (ch-'0');
+			else
+				fprintf(stderr,"invalid character %c\n",ch);
+			assert(ch>=0 && ch<32);
+			accum |= ch << bits;
+			bits += 5;
+			if (bits >= 8) {
+				printf("%c%d",first?' ':',',accum&255);
+				first = 0;
+				bits -= 8;
+				accum >>= 8;
+			}
+		}
+	}
+	if (bits)
+		printf(",%d\n",accum);
+	else
+		printf("\n");
+#endif
 	return 0;	
 }
