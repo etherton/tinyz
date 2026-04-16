@@ -1,6 +1,6 @@
 all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3 advent.do advent.po demogame.do \
 	sieve_2p.do sieve_2e.do sieve_2ee.do cloak.do zork.do dejavu.do hibernated.do czech_z3.do czech_z5.do minimal.do loh.do \
-	applez_2e.bin applez_2e40_0.bin applez_2e40_1.bin applez_2e40_2.bin applez_2e_2.bin applez_2e_v5.bin
+	applez_2e.bin applez_2e40_0.bin applez_2e40_1.bin applez_2e40_2.bin applez_2e_2.bin applez_2e_v5.bin czech.z3 czech.z5
 
 tinyzcd: opcodes.h header.h tinyz.y debug.h debug.cpp Makefile
 	bison --debug tinyz.y -v -o tinyz.debug.tab.cpp && clang++ -DDEBUG_MEM=1 -g -std=c++17 tinyz.debug.tab.cpp debug.cpp -o tinyzcd
@@ -138,14 +138,14 @@ maketable: maketable.cpp Makefile
 	clang++ maketable.cpp -o maketable
 
 table_2op.inc: Makefile
-	./maketable 0 je jl jg dec_chk inc_chk jin test or and test_attr set_attr clear_attr store insert_obj loadw loadb \
-get_prop get_prop_addr get_next_prop add sub mul div mod call_2s call_2n set_colour throw 29 30 31 > table_2op.inc
+	./maketable x00 je jl jg dec_chk inc_chk jin test or and test_attr set_attr clear_attr store insert_obj loadw loadb \
+get_prop get_prop_addr get_next_prop add sub mul div mod call_2s call_2n set_colour throw x1d x1e x1f > table_2op.inc
 
 table_1op_v3.inc: Makefile
-	./maketable jz get_sibling get_child get_parent get_prop_len inc dec print_addr 9 remove_obj print_obj ret jump print_paddr load not > table_1op_v3.inc
+	./maketable jz get_sibling get_child get_parent get_prop_len inc dec print_addr call_1s remove_obj print_obj ret jump print_paddr load not > table_1op_v3.inc
 
 table_1op_v5.inc: Makefile
-	./maketable jz get_sibling get_child get_parent get_prop_len inc dec print_addr 9 remove_obj print_obj ret jump print_paddr load call_1n > table_1op_v5.inc
+	./maketable jz get_sibling get_child get_parent get_prop_len inc dec print_addr call_1s remove_obj print_obj ret jump print_paddr load call_1n > table_1op_v5.inc
 
 table_0op.inc: Makefile
 	./maketable rtrue rfalse print print_ret nop save restore restart ret_popped pop quit new_line show_status verify extended piracy > table_0op.inc
