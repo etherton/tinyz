@@ -1746,9 +1746,7 @@ _1op_large
 }
 	ldx #0
 	jsr operand_large
-!if ZVERSION>3 {
-	stx operand_count
-}
+
 	bne ._1op_common ; always taken
 _1op_small
 !if DEBUG_TRACE {
@@ -1756,9 +1754,6 @@ _1op_small
 }
 	ldx #0
 	jsr operand_small
-!if ZVERSION>3 {
-	stx operand_count
-}
 	bne ._1op_common ; always taken
 _1op_variable
 !if DEBUG_TRACE {
@@ -2074,13 +2069,6 @@ z_rfalse
 	dey
 	sty stackptr
 
-!if DEBUG_TRACE {
-	jsr debug_print
-	!text "sp=",0
-	lda stackptr
-	jsr print_hex_byte
-	jsr space
-}
 	lda stack_lo,Y
 	sta zptr
 	lda stack_hi,Y
@@ -3856,6 +3844,8 @@ z_print_inline_common
 	rts
 
 z_call_1n
+	ldx #1
+	stx operand_count
 z_call_2n
 z_call_vn
 z_call_vn2
@@ -3879,9 +3869,11 @@ z_call_vn2
 	; current frame. this increases the cost of call_vs / ret slightly in favor
 	; of improving the access speed of any local or global variable.
 	; since all calls are variable typed (for now, not on V5) the arg count is in xsave
+z_call_1s
+	ldx #1
+	stx operand_count
 z_call_vs
 z_call_vs2
-z_call_1s
 z_call_2s
 	lda operands_lo+0
 	ora operands_hi+0
@@ -3929,6 +3921,10 @@ z_call_2s
 	inx
 
 !if DEBUG_TRACE {
+!if ZVERSION>3 {
+	ldy stack_hi-1,X
+	bmi +
+}
 	cmp #0
 	beq .call_st_tos
 	cmp #$10
@@ -3998,15 +3994,7 @@ z_call_2s
 	cpy stackptr
 	bcc +
 	sty stackptr
-+	
-!if DEBUG_TRACE {
-	jsr debug_print
-	!text " sp=",0
-	lda stackptr
-	jsr print_hex_byte
-	jsr space
-}
-	jmp next_insn
++	jmp next_insn
 
 z_save
 	jsr fatal_error
