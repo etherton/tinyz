@@ -4275,21 +4275,23 @@ z_print_num
 	jsr print_num 
 	jmp next_insn
 
+; FAST_PRINT_NUM = 1
+
 print_num
+!ifdef FAST_PRINT_NUM {
 	lda #0
 	sta mulTemp
 	lda operands_hi+0
 	beq ++
+} else {
+	lda operands_hi+0
+}
 	bpl +
 	lda #'-'
 	jsr print_char
-	sec
-	lda #0
-	sbc operands_lo+0
-	sta operands_lo+0
-	lda #0
-	sbc operands_hi+0
-	sta operands_hi+0
+	ldx #0
+	jsr negate_operand
+!ifdef FAST_PRINT_NUM {
 +	+process_digit 10000
 	+process_digit 1000
 ++	+process_digit 100	
@@ -4303,6 +4305,26 @@ print_num
 	bcs print_hex_byte
 	ldy mulTemp
 	beq print_hex_digit
+} else {
++	lda #10
+	sta operands_lo+1
+	lda #0
+	sta operands_hi+1
+	pha					; mark terminator
+-	jsr divide			; quotient in +0, remainder in +2
+	lda operands_lo+2
+	ora #$30			; don't care about carry
+	pha
+	lda operands_lo+0
+	ora operands_hi+0
+	bne -
+
+-	pla
+	beq +
+	jsr print_char
+	jmp -
++	rts
+}
 	; preserves A
 print_hex_byte
 	pha
@@ -4323,7 +4345,6 @@ print_hex_digit
 	bcc +
 	adc #$6	; carry is always set
 +	jmp print_char
-
 
 z_new_line
 	lda #13
@@ -4452,6 +4473,7 @@ default_print_char
 	
 	; divide operands+0 by operands+1, quotient in operands+0, remainder in operands+2
 	; if signs are different, quotient is negative. remainder always has sign of the quotient.
+	; destroys A, X, Y
 divide
 	lda #0
 	sta mulSign
@@ -4893,13 +4915,16 @@ _0opNames
 _varNames
 	!source "table_varop.inc"
 }
+!ifdef FAST_PRINT_NUM {
 	!align 255, 512 - 100 - (26*3) - 96
 dec2hex 
 	!byte $00,$01,$02,$03,$04,$05,$06,$07,$08,$09,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
 	!byte $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49
 	!byte $50,$51,$52,$53,$54,$55,$56,$57,$58,$59,$60,$61,$62,$63,$64,$65,$66,$67,$68,$69,$70,$71,$72,$73,$74
 	!byte $75,$76,$77,$78,$79,$80,$81,$82,$83,$84,$85,$86,$87,$88,$89,$90,$91,$92,$93,$94,$95,$96,$97,$98,$99
-
+} else {
+	!align 255, 256 - (26*3) - 96
+}
 	; maps ascii to encoded zscii (+(4<<5) or (5<<5) if it needs a shift first). if 255, needs four-byte encoding 5,6,N>>5,N.
 zencode
 	;  !"#$%&'()*+,-./0123456789:;<=>?
