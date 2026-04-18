@@ -2106,8 +2106,10 @@ z_rfalse
 	
 	jsr update_zptr
 
+!if ZVERSION>3 {
 	lda stack_hi+2,Y
 	bmi +
+}
 	lda stack_lo+2,Y
 
 	jsr store_result_2
@@ -3908,6 +3910,7 @@ z_print_inline_common
 	bcc -
 	rts
 
+!if ZVERSION>3 {
 z_call_1n
 	ldx #1
 	stx operand_count
@@ -3925,6 +3928,7 @@ z_call_vn2
 	ora operand_count
 	sta operand_count
 	bne .no_store_result	; always taken
+}
 
 	; all call instructions route through here, x=1..7
 	; the current frame's locals are kept in globals array to simplify decode logic
