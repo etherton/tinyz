@@ -116,6 +116,7 @@ prev_top_cursor_x = $2C
 text_ptr = $2D
 unit_number = $2E
 
+!if LOAD_FROM_DISK_II {
 data_page = $30
 track = $31
 trackbit = $32
@@ -123,6 +124,9 @@ sector = $33
 tracks_remaining = $34
 sector_map_lo = $35
 sector_map_hi = $36
+} else {
+	blocks_remaining = $34
+}
 seed = $38
 
 PH0OFF		= $C080
@@ -569,7 +573,7 @@ interleave
 	!byte 1,3,3,0
 	!byte 3,3,3,0
 
-} else {		; not loading from disk ii
+} else {		; !LOAD_FROM_DISK_II
 
 stage1
 	lda slot_index
@@ -601,31 +605,46 @@ temp
 
 	; round story size (which is half its actual value) up to next 512b multiple
 	; for V3 it's (size + $ff) >> 8
-	; for V4/5 it's (size + $7f) >> 8+1
-	; for V8 it's (size + $3f) >> 8+2
+	; for V4/5 it's (size + $7f) >> 7
+	; for V8 it's (size + $3f) >> 6
 	lda HEADER+27
 	clc
 !if ZVERSION=8 {
 	adc #$3F
+	ldx #6
 } else if (ZVERSION>3) {
 	adc #$7F
+	ldx #7
 } else {
 	adc #$FF
+	ldx #8
 }
+	sta blocks_remaining
 	lda HEADER+26
 	adc #0
+	sta blocks_remaining+1
+
+-	lsr blocks_remaining+1
+	ror blocks_remaining
+	dex
+	bne -
+
 	; story size in 512b blocks (including the one we already read)
 	; for higher memory models, we fill aux memory too so vm is "full"
+	; note $B0 here is 88k (512b blocks)
 !if MEM_MODEL > 1 {
+	lda blocks_remaining+1
+	bne clamp_story_size
 	cmp #$B0
 	bcc +
+clamp_story_size
 	lda #$B0
+	sta blocks_remaining
 +
-}
-	sta tracks_remaining		; actually blocks
+} 
 
 read_story
-	dec tracks_remaining	
+	dec blocks_remaining	
 	beq ++
 	inc read_dest+1
 	inc read_dest+1
@@ -1343,7 +1362,7 @@ update_zptr
 	sta zptr+1
 	sta RAMRDON
 	rts
-} else if MEM_MODEL=2 {
+} else if MEM_MODEL>=2 {
 
 update_zptr
 	; convert zpc_mid/hi to an eight-bit page
@@ -3265,7 +3284,14 @@ loadb
 	sta load_addr+1
 	lda operands_hi+0
 	adc operands_hi+1
-	clc
+!if MEM_MODEL>=3 {
+	; memory beyond 44k will be paged.
+	cmp #$B0
+	bcc +
+	jsr fatal_error
+	!text "paged static memory not implemented yet",13,0
+}
++	clc
 	adc #>HEADER
 	sta load_addr+2
 	+begin_dynamic
@@ -3298,6 +3324,18 @@ store_addr
 z_loadw
 	asl operands_lo+1
 	rol operands_hi+1
+!if MEM_MODEL>=3 {
+	; in full memory models, implement word load as two byte
+	; loads so crossing a VM boundary works.
+	jsr loadb
+	tay
+	inc operands_lo+1
+	bne +
+	inc operands_hi+1
++	jsr loadb
+	tax
+	tya
+} else {
 	clc
 	lda operands_lo+0
 	adc operands_lo+1
@@ -3308,13 +3346,13 @@ z_loadw
 	adc #>HEADER
 	sta obj_ptr+1
 	+begin_dynamic
-	; TODO: if this crosses a 4k boundary we need multiple calls
 	ldy #1
 	lda (obj_ptr),Y
 	tax
 	dey
 	lda (obj_ptr),y
 	+end_dynamic
+}
 	jmp store_common
 
 z_storew
