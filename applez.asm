@@ -3402,13 +3402,14 @@ z_sread
 !if ZVERSION>=5 {
 	lda operands_lo+1
 	ora operands_hi+1
-	beq  -
+	beq  +
 	jsr tokenise
-	ldx #13
++	ldx #13
 	lda #0
 	jmp store_common
 } else {
-	jmp tokenise
+	jsr tokenise
+	jmp next_insn
 }
 
 z_tokenise
@@ -4734,18 +4735,80 @@ z_read_char
 	jmp store_common
 
 z_scan_table
-	jmp z_ill
+	; match table count [form]
+	; move 'table' to slot 0 for loadb/loadw use
+	lda operands_lo+0
+	sta operands_lo+4
+	lda operands_hi+0
+	sta operands_hi+4
+	lda operands_lo+1
+	sta operands_lo+0
+	lda operands_hi+1
+	sta operands_hi+0
+	lda #0
+	sta operands_lo+1
+	sta operands_hi+1
+	ldx operand_count
+	cpx #4
+	beq +
+	lda #$82
+	sta operands_lo+3
++	lda operands_lo+3
+	bmi .scan_word
+-	jsr loadb
+	cmp operands_lo+4
+	beq .scan_found
+	lda operands_lo+0
+	clc
+	adc operands_lo+3
+	sta operands_lo+0
+	bcc +
+	inc operands_hi+0
++	dec operands_lo+2
+	bne -
+	dec operands_hi+2
+	bpl -
+.scan_failed
+	lda #0
+	tax
+	jsr store_result
+	jmp branch_failed
+.scan_found
+	ldx operands_lo+0
+	lda operands_hi+1
+	jsr store_result
+	jmp branch_passed
+.scan_word
+	and #$7f
+	sta operands_lo+3
+-	jsr loadb
+	cmp operands_hi+4
+	bne +				; didn't match
+	inc operands_lo+1
+	jsr loadb
+	dec operands_lo+1
+	cmp operands_lo+4
+	beq .scan_found
+	lda operands_lo+0
+	clc
+	adc operands_lo+3
+	sta operands_lo+0
+	bcc +
+	inc operands_hi+0
++	dec operands_lo+2
+	bne -
+	dec operands_hi+2
+	bpl -
+	bmi .scan_failed ; always taken
 
 z_encode_text
 	jmp z_ill
 
-	; first, second, count.
-	; if second is zero, memset first to zero
-z_copy_table
-	+begin_dynamic
-	lda operands_hi+2
-	bne z_encode_text ; z_ill
 
+z_copy_table
+	; first, second, count.
+	; if second is zero, memset first to zero	
+	+begin_dynamic
 	lda operands_lo+0
 	sta obj_ptr
 	lda operands_hi+0
@@ -4753,6 +4816,7 @@ z_copy_table
 	adc #>HEADER
 	sta obj_ptr+1
 
+	ldy #0
 	lda operands_lo+1
 	sta obj_ptr_alt
 	ora operands_hi+1
@@ -4762,7 +4826,6 @@ z_copy_table
 	adc #>HEADER
 	sta obj_ptr_alt+1
 
-	ldy #0
 	sty operands_lo+1
 	sty operands_hi+1
 -	jsr loadb
@@ -4779,13 +4842,16 @@ z_copy_table
 	lda operands_hi+1
 	cmp operands_hi+2
 	bne -
-	beq .copy_table_zero_done
+	beq .copy_table_zero_done	; always taken
 .copy_table_zero
-	ldy operands_lo+2
-	beq .copy_table_zero_done
--	dey
 	sta (obj_ptr),Y
-	bne -
+	inc obj_ptr
+	bne +
+	inc obj_ptr+1
++	dec operands_lo+2
+	bne .copy_table_zero
+	dec operands_hi+2
+	bpl .copy_table_zero
 .copy_table_zero_done
 	+end_dynamic
 	jmp next_insn
