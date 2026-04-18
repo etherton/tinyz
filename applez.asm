@@ -1606,9 +1606,15 @@ print_opcode_data
 	sbc (obj_ptr),Y
 	tax						; x contains length
 	lda (obj_ptr),Y			; get offset of this string again
+	pha
 	ldy #0
+	lda (obj_ptr),Y
 	clc
-	adc (obj_ptr),Y			; add the table size to get first character
+	adc obj_ptr
+	sta obj_ptr
+	bcc +
+	inc obj_ptr+1
++	pla
 	tay
 -	lda (obj_ptr),Y
 	jsr print_char
@@ -3247,6 +3253,12 @@ abbrev_load2
 	; loads must be in contiguous dynamic+static memory
 	; stores must be in contiguous dynamic memory
 z_loadb
+	jsr loadb
+	tax
+	lda #0
+	jmp store_common
+	; returns byte at operands+0 + operands+1 (dynamic or static memory) in A register
+loadb
 	clc
 	lda operands_lo+0
 	adc operands_lo+1
@@ -3258,12 +3270,15 @@ z_loadb
 	sta load_addr+2
 	+begin_dynamic
 load_addr
-	ldx $1234
+	lda $1234
 	+end_dynamic
-	lda #0
-	jmp store_common
+	rts
 
 z_storeb
+	ldx operands_lo+2
+	jsr storeb
+	jmp next_insn
+storeb
 	clc
 	lda operands_lo+0
 	adc operands_lo+1
@@ -3273,12 +3288,11 @@ z_storeb
 	clc
 	adc #>HEADER
 	sta store_addr+2
-	lda operands_lo+2
 	+begin_dynamic
 store_addr
-	sta $1234
+	stx $1234
 	+end_dynamic
-	jmp next_insn
+	rts
 
 	; return word of memory at operands[0] + operands[1]*2
 z_loadw
@@ -3324,7 +3338,7 @@ z_storew
 	lda operands_hi+2
 	sta (obj_ptr),Y
 	+end_dynamic
-	jmp next_insn
+-	jmp next_insn
 
 operands_to_text_ptr
 	lda operands_lo+0
@@ -3344,10 +3358,22 @@ z_sread
 	+begin_dynamic
 	jsr read_line
 	+end_dynamic
+!if ZVERSION>=5 {
+	lda operands_lo+1
+	ora operands_hi+1
+	beq  -
+	jsr tokenise
+	ldx #13
+	lda #0
+	jmp store_common
+} else {
 	jmp tokenise
+}
 
 z_tokenise
 	jsr operands_to_text_ptr
++	jsr tokenise
+	jmp next_insn
 tokenise
 	+begin_dynamic
 	lda operands_lo+1
@@ -3437,7 +3463,7 @@ tokenise
 	bcc .print_parsed_data
 }
 	+end_dynamic
-	jmp next_insn
+	rts
 +	cmp #32
 	bne .new_word
 	inc text_offset
@@ -4575,9 +4601,15 @@ z_art_shift
 	bne .art_shift_right
 	beq .shift_done
 
-!if >z_xsave != >z_art_shift {
-;	!error "extended dispatches not on same page"
-}
+z_save_undo
+	lda #$ff
+	tax
+	jmp store_common	; mark not supported
+
+z_restore_undo
+	lda #0
+	tax
+	jmp store_common	; mark failed operation
 
 z_extended
 	+zeroy
@@ -4586,13 +4618,14 @@ z_extended
 	jsr print_hex_byte
 }
 	tay
-	lda _extTbl,Y
+	lda _extTblLo,Y
 	sta .extDispatch+1
+	lda _extTblHi,Y
+	sta .extDispatch+2
 	+zeroy
 	jsr decode_types
 .extDispatch
 	jmp z_xsave
-
 
 z_set_colour ; we could support normal and Inverse
 	jmp next_insn
@@ -4601,7 +4634,18 @@ z_set_text_style ; we could support normal and Inverse
 	jmp next_insn
 
 z_buffer_mode
-	jmp z_ill 
+	lda operands_lo+0
+	bne .enable_buffering
+	; disable buffering 
+	jsr flush_main_window
+	lda #<print_char_lower
+	sta print_char+1
+	lda #>print_char_lower
+	sta print_char+2
+	jmp next_insn
+.enable_buffering
+	jsr default_print_char
+	jmp next_insn
 
 z_throw
 	jmp z_ill ; todo, needs to restore stack
@@ -4630,11 +4674,90 @@ z_scan_table
 z_encode_text
 	jmp z_ill
 
+	; first, second, count.
+	; if second is zero, memset first to zero
 z_copy_table
-	jmp z_ill
+	+begin_dynamic
+	lda operands_hi+2
+	bne z_encode_text ; z_ill
 
+	lda operands_lo+0
+	sta obj_ptr
+	lda operands_hi+0
+	clc
+	adc #>HEADER
+	sta obj_ptr+1
+
+	lda operands_lo+1
+	sta obj_ptr_alt
+	ora operands_hi+1
+	beq .copy_table_zero
+	lda operands_hi+1
+	clc
+	adc #>HEADER
+	sta obj_ptr_alt+1
+
+	ldy #0
+	sty operands_lo+1
+	sty operands_hi+1
+-	jsr loadb
+	sta (obj_ptr_alt),Y
+	inc obj_ptr_alt
+	bne +
+	inc obj_ptr_alt+1
++	inc operands_lo+1
+	bne +
+	inc operands_hi+1
++	lda operands_lo+1
+	cmp operands_lo+2
+	bne -
+	lda operands_hi+1
+	cmp operands_hi+2
+	bne -
+	beq .copy_table_zero_done
+.copy_table_zero
+	ldy operands_lo+2
+	beq .copy_table_zero_done
+-	dey
+	sta (obj_ptr),Y
+	bne -
+.copy_table_zero_done
+	+end_dynamic
+	jmp next_insn
+
+	; text_addr width height [skip]
 z_print_table
-	jmp z_ill
+	ldx operand_count
+	cpx #4
+	bcs +
+	ldx #0
+	stx operands_lo+3
++	lda operands_lo+1
+	sta operands_lo+4
+	lda #0
+	sta operands_lo+1
+	sta operands_hi+1
+.print_row
+	ldx operands_lo+4
+.print_row_loop
+	jsr loadb
+	jsr print_char
+	inc operands_lo+1
+	bne +
+	inc operands_hi+1
++	dex
+	bne .print_row_loop
+	lda operands_lo+3
+	clc
+	adc operands_lo+1
+	sta operands_lo+1
+	bcc +
+	inc operands_hi+1
++	lda #13
+	jsr print_char
+	dec operands_lo+2
+	bne .print_row
+	jmp next_insn
 
 z_check_arg_count
 	; examine arg count in current stack frame
@@ -4779,8 +4902,10 @@ _varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_p
 }	
 
 !if ZVERSION>3 {
-_extTbl
-	!byte <z_xsave,<z_xrestore,<z_log_shift,<z_art_shift
+_extTblLo
+	!byte <z_xsave,<z_xrestore,<z_log_shift,<z_art_shift,<next_insn,<z_ill,<z_ill,<z_ill,<z_ill,<z_save_undo,<z_restore_undo
+_extTblHi
+	!byte >z_xsave,>z_xrestore,>z_log_shift,>z_art_shift,>next_insn,>z_ill,>z_ill,>z_ill,>z_ill,>z_save_undo,>z_restore_undo
 }
 
 	; resist temptation to move these to $800 because that's banked RAM on apple 2e.
