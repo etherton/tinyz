@@ -125,7 +125,7 @@ tracks_remaining = $34
 sector_map_lo = $35
 sector_map_hi = $36
 } else {
-	blocks_remaining = $34
+blocks_remaining = $34
 }
 seed = $38
 
@@ -635,6 +635,7 @@ temp
 !if MEM_MODEL > 1 {
 	lda blocks_remaining+1
 	bne clamp_story_size
+	lda blocks_remaining
 	cmp #$B0
 	bcc +
 clamp_story_size
