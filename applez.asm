@@ -1008,9 +1008,8 @@ read_char
 
 	; text_ptr contains address to store input line
 	; first byte is maximum length
-	; on return, first byte is actual length
 	; on V3, first byte is maximum length, and input is 0-terminated
-	; on V5+, first byte is maximum length, and second byte is total amount
+	; on V5+, first byte is maximum length, and second byte is previous input count, and first byte is actual stored
 read_line
 !ifdef TARGET_65C02 {
 	lda (text_ptr)
@@ -1020,6 +1019,7 @@ read_line
 }
 	sta .max_length+1
 !if ZVERSION>=5 {
+	; skip any previous input (which game should have displayed)
 	ldy #1
 	lda (text_ptr),y
 	tay
@@ -1045,7 +1045,7 @@ read_line
 	cmp #$20
 	bcc .next_char
 .max_length
-	cpy #99
+	cpy #99			; this is overwritten above
 	beq .next_char
 	iny
 	pha
@@ -1062,7 +1062,11 @@ read_line
 	+end_dynamic
 	jmp .update_cursor
 .backsp
+!if ZVERSION>=5 {
+	cpy #1
+} else {
 	cpy #0
+}
 	beq .next_char
 	dec cursor_x
 	dey
@@ -1072,9 +1076,18 @@ read_line
 	jsr print_char
 	lda #$0D
 	jsr print_char
+
+	+begin_dynamic
+!if ZVERSION>=5 {
+	dey
+	tya
+	ldy #1
+	sta (text_ptr),Y
+	tay
+	iny
+}
 	lda #0
 	iny
-	+begin_dynamic
 	sta (text_ptr),y
 	+end_dynamic
 	rts
@@ -3465,6 +3478,7 @@ tokenise
 	jsr print_char
 }
 	; skip all spaces and stop at EOL (zero)
+	; note that to keep the code simpler, we zero terminate even on Z5+
 	ldy text_offset
 	lda (text_ptr),Y
 	bne +
@@ -4775,7 +4789,7 @@ z_scan_table
 	jmp branch_failed
 .scan_found
 	ldx operands_lo+0
-	lda operands_hi+1
+	lda operands_hi+0
 	jsr store_result
 	jmp branch_passed
 .scan_word
@@ -4789,7 +4803,7 @@ z_scan_table
 	dec operands_lo+1
 	cmp operands_lo+4
 	beq .scan_found
-	lda operands_lo+0
++	lda operands_lo+0
 	clc
 	adc operands_lo+3
 	sta operands_lo+0
