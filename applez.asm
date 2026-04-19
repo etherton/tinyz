@@ -1583,8 +1583,17 @@ zentry
 
 	lda #COLUMNS
 	sta HEADER+$21
+!if ZVERSION>=5 {
+	sta HEADER+$23
+}
 	lda #24
 	sta HEADER+$20
+!if ZVERSION>=5 {
+	sta HEADER+$25
+	lda #1
+	sta HEADER+$26
+	sta HEADER+$27
+}
 
 	; generate zencode table
 	ldx #31
