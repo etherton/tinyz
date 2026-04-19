@@ -3394,27 +3394,34 @@ z_storew
 	+end_dynamic
 -	jmp next_insn
 
-operands_to_text_ptr
+operands_to_text_and_parse_ptr
 	lda operands_lo+0
 	sta text_ptr
 	lda operands_hi+0
 	clc
 	adc #>HEADER
 	sta text_ptr+1
+	lda operands_lo+1
+	sta parse_ptr
+	lda operands_hi+1
+	beq +				; make sure parse_ptr of zero stays zero.
+	clc
+	adc #>HEADER
++	sta parse_ptr+1
 	rts
 
 z_sread
-	jsr operands_to_text_ptr
+	jsr operands_to_text_and_parse_ptr
 !if ZVERSION=3 {
-	; this destroys operands+0
+	; this destroys operands+0 through operands+2 (with print_num size optimizations)
 	jsr show_status
 }
 	+begin_dynamic
 	jsr read_line
 	+end_dynamic
 !if ZVERSION>=5 {
-	lda operands_lo+1
-	ora operands_hi+1
+	lda parse_ptr
+	ora parse_ptr+1
 	beq  +
 	jsr tokenise
 +	ldx #13
@@ -3426,17 +3433,12 @@ z_sread
 }
 
 z_tokenise
-	jsr operands_to_text_ptr
+	jsr operands_to_text_and_parse_ptr
 +	jsr tokenise
 	jmp next_insn
 tokenise
 	+begin_dynamic
-	lda operands_lo+1
-	sta parse_ptr
-	lda operands_hi+1
-	clc
-	adc #>HEADER
-	sta parse_ptr+1
+
 !if ZVERSION>=5 {
 	ldy #2
 } else {
