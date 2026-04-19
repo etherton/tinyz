@@ -4768,6 +4768,9 @@ z_read_char
 z_scan_table
 	; match table count [form]
 	; move 'table' to slot 0 for loadb/loadw use
+	lda operands_lo+2
+	ora operands_hi+2
+	beq .scan_failed
 	lda operands_lo+0
 	sta operands_lo+4
 	lda operands_hi+0
