@@ -1613,6 +1613,12 @@ zentry
 	cpx #7	; first two slots in last row are special and cannot be overidden.
 	bne - 
 
+	; set apple2e interpreter
+	lda #2
+	sta HEADER+30
+	lda #'Z'
+	sta HEADER+31
+
 	jmp next_insn
 
 ; opcode
