@@ -1139,7 +1139,10 @@ zchar_hi = $8E
 zchar_lo = $8F
 desired_page = $90
 oldest_page_index = $92
-oldest_page_value = $93
+oldest_page_value = $94
+!if MEM_MODEL>1 {
+vm_ptr = $96
+}
 
 !if ZVERSION>4 {
 DICT_SIZE = 6
@@ -1379,14 +1382,13 @@ update_zptr
 } else if MEM_MODEL>=2 {
 
 update_zptr
-	; convert zpc_mid/hi to an eight-bit page
+	; convert zpc_mid/hi to an eight-bit page (Z3)
 	lda zpc_hi
-	lsr				; carry is set if >64k
-	sta zpc_mid_low ; zero zpc_mid_low (zpc_hi was always 0 or 1 for Z3)
+	bne update_vmem_hi
+	sta zpc_mid_low ; zero zpc_mid_low
 	lda zpc_mid
-	ror				; pull in carry bit
+	lsr				; get even/odd block
 	rol zpc_mid_low ; put carry bit (even/odd page) in LSB
-	; carry is one if it's the "odd" page
 	sec
 	sbc #88				; now value beteen 0-167
 	bcs update_vmem		; in virtual memory?
@@ -1395,12 +1397,39 @@ update_zptr
 	adc #>HEADER		; carry already clear
 	sta zptr+1
 	rts
+update_vmem_hi
+	; sta $c0fe ;; enable trace
+	; desired_page is between 0-2047
+	lsr
+	sta desired_page+1
+	lda zpc_mid
+	ror
+	sta desired_page
+	lda #0
+	adc #0
+	sta zpc_mid_low
+	lda desired_page
+	sec
+	sbc #88
+	sta desired_page
+	lda desired_page+1
+	sbc #0
+	sta desired_page+1
+	clc				; todo: carry probably known here, could adjust adc and eliminate clc
+	adc #>vm_map
+	sta vm_ptr+1
+	sty .y_recover+1
+	ldy desired_page
+	lda (vm_ptr),Y
+	bne page_hit
+	beq page_miss_2
 update_vmem
-	; desired page is in A, 0-167
+	; desired page is in A, 0-167 (or more for Z4+)
 	sty .y_recover+1
 	tay
 	lda vm_map,Y
 	beq page_miss
+page_hit
 	ora zpc_mid_low
 	sta zptr+1
 	lsr			; divide upper byte of address by two to get page index
@@ -1410,10 +1439,13 @@ update_vmem
 	sta RAMRDON						; it's in virtual (aux) memory
 .y_recover
 	ldy #$12
+	;lda #0
+	;sta $c0fe
 	rts
 page_miss
 	; y contains page (512b block, starting from 88 in story) we want to make resident
 	sty desired_page
+page_miss_2
 	sty RAMRDON
 	sty RAMWRTON		; enable aux memory for both read and write so we can fill it (smartport needs checksums)
 
@@ -1442,15 +1474,32 @@ page_miss
 
 	; mark this page not resident
 +	ldy oldest_page_index
+!if ZVERSION=3 {
 	lda page_owners_lo,Y		; this is index into vm_map that owns us
 	tay
 	lda #0
 	sta vm_map,Y
+} else {
+	lda page_owners_hi,Y
+	clc
+	adc #>vm_map
+	sta vm_ptr
+	lda page_owners_lo,Y
+	tay
+	lda #0
+.vm_store
+	sta (vm_ptr),y
+}
 
 	; change owner of this vm page to new page, reset age to 1
 	ldy oldest_page_index
 	lda desired_page			; 0-167
 	sta page_owners_lo,y		; that page owns this slot (0-87)
+!if ZVERSION>3 {
+	lda desired_page+1
+	sta page_owners_hi,Y
+}
+
 	lda #1
 	sta page_ages,y				; update the page age
 
@@ -1459,8 +1508,11 @@ page_miss
 	asl							; double page index to get high byte of address
 	adc #>HEADER				; account for header base address (carry always clear)
 	ldy desired_page
+!if ZVERSION>3 {
+	sta (vm_ptr),Y
+} else {
 	sta vm_map,y
-
+}
 	; set destination for read
 	sta read_dest+1
 
@@ -1472,7 +1524,11 @@ page_miss
 	lda desired_page
 	adc #(24+88)		; interpreter is 24 blocks, resident is 88 blocks (carry still clear)
 	sta read_block
+!if ZVERSION>3 {
+	lda desired_page+1
+} else {
 	lda #0
+}
 	adc #0
 	sta read_block+1
 	stx .x_recover+1
@@ -1627,6 +1683,12 @@ zentry
 	sta HEADER+30
 	lda #'Z'
 	sta HEADER+31
+
+!if MEM_MODEL>1 {
+	lda #<vm_map
+	sta vm_ptr
+	; upper word is always rewritten
+}
 
 	jmp next_insn
 
@@ -3942,7 +4004,7 @@ z_print_inline_common
 	bcc -
 	rts
 
-!if ZVERSION>3 {
+!if ZVERSION>4 {
 z_call_1n
 	ldx #1
 	stx operand_count
@@ -4009,7 +4071,7 @@ z_call_2s
 
 	; location to store result
 	inx
-!if ZVERSION>3 {
+!if ZVERSION>4 {
 	lda operand_count
 	sta stack_hi,x
 	and #$7F
@@ -4022,7 +4084,7 @@ z_call_2s
 	inx
 
 !if DEBUG_TRACE {
-!if ZVERSION>3 {
+!if ZVERSION>4 {
 	ldy stack_hi-1,X
 	bmi +
 }
@@ -4056,7 +4118,7 @@ z_call_2s
 	sta mulTemp
 	cmp #0
 	beq +
-!if ZVERSION>3 {
+!if ZVERSION>4 {
 	; zero out the locals
 	lda #0
 -	sta stack_hi,X
@@ -4657,7 +4719,7 @@ store_result_3
 z_input_stream
 	jmp next_insn
 
-!if ZVERSION>3 {
+!if ZVERSION>4 {
 
 ;	!align 255, 0
 z_xsave
@@ -4727,6 +4789,13 @@ z_extended
 z_set_colour ; we could support normal and Inverse
 	jmp next_insn
 
+
+z_throw
+	jmp z_ill ; todo, needs to restore stack
+}
+
+!if ZVERSION>3 {
+
 z_set_text_style ; we could support normal and Inverse
 	jmp next_insn
 
@@ -4743,9 +4812,6 @@ z_buffer_mode
 .enable_buffering
 	jsr default_print_char
 	jmp next_insn
-
-z_throw
-	jmp z_ill ; todo, needs to restore stack
 
 z_erase_window
 	jmp next_insn
@@ -5045,31 +5111,37 @@ zalphabet
 	!align 255, 0
 dispatch +table16 _2op_s_s,_2op_s_s,_2op_s_v,_2op_s_v,_2op_v_s,_2op_v_s,_2op_v_v,_2op_v_v,_1op_large,_1op_small,_1op_variable,_0op,_2op_var,_2op_var,_vop,_vop
 
-!if ZVERSION>3 {
+!if ZVERSION>4 {
 _2opTbl +table32 z_ill,z_je,z_jl,z_jg,z_dec_chk,z_inc_chk,z_jin,z_test,z_or,z_and,z_test_attr,z_set_attr,z_clear_attr,z_store,z_insert_obj,z_loadw,z_loadb,z_get_prop,z_get_prop_addr,z_get_next_prop,z_add,z_sub,z_mul,z_div,z_mod,z_call_2s,z_call_2n,z_set_colour,z_throw,z_ill,z_ill,z_ill
+} else if ZVERSION>3 {
+_2opTbl +table32 z_ill,z_je,z_jl,z_jg,z_dec_chk,z_inc_chk,z_jin,z_test,z_or,z_and,z_test_attr,z_set_attr,z_clear_attr,z_store,z_insert_obj,z_loadw,z_loadb,z_get_prop,z_get_prop_addr,z_get_next_prop,z_add,z_sub,z_mul,z_div,z_mod,z_call_2s,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
 } else {
 _2opTbl +table32 z_ill,z_je,z_jl,z_jg,z_dec_chk,z_inc_chk,z_jin,z_test,z_or,z_and,z_test_attr,z_set_attr,z_clear_attr,z_store,z_insert_obj,z_loadw,z_loadb,z_get_prop,z_get_prop_addr,z_get_next_prop,z_add,z_sub,z_mul,z_div,z_mod,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
 }
 
-!if ZVERSION>3 {
+!if ZVERSION>4 {
 _1opTbl +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_inc,z_dec,z_print_addr,z_call_1s,z_remove_obj,z_print_obj,z_ret,z_jump,z_print_paddr,z_load,z_call_1n
+} else if ZVERSION>3 {
+_1opTbl +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_inc,z_dec,z_print_addr,z_call_1s,z_remove_obj,z_print_obj,z_ret,z_jump,z_print_paddr,z_load,z_not
 } else {
 _1opTbl +table16 z_jz,z_get_sibling,z_get_child,z_get_parent,z_get_prop_len,z_inc,z_dec,z_print_addr,z_ill,z_remove_obj,z_print_obj,z_ret,z_jump,z_print_paddr,z_load,z_not
 }
 
-!if ZVERSION>3 {
+!if ZVERSION>4 {
 _0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,branch_passed,z_extended,branch_passed
 } else {
 _0opTbl +table16 z_rtrue,z_rfalse,z_print,z_print_ret,next_insn,z_save,z_restore,z_restart,z_ret_popped,z_pop,z_quit,z_new_line,z_show_status,branch_passed,z_ill,z_ill
 }
 
-!if ZVERSION>3 {
+!if ZVERSION>4 {
 _varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_call_vs2,z_erase_window,z_erase_line,z_set_cursor,z_get_cursor,z_set_text_style,z_buffer_mode,z_output_stream,z_input_stream,next_insn,z_read_char,z_scan_table,z_not,z_call_vn,z_call_vn2,z_tokenise,z_encode_text,z_copy_table,z_print_table,z_check_arg_count
+} else if ZVERSION>3 {
+_varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_call_vs2,z_erase_window,z_erase_line,z_set_cursor,z_get_cursor,z_set_text_style,z_buffer_mode,z_output_stream,z_input_stream,next_insn,z_read_char,z_scan_table,z_not,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
 } else {
 _varTbl +table32 z_call_vs,z_storew,z_storeb,z_put_prop,z_sread,z_print_char,z_print_num,z_random,z_push,z_pull,z_split_window,z_set_window,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_output_stream,z_input_stream,next_insn,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill,z_ill
 }	
 
-!if ZVERSION>3 {
+!if ZVERSION>4 {
 _extTblLo
 	!byte <z_xsave,<z_xrestore,<z_log_shift,<z_art_shift,<next_insn,<z_ill,<z_ill,<z_ill,<z_ill,<z_save_undo,<z_restore_undo
 _extTblHi
