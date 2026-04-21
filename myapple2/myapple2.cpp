@@ -102,6 +102,7 @@ u8 myapple2::read_byte(u16 addr) const {
                 u16 dest = read_word(pb+2);
                 u16 block = read_word(pb+4);
                 u8 *base = (block < 24)? interpreter + block * 512 : story + (block-24) * 512;
+                fprintf(stderr,"{read from block %04x to address %04x}\n",block,dest);
                 for (int i=0; i<512; i++)
                     that->write_byte(dest+i,base[i]);
                 that-> p &= ~1; // clear carry
@@ -152,6 +153,7 @@ void myapple2::write_byte(u16 addr,u8 value) {
             case 0xC089: if (writeprotect) --writeprotect;  ssw_bsreadram = 0x00; ssw_bsrbank2 = 0x80; break;
             case 0xC08A: writeprotect = 2;                  ssw_bsreadram = 0x00; ssw_bsrbank2 = 0x80; break;
             case 0xC08B: if (writeprotect) --writeprotect;  ssw_bsreadram = 0x80; ssw_bsrbank2 = 0x80; break;
+            case 0xC0FE: trace = !!value; break;
             case 0xC0FF: if (!value) { printf("%u cycles\n",cpu_cycles); exit(1); } putchar(value==13?10:value); break;
         }
     }
