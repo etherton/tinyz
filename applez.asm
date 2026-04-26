@@ -3,6 +3,7 @@ DEBUG_TRACE = 0
 DEBUG_PROP_COMMON = 0
 DEBUG_TOKENISE = 0
 DEBUG_TOKENISE_VERBOSE = 0
+DEBUG_VM = 0
 
 !macro bp {
 	bit $c00e
@@ -868,6 +869,10 @@ scroll
 	rts
 }
 
+debug_print_char
+	sta $c0ff
+	rts
+
 	; destroys A
 print_char_lower
 	sta $c0ff
@@ -1115,6 +1120,7 @@ obj_hi = $6A
 obj_mid = $6B
 obj_ptr = $6C
 obj_base = $6E		; 9/14 bytes before first object slot
+obj_prev_offset = $70
 window_current = $71
 output_table = $72
 output_enables = $73
@@ -1381,6 +1387,8 @@ update_zptr
 	rts
 } else if MEM_MODEL>=2 {
 
+; idea - include a one-element TLB to handle the case of a loop
+; spanning page boundary
 update_zptr
 	; convert zpc_mid/hi to an eight-bit page (Z3)
 	lda zpc_hi
@@ -1398,7 +1406,17 @@ update_zptr
 	sta zptr+1
 	rts
 update_vmem_hi
-	; sta $c0fe ;; enable trace
+!if DEBUG_VM {
+	jsr debug_print
+	!text "zpc=",0
+	jsr print_hex_byte
+	pha
+	lda zpc_mid
+	jsr print_hex_byte
+	jsr space
+	pla
+}
+	;sta $c0fe ;; enable trace
 	; desired_page is between 0-2047
 	lsr
 	sta desired_page+1
@@ -1407,7 +1425,7 @@ update_vmem_hi
 	sta desired_page
 	lda #0
 	adc #0
-	sta zpc_mid_low
+	sta zpc_mid_low		; pull out carry for even/odd
 	lda desired_page
 	sec
 	sbc #88
@@ -1415,11 +1433,35 @@ update_vmem_hi
 	lda desired_page+1
 	sbc #0
 	sta desired_page+1
+!if DEBUG_VM {
+	jsr debug_print
+	!text "vm hi ",0
+	pha
+	jsr print_hex_byte
+	lda desired_page
+	jsr print_hex_byte
+	pla
+}
 	clc				; todo: carry probably known here, could adjust adc and eliminate clc
 	adc #>vm_map
 	sta vm_ptr+1
 	sty .y_recover+1
+	;lda #0
+	;sta $c0fe
 	ldy desired_page
+!if DEBUG_VM>1 {
+	jsr space
+	lda vm_ptr+1
+	jsr print_hex_byte
+	lda vm_ptr
+	jsr print_hex_byte
+	jsr space
+	lda #>vm_map
+	jsr print_hex_byte
+	lda #<vm_map
+	jsr print_hex_byte
+	jsr space
+}
 	lda (vm_ptr),Y
 	bne page_hit
 	beq page_miss_2
@@ -1427,6 +1469,11 @@ update_vmem
 	; desired page is in A, 0-167 (or more for Z4+)
 	sty .y_recover+1
 	tay
+!if DEBUG_VM {
+	jsr debug_print
+	!text "vm lo ",0
+	jsr print_hex_byte
+}
 	lda vm_map,Y
 	beq page_miss
 page_hit
@@ -1434,6 +1481,15 @@ page_hit
 	sta zptr+1
 	lsr			; divide upper byte of address by two to get page index
 	tay			; get page index (biased by HEADER)
+!if DEBUG_VM {
+	jsr debug_print
+	!text " page hit ",0
+	jsr print_hex_byte
+	jsr space
+	lda zpc_mid_low
+	jsr print_hex_byte
+	jsr newline
+}
 	lda #0
 	sta page_ages-(>HEADER/2),y		; account for HEADER offset
 	sta RAMRDON						; it's in virtual (aux) memory
@@ -1445,6 +1501,10 @@ page_hit
 page_miss
 	; y contains page (512b block, starting from 88 in story) we want to make resident
 	sty desired_page
+!if ZVERSION>3 {
+	lda #>vm_map
+	sta vm_ptr+1		; make sure this is still correct
+}
 page_miss_2
 	sty RAMRDON
 	sty RAMWRTON		; enable aux memory for both read and write so we can fill it (smartport needs checksums)
@@ -1474,21 +1534,42 @@ page_miss_2
 
 	; mark this page not resident
 +	ldy oldest_page_index
+!if DEBUG_VM {
+	jsr debug_print
+	!text " oldest ",0
+	tya
+	jsr print_hex_byte
+	jsr space
+}
 !if ZVERSION=3 {
 	lda page_owners_lo,Y		; this is index into vm_map that owns us
+!if DEBUG_VM {
+	jsr debug_print
+	!text " owned by ",0
+	jsr print_hex_byte
+	jsr space
+}
 	tay
 	lda #0
 	sta vm_map,Y
 } else {
+!if DEBUG_VM {
+	jsr debug_print
+	!text " owned by ",0
+	lda page_owners_hi,Y
+	jsr print_hex_byte
+	lda page_owners_lo,Y
+	jsr print_hex_byte
+}
 	lda page_owners_hi,Y
 	clc
 	adc #>vm_map
-	sta vm_ptr
+	sta .vm_store+2
 	lda page_owners_lo,Y
 	tay
 	lda #0
 .vm_store
-	sta (vm_ptr),y
+	sta vm_map,y
 }
 
 	; change owner of this vm page to new page, reset age to 1
@@ -1509,9 +1590,15 @@ page_miss_2
 	adc #>HEADER				; account for header base address (carry always clear)
 	ldy desired_page
 !if ZVERSION>3 {
-	sta (vm_ptr),Y
+	sta (vm_ptr),Y				; this was set up above near end of update_vmem_hi
 } else {
 	sta vm_map,y
+}
+!if DEBUG_VM {
+	jsr debug_print
+	!text " store to page ",0
+	jsr print_hex_byte
+	jsr newline
 }
 	; set destination for read
 	sta read_dest+1
@@ -1727,7 +1814,7 @@ print_opcode_data
 +	pla
 	tay
 -	lda (obj_ptr),Y
-	jsr print_char
+	jsr debug_print_char
 	iny
 	dex
 	bne -
@@ -1760,8 +1847,7 @@ next_insn
 ++
 }
 !if DEBUG_TRACE {
-	lda #13
-	jsr print_char
+	jsr newline
 	lda zpc_hi
 	jsr print_hex_byte
 	lda zpc_mid
@@ -1979,14 +2065,14 @@ operand_variable
 !if DEBUG_TRACE {
 	pha
 	lda #'L'
-	jsr print_char
+	jsr debug_print_char
 	pla
 	pha
 	sec
 	sbc #1
 	jsr print_hex_byte
 	lda #'='
-	jsr print_char
+	jsr debug_print_char
 	pla
 	clc
 }
@@ -2011,13 +2097,13 @@ operand_variable
 	tay
 !if DEBUG_TRACE {
 	lda #'G'
-	jsr print_char
+	jsr debug_print_char
 	tya
 	sec
 	sbc #$10
 	jsr print_hex_byte
 	lda #'='
-	jsr print_char
+	jsr debug_print_char
 }
 	lda globals_hi,Y
 !if DEBUG_TRACE {
@@ -2369,14 +2455,14 @@ z_jg
 !if DEBUG_TRACE {
 print_offset
 	lda #'?'
-	jsr print_char
+	jsr debug_print_char
 	lda (zptr),Y
 	bmi +
 	lda #'~'
-	jsr print_char
+	jsr debug_print_char
 +	jsr space
 	lda #'('
-	jsr print_char
+	jsr debug_print_char
 	lda (zptr),y
 	and #$40
 	bne +
@@ -2388,7 +2474,7 @@ print_offset
 	jsr print_hex_byte
 	dey
 -	lda #')'
-	jmp print_char
+	jmp debug_print_char
 +	lda (zptr),Y
 	and #$3F
 	cmp #$00
@@ -2760,17 +2846,17 @@ remove_obj
 	cmp operands_hi+4
 	bne .remove_obj_not_direct
 }
-	sty ysave
+	sty obj_prev_offset
 	ldy #SIBLING
 	lda (obj_ptr_alt),Y	
-	ldy ysave
+	ldy obj_prev_offset
 	; parent's child is our sibling (or our predecessor's sibling is our sibling)
 !if ZVERSION>3 {
 	iny
 	sta (obj_ptr),y
 	ldy #SIBLING-1
 	lda (obj_ptr_alt),Y
-	ldy ysave
+	ldy obj_prev_offset
 	sta (obj_ptr),Y
 } else {
 	sta (obj_ptr),Y
@@ -2879,7 +2965,7 @@ prop_common
 	lda operands_lo+0
 	jsr print_hex_byte
 	lda #','
-	jsr print_char
+	jsr debug_print_char
 	lda operands_lo+1
 	jsr print_hex_byte
 	jsr debug_print
@@ -2995,7 +3081,7 @@ find_property
 	pha
 	jsr print_hex_byte
 	lda #'='
-	jsr print_char
+	jsr debug_print_char
 	lda operands_lo+1
 	jsr print_hex_byte
 	jsr debug_print
@@ -3553,8 +3639,7 @@ tokenise
 	!text ", parse_offset = ",0
 	lda parse_offset
 	jsr print_hex_byte
-	lda #13
-	jsr print_char
+	jsr newline
 }
 	; skip all spaces and stop at EOL (zero)
 	; note that to keep the code simpler, we zero terminate even on Z5+
@@ -3573,7 +3658,7 @@ tokenise
 	lda (parse_ptr),y
 	jsr print_hex_byte
 	lda #$d
-	jsr print_char
+	jsr debug_print_char
 	iny
 .print_parsed_data
 	lda (parse_ptr),Y
@@ -3591,8 +3676,7 @@ tokenise
 	iny
 	lda (parse_ptr),Y
 	jsr print_hex_byte
-	lda #$d
-	jsr print_char
+	jsr newline
 	iny
 	cpy parse_offset
 	bcc .print_parsed_data
@@ -3726,8 +3810,7 @@ bsearch
 	jsr print_hex_byte
 	lda high_index
 	jsr print_hex_byte
-	lda #13
-	jsr print_char
+	jsr newline
 }
 	; while (low_index <= high_index)
 	; equivalently, if high_index - low_index isn't negative
@@ -4438,7 +4521,7 @@ print_hex_digit
 	cmp #$3A
 	bcc +
 	adc #$6	; carry is always set
-+	jmp print_char
++	jmp debug_print_char
 
 z_new_line
 	lda #13
@@ -4538,11 +4621,12 @@ buffered_print_char
 	beq .break
 	cmp #','
 	beq .break
-	sty ysave
+	sty .buffered_y_restore+1
 	ldy chars_stored
 	sta char_buffer,Y
 	inc chars_stored
-	ldy ysave
+.buffered_y_restore
+	ldy #$12
 	rts
 .break
 	pha
@@ -5030,7 +5114,14 @@ dead
 space
 	pha
 	lda #32
-	jsr print_char
+	jsr debug_print_char
+	pla
+	rts
+
+newline
+	pha
+	lda #13
+	jsr debug_print_char
 	pla
 	rts
 
@@ -5045,7 +5136,7 @@ debug_print
 	ldy #1
 -	lda (stringptr),y
 	beq +
-	jsr print_char
+	jsr debug_print_char
 	iny
 	bne -
 +	tya
@@ -5159,22 +5250,7 @@ stack_hi	!fill 256
 globals_lo	!fill 256
 globals_hi	!fill 256
 
-!if MEM_MODEL > 1 {
-; this contains the age of each 512b page
-; it's tempting to use larger pages on V5 and V8 but that will likely
-; lead to a lot more disk thrashing.
-page_ages	!fill 88,1			; 0 is freshly used
-page_owners_lo
-			!byte  0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15
-			!byte 16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
-			!byte 32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47
-			!byte 48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63
-			!byte 64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79
-			!byte 80,81,82,83,84,85,86,87
-!if ZVERSION>3 {
-page_owners_hi
-			!fill 88
-}
+
 
 ; the initial vm_map is always the next 44k of the story. we always use 512b blocks,
 ; since that is the minimum read size for smartport. this allows us to determine if
@@ -5197,6 +5273,23 @@ vm_map		!byte $10,$12,$14,$16,$18,$1A,$1C,$1E
 			!fill (256-88)*2,0
 } else {
 			!fill (512-88)*2,0
+}
+
+!if MEM_MODEL > 1 {
+; this contains the age of each 512b page
+; it's tempting to use larger pages on V5 and V8 but that will likely
+; lead to a lot more disk thrashing.
+page_ages	!fill 88,1			; 0 is freshly used
+page_owners_lo
+			!byte  0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15
+			!byte 16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+			!byte 32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47
+			!byte 48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63
+			!byte 64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79
+			!byte 80,81,82,83,84,85,86,87
+!if ZVERSION>3 {
+page_owners_hi
+			!fill 88
 }
 } ; MEM_MODEL>1
 
