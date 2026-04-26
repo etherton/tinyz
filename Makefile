@@ -1,7 +1,7 @@
 all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3 advent.do advent.po demogame.do \
 	sieve_2p.do sieve_2e.do sieve_2ee.do cloak.do zork.do dejavu.do hibernated.do czech_z3.do czech_z5.do minimal.do loh.do \
 	applez_2e.bin applez_2e40_0.bin applez_2e40_1.bin applez_2e40_2.bin applez_2e_2.bin applez_2e_v5.bin czech.z3 czech.z5 \
-	applez_2e_v5_3.bin
+	applez_2e_v4.bin applez_2e_v5_2.bin applez_2e_v5_3.bin applez_2e_v8.bin
 
 tinyzcd: opcodes.h header.h tinyz.y debug.h debug.cpp Makefile
 	bison --debug tinyz.y -v -o tinyz.debug.tab.cpp && clang++ -DDEBUG_MEM=1 -g -std=c++17 tinyz.debug.tab.cpp debug.cpp -o tinyzcd
@@ -63,11 +63,20 @@ applez_2p.bin: applez.asm Makefile
 applez_2e.bin: applez.asm Makefile
 	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=3 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=1 -r applez_2e.lst -o applez_2e.bin applez.asm
 
+applez_2e_v4.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=4 -DMEM_MODEL=3 -DLOAD_FROM_DISK_II=0 -r applez_2e_v4.lst -o applez_2e_v4.bin applez.asm
+
 applez_2e_v5.bin: applez.asm Makefile
 	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=1 -r applez_2e_v5.lst -o applez_2e_v5.bin applez.asm
 
+applez_2e_v5_2.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=2 -DLOAD_FROM_DISK_II=0 -r applez_2e_v5_2.lst -o applez_2e_v5_2.bin applez.asm
+
 applez_2e_v5_3.bin: applez.asm Makefile
 	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=3 -DLOAD_FROM_DISK_II=0 -r applez_2e_v5_3.lst -o applez_2e_v5_3.bin applez.asm
+
+applez_2e_v8.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=8 -DMEM_MODEL=3 -DLOAD_FROM_DISK_II=0 -r applez_2e_v8.lst -o applez_2e_v8.bin applez.asm
 
 applez_2e40_0.bin: applez.asm Makefile
 	acme -f plain --cpu 6502 -DCOLUMNS=40 -DZVERSION=3 -DMEM_MODEL=0 -DLOAD_FROM_DISK_II=0  -r applez_2e40_0.lst -o applez_2e40_0.bin applez.asm
