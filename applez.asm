@@ -1661,7 +1661,6 @@ zentry
 	sta chars_stored
 	sta zpc_hi
 	sta stackptr
-	jsr update_zptr
 
 	; get default property table minus 2 (since objects are 1-based)
 	clc
@@ -1777,6 +1776,8 @@ zentry
 	; upper word is always rewritten
 }
 
+	; finish setting up initial pc - this needs to be last because it might set up aux memory
+	jsr update_zptr
 	jmp next_insn
 
 ; opcode
@@ -3431,8 +3432,9 @@ abbrev_load
 	inx
 abbrev_load2
 	lda $1234,x
-	+end_dynamic
 	sta obj_ptr
+	+end_dynamic
+
 	; abbreviations are word addresses
 	asl obj_ptr
 	rol obj_ptr+1	; carry always clear
@@ -4910,6 +4912,7 @@ z_get_cursor
 	jmp next_insn
 
 z_read_char
+	jsr flush_main_window
 	jsr read_char
 	tax
 	lda #0
