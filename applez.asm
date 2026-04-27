@@ -3469,10 +3469,30 @@ loadb
 	; memory beyond 44k will be paged.
 	cmp #$B0
 	bcc +
+	sbc #$B0		; carry already set
+	lsr				; get VM index (and carry is even/odd)
+	tay
+	lda vm_map,Y	; this is already biased by HEADER if nonzero
+	beq static_page_miss
+
+static_page_hit
+	adc #0			; add even/odd in carry back in
+	sta load_addr+2
+	lsr
+	tay				; get page index (biased by HEADER)
+	lda #0
+	sta page_ages-(>HEADER/2),y		; account for HEADER offset
+	+save_ram_state
+	sta RAMRDON						; it's in virtual (aux) memory
+	bvc load_addr	; always taken
+	
+static_page_miss
 	jsr fatal_error
-	!text "paged static memory not implemented yet",13,0
+	!text "page miss under static read not supported",13,0
+
++	
 }
-+	clc
+	clc
 	adc #>HEADER
 	sta load_addr+2
 	+begin_dynamic
