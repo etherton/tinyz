@@ -527,7 +527,12 @@
 		}
 	};
 	std::map<dict_entry,uint16_t> the_dictionary; // maps a dictionary word to its index
-	uint8_t& z_dict_payload(uint16_t i) { return dictionary_blob->contents[7 + i * (dict_entry_size+1) + dict_entry_size]; }
+	const uint8_t dict_payload_size = 1;
+	uint8_t* z_dict_ptr(uint16_t i) { 
+		uint8_t *c = dictionary_blob->contents;
+		return c + c[0] + 4 + i * (dict_entry_size+dict_payload_size); 
+	}
+	uint8_t& z_dict_payload(uint16_t i) { return z_dict_ptr(i)[dict_entry_size]; }
 
 	typedef int16_t (*binary_eval)(int16_t,int16_t);
 	typedef int16_t (*unary_eval)(int16_t);
@@ -1617,7 +1622,7 @@
 %token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET PRINT_RETF SELF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF ONCE
 %token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF HASH_INCLUDE TRACE UNPARENT FOR
 %token <ival> DICT ANAME PNAME LNAME GNAME INTLIT ONAME
-%token <sval> STRLIT CSTRLIT
+%token <sval> STRLIT CSTRLIT SEPARATORS
 %token <rval> RNAME
 %token <sym> NEWSYM
 %token WHILE REPEAT IF ELSE
@@ -1677,6 +1682,7 @@ decl
 	| action_def
 	| synonym_def
 	| constant_def
+	| separators_def
 	;
 
 constant_def
@@ -1691,6 +1697,15 @@ constant_def
 			 // printf("constant = %d\n",v);
 			 if ($2->first == "ReleaseNumber")
 			 	release_number = v;
+		}
+	;
+
+separators_def
+	: SEPARATORS dict_list ';'
+		{
+			// This is parsed manually in the first pass since we generate the dictionary
+			// between passes. This just verifies it was properly terminated with a semicolon.
+			delete $2;
 		}
 	;
 
@@ -2548,6 +2563,7 @@ void init(int version) {
 	rw["#else"] = HASH_ELSE;
 	rw["#endif"] = HASH_ENDIF;
 	rw["#include"] = HASH_INCLUDE;
+	rw["separators"] = SEPARATORS;
 
 #define MACRO1(b)		(0x10000000 | uint8_t(b))
 #define MACRO3(b,t,v)	(0x30000000 | (uint8_t(b)|((t)<<8)|((v)<<16)))
@@ -3201,6 +3217,9 @@ void yyerror(const char *fmt,...) {
 	exit(1);
 }
 
+char the_separators[8];
+int separator_count;
+
 int main(int argc,char **argv) {
 
 	/* uint8_t dest[6];
@@ -3350,17 +3369,30 @@ int main(int argc,char **argv) {
 							the_globals[yytoken] = { GNAME,next_global++ };
 						}
 					}
+					else if (t == SEPARATORS) {
+						while (yylex() == DICT) {
+							if (yylen != 1)
+								yyerror("separator must be a single character");
+							else if (separator_count==sizeof(the_separators))
+								yyerror("too many separators");
+							else if (memchr(the_separators,yytoken[0],separator_count))
+								yyerror("duplicate separator in list");
+							else
+								the_separators[separator_count++] = yytoken[0];
+						}
+					}
 				}
 			}
+			if (!separator_count && the_dictionary.size())
+				yyerror("need at least one separators statement");
 			if (report & R_SUMMARY) 
-				printf("%zu words in dictionary\n",the_dictionary.size());
+				printf("%zu words in dictionary (%u separators)\n",the_dictionary.size(),separator_count);
 			// build the final dictionary, assigning word indices.
-			dictionary_blob = relocatableBlob::create(7 + the_dictionary.size() * (dict_entry_size+1),UD_STATIC,"dictionary");
-			dictionary_blob->storeByte(3);
-			dictionary_blob->storeByte('.');
-			dictionary_blob->storeByte(',');
-			dictionary_blob->storeByte('"');
-			dictionary_blob->storeByte(dict_entry_size+1);
+			dictionary_blob = relocatableBlob::create(separator_count + 4 + the_dictionary.size() * (dict_entry_size+dict_payload_size),UD_STATIC,"dictionary");
+			dictionary_blob->storeByte(separator_count);
+			for (int i=0; i<separator_count; i++)
+				dictionary_blob->storeByte(the_separators[i]);
+			dictionary_blob->storeByte(dict_entry_size+dict_payload_size);
 			dictionary_blob->storeWord(the_dictionary.size());
 			uint16_t idx = 0;
 			for (auto &d: the_dictionary) {

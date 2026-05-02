@@ -16,6 +16,8 @@ attribute object worn;
 attribute object scenery;
 attribute object vowel;
 
+separators '.' ',' '"';
+
 routine An [obj] {
 	if (obj has vowel)
 		print "An ",rfalse;

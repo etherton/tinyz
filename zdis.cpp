@@ -311,7 +311,7 @@ void dump_dictionary(const storyHeader *h) {
 	uint8_t entrySize = b[addr++];
 	int numEntries = ((const word*)(b+addr))->getU();
 	addr+=2;
-	printf("dictionary has %d entries of %d bytes each:\n",numEntries,entrySize);
+	printf("dictionary has %d entries of %d bytes each: (total %d)\n",numEntries,entrySize,numEntries*entrySize);
 	while (numEntries--) {
 		printf("\t[");
 		print_zscii(b,addr);

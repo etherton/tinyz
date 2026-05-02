@@ -21,6 +21,8 @@ constant cMagenta = 7;
 constant cCyan = 8;
 constant cWhite = 9;
 
+separators '.' ',' '"';
+
 // synonyms of a word are identical to it in all contexts. if a word appears
 // here as a synonym it cannot appear anywhere else (because it would never match)
 // internally synonyms are flagged with a payload of 0xFF. It's a table of words
