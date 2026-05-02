@@ -504,9 +504,9 @@ uint8_t machine::tokenise(uint16_t textAddr,uint16_t parseAddr,uint8_t offset) {
 			break;
 		uint8_t wordLen = 1;
 		// if it's not a word separator, keep looking until we get to end, space, or a word separator
-		if (!memchr(m_dynamic + separators,m_dynamic[textAddr+offset],numSeparators)) {
+		if (!memchr(m_readOnly + separators,m_dynamic[textAddr+offset],numSeparators)) {
 			while (offset+wordLen < stop && m_dynamic[textAddr+offset+wordLen]!=32 && 
-					!memchr(m_dynamic + separators,m_dynamic[textAddr+offset+wordLen],numSeparators))
+					!memchr(m_readOnly + separators,m_dynamic[textAddr+offset+wordLen],numSeparators))
 				++wordLen;
 		}
 		word zword[3];
