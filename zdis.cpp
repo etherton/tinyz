@@ -361,7 +361,7 @@ int main(int argc,char **argv) {
 		zscii = (char*)story + story->alphabetTableAddress.getU();
 	printf("high memory: %x\n",story->highMemoryAddr.getU());
 	printf("initial pc: %x\n",story->initialPCAddr.getU());
-	printf("dictionary: %x\n",story->dictionaryAddr.getU());
+	printf("dictionary: %x (%d k)\n",story->dictionaryAddr.getU(),story->dictionaryAddr.getU()>>10);
 	if (report & 1)
 		dump_dictionary(story);
 	printf("globals: %x\n",story->globalVarsTableAddr.getU());
