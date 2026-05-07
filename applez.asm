@@ -1693,6 +1693,11 @@ zentry
 	lda HEADER+8
 	adc #>HEADER
 	sta dict_ptr+1
+	cmp #$C0
+	bcc not44k
+	jsr fatal_error
+	!text "dictionary starts past 44k",13,0
+not44k
 	ldy #0
 	lda (dict_ptr),y	; get number of separators
 	tay
@@ -3458,6 +3463,16 @@ z_loadb
 	lda #0
 	jmp store_common
 	; returns byte at operands+0 + operands+1 (dynamic or static memory) in A register
+!if MEM_MODEL >= 3 {
+loadb_objptr
+	lda obj_ptr
+	clc
+	adc char_index
+	sta load_addr+1
+	lda obj_ptr+1
+	adc #0
+	bne + ; always taken
+}
 loadb
 	clc
 	lda operands_lo+0
@@ -3465,9 +3480,10 @@ loadb
 	sta load_addr+1
 	lda operands_hi+0
 	adc operands_hi+1
+
 !if MEM_MODEL>=3 {
 	; memory beyond 44k will be paged.
-	cmp #$B0
++	cmp #$B0
 	bcc +
 	sbc #$B0		; carry already set
 	lsr				; get VM index (and carry is even/odd)
@@ -3603,6 +3619,18 @@ z_sread
 }
 	+begin_dynamic
 	jsr read_line
+
+!if DEBUG_TOKENISE_VERBOSE {
+	ldy #0
+-   lda (text_ptr),Y
+	jsr print_hex_byte
+	jsr space
+	iny
+	cmp #0
+	bne -
+	jsr newline
+}
+
 	+end_dynamic
 !if ZVERSION>=5 {
 	lda parse_ptr
@@ -3799,6 +3827,12 @@ tokenise
 	jsr print_hex_byte
 	lda encode_buffer+3
 	jsr print_hex_byte
+!if ZVERSION>3 {
+	lda encode_buffer+4
+	jsr print_hex_byte
+	lda encode_buffer+5
+	jsr print_hex_byte
+}
 	jsr debug_print
 	!text "]",13,0
 }
@@ -3807,7 +3841,12 @@ tokenise
 	sta low_index
 	sta low_index+1
 	sta char_index
-	ldy #6
+	ldy #0				; was #6
+	lda (dict_ptr),Y	; typically 3
+	tay
+	iny 
+	iny 
+	iny 
 	lda (dict_ptr),Y
 	sec
 	sbc #1
@@ -3841,9 +3880,10 @@ bsearch
 	sbc low_index
 	lda high_index+1
 	sbc low_index+1
-	bmi .search_failed
+	bpl +
+	jmp .search_failed
 	; mid_index = (low_index + high_index)>>1
-	lda low_index
++	lda low_index
 	clc
 	adc high_index
 	sta operands_lo+0
@@ -3865,17 +3905,28 @@ bsearch
 	sta obj_ptr
 	lda entry_ptr+1
 	adc operands_hi+2
+!if MEM_MODEL >= 3 {
+	sec
+	sbc #>HEADER
+}
 	sta obj_ptr+1
 	; encode_buffer contains string to test against
 	; obj_ptr contains entry to compare
 .compare_char
+!if MEM_MODEL < 3 {
 	ldy char_index
-	lda encode_buffer,Y
-	cmp (obj_ptr),Y
-	bcs +
+	lda (obj_ptr),Y
+} else {
+	jsr loadb_objptr
+	ldy char_index
+}
+	cmp encode_buffer,Y
+	bcc bsearch_hi
+	beq bsearch_matched
+bsearch_lo
 	; high = mid-1
 	lda operands_lo+0
-	sec
+	; carry already set
 	sbc #1
 	sta high_index+0
 	lda operands_hi+0
@@ -3883,7 +3934,7 @@ bsearch
 	sta high_index+1
 	bmi .search_failed	; top of loop does unsigned comparison so catch negative here and exit
 	jmp bsearch
-+	bne +
+bsearch_matched
 	inc char_index
 	iny
 	cpy #DICT_SIZE
@@ -3895,11 +3946,14 @@ bsearch
 	dey
 	sta (parse_ptr),Y
 	lda obj_ptr+1
+!if MEM_MODEL < 3 {
 	sec
 	sbc #>HEADER
+}
 	jmp .word_done
 	; low = mid+1
-+	lda operands_lo+0
+bsearch_hi
+	lda operands_lo+0
 	clc
 	adc #1
 	sta low_index+0
