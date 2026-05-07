@@ -421,7 +421,7 @@ u16 generic_6502::disassemble_insn(char *dest,size_t destSize,u16 pc,bool mem) c
 		#include "decode_6502.h"
 	}
 	// compute base effective address based on addressing mode
-	int ea;
+	u16 ea;
 	if (mode < immediate)
 		ea = 0;
 	else if (mode < indirect)
@@ -469,9 +469,9 @@ u16 generic_6502::disassemble_insn(char *dest,size_t destSize,u16 pc,bool mem) c
 		}
 		if (mem) switch (mode)
 		{
-		case zero_page_direct: if (ea>127) snprintf(dest+strlen(dest),destSize-strlen(dest)," [%02X]", read_byte(ea)); break;
-		case zero_page_indexed_x: ea += x; if (ea>127) snprintf(dest+strlen(dest),destSize-strlen(dest)," [%02X:%02X]", ea, read_byte(ea)); break;
-		case zero_page_indexed_y: ea += y; if (ea>127) snprintf(dest+strlen(dest),destSize-strlen(dest)," [%02X:%02X]", ea, read_byte(ea)); break;
+		case zero_page_direct: snprintf(dest+strlen(dest),destSize-strlen(dest)," [%02X]", read_byte(ea)); break;
+		case zero_page_indexed_x: ea += x; snprintf(dest+strlen(dest),destSize-strlen(dest)," [%02X:%02X]", ea, read_byte(ea)); break;
+		case zero_page_indexed_y: ea += y; snprintf(dest+strlen(dest),destSize-strlen(dest)," [%02X:%02X]", ea, read_byte(ea)); break;
 		case preindexed_indirect_x: ea += x; ea = read_word(ea); snprintf(dest+strlen(dest),destSize-strlen(dest)," [%04X:%02X]", ea, read_byte(ea)); break;
 		case postindexed_indirect_y: ea = read_word(ea) + y; snprintf(dest+strlen(dest),destSize-strlen(dest)," [%04X:%02X]", ea, read_byte(ea)); break;
 		case indirect: snprintf(dest+strlen(dest),destSize-strlen(dest)," [%04X]", read_word(ea)); break;
