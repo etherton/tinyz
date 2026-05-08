@@ -65,6 +65,7 @@ struct generic_6502 {
 	virtual u8 read_byte(u16 addr) const = 0; // like read, but with no cycle counts or bankswitching
 	virtual void write_byte(u16 addr,u8 value) = 0;
     virtual const char *resolve_symbol(u16 addr) const = 0;
+	virtual const char *xstate() { return ""; }
 
 	u16 read_word(u16 addr) const {
 		return read_byte(addr) | (read_byte(addr+1)<<8);
@@ -269,10 +270,10 @@ void generic_6502::exec()
 			char buf[256];
 			disassemble_insn(buf,sizeof(buf),pc,true);
 
-			printf("$%04X %-22s  A=%02X X=%02X Y=%02X S=%02X [%c%c%c%c%c%c] %04d\n",pc,buf,a,x,y,s,
+			printf("$%04X %-40s  A=%02X X=%02X Y=%02X S=%02X [%c%c%c%c%c%c] %04d%s\n",pc,buf,a,x,y,s,
 				(p&SF)?'S':' ',(p&VF)?'V':' ',(p&DF)?'D':' ',
 				(p&IF)?'I':' ',(p&ZF)?'Z':' ',(p&CF)?'C':' ',
-				cpu_cycles%10000);
+				cpu_cycles%10000,xstate());
 		}
 #if USE_SDL
 		if (singlestep)

@@ -8,26 +8,15 @@ struct myapple2: public generic_6502 {
 	void cpu_cycle() final;
 	u8 read_byte(u16) const final;
 	void write_byte(u16,u8) final;
+	const char *xstate() final;
     const char *resolve_symbol(u16) const final;
 	u8 *read_file(const char *fname,size_t *sizePtr);
 	void init();
     bool init_sdl();
     void init_vic_ii(u16 addr);
-    void init_symbol(u16 addr,const char *name) {
-        symbols[addr] = name;
-    }
-    void init_indexed_symbol(u16 addr,const char *fmt,int x) {
-        char buf[32];
-        snprintf(buf,sizeof(buf),fmt,x);
-        init_symbol(addr,strdup(buf));
-    }
-    void init_field_symbol(u16 addr,const char *name,const char *) {
-        init_symbol(addr,name);
-    }
     unsigned draw_char(unsigned x,unsigned y,u32 fore,u32 back,u8 c);
     unsigned draw_text(unsigned x,unsigned y,u32 fore,u32 back,const char *fmt,...);
     u8 *ram, *rom;
-    const char **symbols;
     u8 writeprotect;
     mutable u8 keylatch;
     union {
@@ -55,7 +44,105 @@ struct myapple2: public generic_6502 {
 
 
 const char *myapple2::resolve_symbol(u16 addr) const {
-    return symbols[addr];
+    switch(addr) {
+    case 0x43: return "zpc_mid_low";
+    case 0x44: return "call_storage";
+    case 0x45: return "mulSign";
+    case 0x46: return "mulTemp";
+    case 0x47: return "attr_bit";
+    case 0x48: return "ztype";
+    case 0x49: return "zinsn";
+    case 0x4a: return "zpc_hi";
+    case 0x4b: return "zpc_mid";
+    case 0x4c: return "zptr";
+    case 0x4e: return "store_hi";
+    case 0x4f: return "operand_count";
+    case 0x50: return "operands_hi";
+    case 0x51: return "operands_hi+1";
+    case 0x52: return "operands_hi+2";
+    case 0x53: return "operands_hi+3";
+    case 0x54: return "operands_hi+4";
+    case 0x58: return "operands_lo";
+    case 0x59: return "operands_lo+1";
+    case 0x5a: return "operands_lo+2";
+    case 0x5b: return "operands_lo+3";
+    case 0x5c: return "operands_lo+4";
+    case 0x60: return "stringptr";
+    case 0x62: return "obj_ptr_alt";
+    case 0x6a: return "obj_hi";
+    case 0x6b: return "obj_mid";
+    case 0x6c: return "obj_ptr";
+    case 0x6e: return "obj_base";
+    case 0x70: return "obj_prev_offset";
+    case 0x71: return "window_current";
+    case 0x72: return "output_table";
+    case 0x73: return "output_enables";
+    case 0x74: return "shift";
+    case 0x75: return "abbrev";
+    case 0x76: return "extended";
+    case 0x78: return "stackptr";
+    case 0x79: return "frameptr";
+    case 0x7c: return "default_props_ptr";
+    case 0x7e: return "dict_ptr";
+    case 0x80: return "parse_ptr";
+    case 0x82: return "text_offset";
+    case 0x83: return "parse_offset";
+    case 0x84: return "entry_ptr";
+    case 0x86: return "low_index";
+    case 0x88: return "high_index";
+    case 0x8A: return "entry_size";
+    case 0x8B: return "char_index";
+    case 0x8C: return "chars_stored";
+    case 0x8D: return "last_status_room";
+    case 0x8E: return "zchar_hi";
+    case 0x8F: return "zchar_lo";
+    case 0x90: return "desired_page";
+    case 0x92: return "oldest_page_index";
+    case 0x94: return "oldest_page_value";
+    case 0x96: return "vm_ptr";
+
+    case 0xC000: return "_80STOREOFF";
+    case 0xC001: return "_80STOREON";
+    case 0xC002: return "RAMRDOFF";
+    case 0xC003: return "RAMRDON";
+    case 0xC004: return "RAMWRTOFF";
+    case 0xC005: return "RAMWRTON";
+    case 0xC006: return "INTCXROMOFF";
+    case 0xC007: return "INTCXROMON";
+    case 0xC008: return "ALTZPOFF";
+    case 0xC009: return "ALTZPON";
+    case 0xC00A: return "SLOTC3ROMOFF";
+    case 0xC00B: return "SLOTC3ROMON";
+    case 0xC00C: return "80COLOFF";
+    case 0xC00D: return "80COLON";
+    case 0xC00E: return "ALTCHARSETOFF";
+    case 0xC00F: return "ALTCHARSETON";
+    case 0xC010: return "AKD";
+    case 0xC011: return "BSRBANK2";
+    case 0xC012: return "BSREADRAM";
+    case 0xC013: return "RAMRD";
+    case 0xC014: return "RAMWRT";
+    case 0xC015: return "INTCXROM";
+    case 0xC016: return "ALTZP";
+    case 0xC017: return "SLOTC3ROM";
+    case 0xC018: return "80STORE";
+    case 0xC019: return "VERTBLANK";
+    case 0xC01A: return "TEXT";
+    case 0xC01B: return "MIXED";
+    case 0xC01C: return "PAGE2";
+    case 0xC01D: return "HIRES";
+    case 0xC01E: return "ALTCHARSET";
+    case 0xC01F: return "80COL";
+    case 0xC050: return "TEXTOFF";
+    case 0xC051: return "TEXTON";
+    case 0xC052: return "MIXEDOFF";
+    case 0xC053: return "MIXEDON";
+    case 0xC054: return "PAGE2OFF";
+    case 0xC055: return "PAGE2ON";
+    case 0xC056: return "HIRESOFF";
+    case 0xC057: return "HIRESON";
+    default: return nullptr;
+    }
 }
 
 void myapple2::cpu_cycle() {
@@ -125,6 +212,15 @@ u8 myapple2::read_byte(u16 addr) const {
     }
     else
         return ram[addr];
+}
+
+const char *myapple2::xstate() {
+	static char buf[32];
+	buf[0] = 32;
+	buf[1] = ssw_ramrd? 'R' : ' ';
+	buf[2] = ssw_ramwrt? 'W' : ' ';
+	buf[3] = ssw_altzp? 'Z' : ' ';
+	return buf;
 }
 
 void myapple2::write_byte(u16 addr,u8 value) {
@@ -205,47 +301,6 @@ void myapple2::init() {
     memset(ssw,0,sizeof(ssw));
     writeprotect = 2;
     keylatch = 0;
-    symbols = (const char**)memset(new const char*[65536],0,65536*sizeof(const char*));
-    init_symbol(0xC000,"_80STOREOFF");
-    init_symbol(0xC001,"_80STOREON");
-    init_symbol(0xC002,"RAMRDOFF");
-    init_symbol(0xC003,"RAMRDON");
-    init_symbol(0xC004,"RAMWRTOFF");
-    init_symbol(0xC005,"RAMWRTON");
-    init_symbol(0xC006,"INTCXROMOFF");
-    init_symbol(0xC007,"INTCXROMON");
-    init_symbol(0xC008,"ALTZPOFF");
-    init_symbol(0xC009,"ALTZPON");
-    init_symbol(0xC00A,"SLOTC3ROMOFF");
-    init_symbol(0xC00B,"SLOTC3ROMON");
-    init_symbol(0xC00C,"80COLOFF");
-    init_symbol(0xC00D,"80COLON");
-    init_symbol(0xC00E,"ALTCHARSETOFF");
-    init_symbol(0xC00F,"ALTCHARSETON");
-    init_symbol(0xC010,"AKD");
-    init_symbol(0xC011,"BSRBANK2");
-    init_symbol(0xC012,"BSREADRAM");
-    init_symbol(0xC013,"RAMRD");
-    init_symbol(0xC014,"RAMWRT");
-    init_symbol(0xC015,"INTCXROM");
-    init_symbol(0xC016,"ALTZP");
-    init_symbol(0xC017,"SLOTC3ROM");
-    init_symbol(0xC018,"80STORE");
-    init_symbol(0xC019,"VERTBLANK");
-    init_symbol(0xC01A,"TEXT");
-    init_symbol(0xC01B,"MIXED");
-    init_symbol(0xC01C,"PAGE2");
-    init_symbol(0xC01D,"HIRES");
-    init_symbol(0xC01E,"ALTCHARSET");
-    init_symbol(0xC01F,"80COL");
-    init_symbol(0xC050,"TEXTOFF");
-    init_symbol(0xC051,"TEXTON");
-    init_symbol(0xC052,"MIXEDOFF");
-    init_symbol(0xC053,"MIXEDON");
-    init_symbol(0xC054,"PAGE2OFF");
-    init_symbol(0xC055,"PAGE2ON");
-    init_symbol(0xC056,"HIRESOFF");
-    init_symbol(0xC057,"HIRESON");
 }
 
 bool myapple2::init_sdl() {
