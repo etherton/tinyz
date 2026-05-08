@@ -3498,7 +3498,8 @@ static_page_hit
 	tay				; get page index (biased by HEADER)
 	lda #0
 	sta page_ages-(>HEADER/2),y		; account for HEADER offset
-	+save_ram_state
+	bit RAMRD
+	php
 	sta RAMRDON						; it's in virtual (aux) memory
 	bvc load_addr	; always taken
 	
@@ -3511,10 +3512,20 @@ static_page_miss
 	clc
 	adc #>HEADER
 	sta load_addr+2
-	+begin_dynamic
+!if MEM_MODEL {
+	bit RAMRD
+	php
+	sta RAMRDOFF
+}
 load_addr
 	lda $1234
-	+end_dynamic
+!if MEM_MODEL {
+	plp
+	bpl +
+	sta RAMRDON
+	rts
++	sta RAMRDOFF
+}
 	rts
 
 z_storeb
@@ -3650,6 +3661,8 @@ z_tokenise
 +	jsr tokenise
 	jmp next_insn
 tokenise
+	; lda #1
+	; sta $c0fe ;; trace
 	+begin_dynamic
 
 !if ZVERSION>=5 {
@@ -3695,7 +3708,9 @@ tokenise
 	; note that to keep the code simpler, we zero terminate even on Z5+
 	ldy text_offset
 	lda (text_ptr),Y
-	bne +
+	beq found_end
+	jmp +
+found_end
 !if DEBUG_TOKENISE {
 	jsr debug_print
 	!text "max parsed=",0
@@ -3732,6 +3747,8 @@ tokenise
 	bcc .print_parsed_data
 }
 	+end_dynamic
+	;lda #0
+	;sta $c0fe
 	rts
 +	cmp #32
 	bne .new_word
@@ -3940,8 +3957,12 @@ bsearch_matched
 	cpy #DICT_SIZE
 	bne .compare_char
 
+	; lda obj_ptr+1
+	; jsr print_hex_byte
 	; search succeeded
 	lda obj_ptr
+	; jsr print_hex_byte
+	; jsr newline
 	ldy parse_offset
 	dey
 	sta (parse_ptr),Y
