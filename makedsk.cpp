@@ -32,8 +32,9 @@ const unsigned char nibbles[] = {
 };
 
 int main(int argc,char **argv) {
-	char *in = new char[35*16*256];
-	memset(in,0,35*16*256);
+	size_t maxSize = 12 * 1024 + 512 * 1024;
+	char *in = new char[maxSize];
+	memset(in,0,maxSize);
 	int offset = 0;
 	for (int i=1; i<argc; i++) {
 		if (!strcmp(argv[i],"-o")) {
@@ -62,7 +63,7 @@ int main(int argc,char **argv) {
 				}
 			}
 			else if (!strcmp(ext,".hdv")) {
-				fwrite(in, 35*16, 256, o);
+				fwrite(in, (offset+511)/512, 512, o);
 			}
 			else if (!strcmp(ext,".nib")) {
 				for (int track=0; track<35; track++) {
