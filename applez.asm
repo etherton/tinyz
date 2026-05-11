@@ -3256,35 +3256,54 @@ print_obj
 	adc #$01
 	sta obj_ptr
 	txa
+!if MEM_MODEL < 3 {
 	adc #>HEADER
+}
 	sta obj_ptr+1
 	+end_dynamic
+	; falls through to print_obj_ptr
 
-	; obj_ptr points at string to display. destroys A.
-	; this function needs to be re-entrant
+	; obj_ptr points at string to display (z machine address in either dynamic or static memory). destroys A
+	; this function needs to be partially re-entrant because calling printz
+	; might encounter an abbreviation, which will call back to here (saving obj_ptr)
 print_obj_ptr
 	lda #0
 	sta shift
 	sta abbrev
 	sta extended
+!if MEM_MODEL < 3 {
 	tya
 	pha
 	ldy #0
 	+begin_dynamic
 -	lda (obj_ptr),y
-	php
+} else {
+-	jsr loadb_objptr
+}
+	pha
 	and #$7C
 	lsr
 	lsr
 	jsr printz
+!if MEM_MODEL < 3 {
 	lda (obj_ptr),y
+} else {
+	pla
+	pha
+}
 	and #$3
 	; xsave is only used locally before we call printz again
+	; so we don't need to worry about re-entrancy
 	sta xsave
 	inc obj_ptr
 	bne +
 	inc obj_ptr+1
+!if MEM_MODEL < 3 {
 +	lda (obj_ptr),y
+} else {
++	jsr loadb_objptr
+	pha
+}
 	asl
 	rol xsave
 	asl
@@ -3293,25 +3312,33 @@ print_obj_ptr
 	rol xsave
 	lda xsave
 	jsr printz
+!if MEM_MODEL < 3 {
 	lda (obj_ptr),Y
+} else {
+	pla
+}
 	inc obj_ptr
 	bne +
 	inc obj_ptr+1
 +	and #$1F
 	jsr printz
-	plp
+	pla
 	bpl -
+!if MEM_MODEL < 3 {
 	+end_dynamic
 	pla
 	tay
+}
 	rts
 
 z_print_addr
 	lda operands_lo+0
 	sta obj_ptr
 	lda operands_hi+0
+!if MEM_MODEL < 3 {
 	clc
 	adc #>HEADER
+}
 	sta obj_ptr+1
 	; obj_ptr contains address in dynamic/static memory
 	jsr print_obj_ptr
@@ -3443,9 +3470,11 @@ abbrev_load2
 	; abbreviations are word addresses
 	asl obj_ptr
 	rol obj_ptr+1	; carry always clear
+!if MEM_MODEL < 3 {
 	lda obj_ptr+1
 	adc #>HEADER
 	sta obj_ptr+1
+}
 	jsr print_obj_ptr
 	lda #0
 	sta shift	; abbreviation might have had padding character
@@ -3463,16 +3492,13 @@ z_loadb
 	lda #0
 	jmp store_common
 	; returns byte at operands+0 + operands+1 (dynamic or static memory) in A register
-!if MEM_MODEL >= 3 {
 loadb_objptr
 	lda obj_ptr
-	clc
-	adc char_index
 	sta load_addr+1
-	lda obj_ptr+1
-	adc #0
-	bne + ; always taken
-}
+	lda obj_ptr+1	; this could actually be zero
+	jmp loadb_common
+
+
 loadb
 	clc
 	lda operands_lo+0
@@ -3483,10 +3509,12 @@ loadb
 
 !if MEM_MODEL>=3 {
 	; memory beyond 44k will be paged.
-+	cmp #$B0
+loadb_common
+	cmp #$B0
 	bcc +
 	sbc #$B0		; carry already set
 	lsr				; get VM index (and carry is even/odd)
+	sty static_y_save+1
 	tay
 	lda vm_map,Y	; this is already biased by HEADER if nonzero
 	beq static_page_miss
@@ -3498,6 +3526,8 @@ static_page_hit
 	tay				; get page index (biased by HEADER)
 	lda #0
 	sta page_ages-(>HEADER/2),y		; account for HEADER offset
+static_y_save
+	ldy #$12
 	bit RAMRD
 	php
 	sta RAMRDON						; it's in virtual (aux) memory
@@ -3506,10 +3536,11 @@ static_page_hit
 static_page_miss
 	jsr fatal_error
 	!text "page miss under static read not supported",13,0
-
-+	
+	
+} else {
+loadb_common
 }
-	clc
++	clc
 	adc #>HEADER
 	sta load_addr+2
 !if MEM_MODEL {
@@ -3934,7 +3965,13 @@ bsearch
 	ldy char_index
 	lda (obj_ptr),Y
 } else {
-	jsr loadb_objptr
+	lda obj_ptr
+	clc
+	adc char_index
+	sta load_addr+1
+	lda obj_ptr+1
+	adc #0
+	jsr loadb_common
 	ldy char_index
 }
 	cmp encode_buffer,Y
