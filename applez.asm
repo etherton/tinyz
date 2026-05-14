@@ -2288,7 +2288,7 @@ z_rfalse
 	
 	jsr update_zptr
 
-!if ZVERSION>3 {
+!if ZVERSION>4 {
 	lda stack_hi+2,Y
 	bmi +
 }
@@ -4266,7 +4266,7 @@ z_call_2s
 	; new frame starts at stackptr
 	; frame+0 is lower 16 bits of current PC
 	; frame+1 is upper 8 bits of current PC and previous frameptr
-	; frame+2 is location to store result, and operand count in V5+ (frame+2 is new frameptr)
+	; frame+2 is location to store result, and operand count in V5+ (minus if no store) (frame+2 is new frameptr)
 	; frame+3 is the first parameter / local variable
 	; new stack ptr is just past last local
 +	+zeroy
