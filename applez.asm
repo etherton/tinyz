@@ -1491,7 +1491,7 @@ page_hit
 	jsr newline
 }
 	lda #0
-	sta page_ages-(>HEADER),y		; account for HEADER offset
+	sta page_ages-(>HEADER/2),y		; account for HEADER offset
 	sta RAMRDON						; it's in virtual (aux) memory
 .y_recover
 	ldy #$12
@@ -3543,7 +3543,7 @@ static_page_hit
 	lsr
 	tay				; get page index (biased by HEADER)
 	lda #0
-	sta page_ages-(>HEADER),y		; account for HEADER offset
+	sta page_ages-(>HEADER/2),y		; account for HEADER offset
 static_y_save
 	ldy #$12
 	bit RAMRD
