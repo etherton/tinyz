@@ -1464,7 +1464,7 @@ update_vmem_hi
 }
 	lda (vm_ptr),Y
 	bne page_hit
-	beq page_miss_2
+	beq page_miss_2		; always taken
 update_vmem
 	; desired page is in A, 0-167 (or more for Z4+)
 	sty .y_recover+1
@@ -1491,7 +1491,7 @@ page_hit
 	jsr newline
 }
 	lda #0
-	sta page_ages-(>HEADER/2),y		; account for HEADER offset
+	sta page_ages-(>HEADER),y		; account for HEADER offset
 	sta RAMRDON						; it's in virtual (aux) memory
 .y_recover
 	ldy #$12
@@ -1504,6 +1504,8 @@ page_miss
 !if ZVERSION>3 {
 	lda #>vm_map
 	sta vm_ptr+1		; make sure this is still correct
+	lda #0
+	sta desired_page+1
 }
 page_miss_2
 	sty RAMRDON
@@ -1530,7 +1532,7 @@ page_miss_2
 	beq -
 	sta oldest_page_value
 	sty oldest_page_index
-	bcs -
+	bcs -		; always taken
 
 	; mark this page not resident
 +	ldy oldest_page_index
@@ -3517,7 +3519,23 @@ loadb_common
 	sty static_y_save+1
 	tay
 	lda vm_map,Y	; this is already biased by HEADER if nonzero
-	beq static_page_miss
+	bne static_page_hit
+
+	// A already contains zero from above
+	adc #0
+	sta zpc_mid_low
+
+	lda zptr+1
+	pha
+
+	jsr page_miss
+
+	lda zptr+1
+	sta load_addr+2
+	pla
+	sta zptr+1
+
+	bne static_y_save ; always taken
 
 static_page_hit
 	adc #0			; add even/odd in carry back in
@@ -3525,17 +3543,13 @@ static_page_hit
 	lsr
 	tay				; get page index (biased by HEADER)
 	lda #0
-	sta page_ages-(>HEADER/2),y		; account for HEADER offset
+	sta page_ages-(>HEADER),y		; account for HEADER offset
 static_y_save
 	ldy #$12
 	bit RAMRD
 	php
 	sta RAMRDON						; it's in virtual (aux) memory
 	bvc load_addr	; always taken
-	
-static_page_miss
-	jsr fatal_error
-	!text "page miss under static read not supported",13,0
 	
 } else {
 loadb_common
