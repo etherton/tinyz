@@ -3830,6 +3830,20 @@ found_end
 	tay
 	lda zencode-32,y
 	bpl .unshifted
+	cmp #$FF
+	bne .not_extended
+	lda #5
+	sta encode_buffer,x
+	inx
+	cpx #DICT_WORD_LEN
+	beq .skip_store
+	lda #6
+	sta encode_buffer,X
+	inx
+	cpx #DICT_WORD_LEN
+	beq .skip_store
+	tya
+.not_extended
 	pha
 	+lsr5
 	sta encode_buffer,X
