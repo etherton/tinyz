@@ -69,14 +69,12 @@ PAGE2		= $C055
 	plp
 	bpl +
 	sta RAMRDON
-	;sta RAMWRTON
 +
 }
 
 !macro begin_dynamic {
 	+save_ram_state
 	sta RAMRDOFF
-	;sta RAMWRTOFF
 }
 ; remember old setting and if it was active, re-enable it. destroys flags.
 !macro end_dynamic {
@@ -3557,21 +3555,11 @@ loadb_common
 +	clc
 	adc #>HEADER
 	sta load_addr+2
-!if MEM_MODEL {
-	bit RAMRD
-	php
-	sta RAMRDOFF
-}
+	+begin_dynamic
 load_addr
 	lda $1234
-!if MEM_MODEL {
-	plp
-	bpl +
-	sta RAMRDON
-	rts
-+	sta RAMRDOFF
-}
-	rts
+	+end_dynamic
++	rts
 
 z_storeb
 	ldx operands_lo+2
@@ -3987,6 +3975,7 @@ bsearch
 	adc #0
 	jsr loadb_common
 	ldy char_index
+	sta RAMRDOFF
 }
 	cmp encode_buffer,Y
 	bcc bsearch_hi
