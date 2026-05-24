@@ -309,7 +309,7 @@ void dump_dictionary(const storyHeader *h) {
 		printf("%c",b[addr++]);
 	printf("]\n");
 	uint8_t entrySize = b[addr++];
-	int numEntries = ((const word*)(b+addr))->getU();
+	int numEntries = ((const word*)(b+addr))->getU(), index = 0;
 	addr+=2;
 	printf("dictionary has %d entries of %d bytes each: (total %d)\n",numEntries,entrySize,numEntries*entrySize);
 	while (numEntries--) {
@@ -318,8 +318,9 @@ void dump_dictionary(const storyHeader *h) {
 		printf("] ");
 		for (int i=0; i<entrySize; i++)
 			printf("%02x",b[addr+i]);
+		printf("(index 0x%x, @%06x)\n",index,addr);
+		++index;
 		addr += entrySize;
-		printf("\n");
 	}
 }
 
