@@ -810,6 +810,8 @@ scrolltop !byte <(.scroll+11),>(.scroll+11)
 
 scroll
 	ldx window_split
+	cpx #23
+	beq +			; skip straight to erasing the last line
 	lda .mul40,X
 	and #$F8
 	sta dest_ptr
@@ -850,8 +852,7 @@ scroll
 
 	cpx #23
 	bne .scroll1
-
-	lda #$A0
++	lda #$A0
 !if COLUMNS=80 {
 	sta PAGE2
 	ldy #39
