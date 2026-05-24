@@ -265,7 +265,8 @@ void generic_6502::exec()
 #endif
 		}
 #endif
- 		if (singlestep || trace)
+		// hack - don't disassemble SmartPort region because it screws up our emulation.
+ 		if ((singlestep || trace) && (pc < 0xC500 | pc > 0xC5FF))
 		{
 			char buf[256];
 			disassemble_insn(buf,sizeof(buf),pc,true);
@@ -293,6 +294,9 @@ void generic_6502::exec()
 				}
 			}
 		}
+#else
+		if (singlestep)
+			exit(1);
 #endif
 		switch (fetch()) 
 		{
