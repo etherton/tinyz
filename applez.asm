@@ -1148,7 +1148,7 @@ oldest_page_value = $94
 vm_ptr = $96
 }
 
-!if ZVERSION>4 {
+!if ZVERSION>3 {
 DICT_SIZE = 6
 DICT_WORD_LEN = 9
 } else {
@@ -2289,7 +2289,7 @@ z_rfalse
 	jsr update_zptr
 
 !if ZVERSION>4 {
-	lda stack_hi+2,Y
+	lda stack_hi+2,Y		; non-storing calls start with z5
 	bmi +
 }
 	lda stack_lo+2,Y
@@ -4700,10 +4700,8 @@ show_status
 	sta top_cursor_x
 
 	lda globals_lo+16
-!if ZVERSION=3 {
 	cmp last_status_room
 	beq .numbers_only
-}
 	sta last_status_room
 	lda globals_lo+16
 	sta operands_lo+0
