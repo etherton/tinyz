@@ -1521,7 +1521,9 @@ page_miss_2
 	sta page_ages,y
 	sty oldest_page_index
 -	dey
-	bmi +
+	cpy #40				; first 64k always stays resident for now
+	bcc +
+	; bmi +
 	lda page_ages,Y
 	clc
 	adc #1
@@ -5405,7 +5407,9 @@ globals_hi	!fill 256
 
 ; the initial vm_map is always the next 44k of the story. we always use 512b blocks,
 ; since that is the minimum read size for smartport. this allows us to determine if
-; a page is already resident in O(1) time. 
+; a page is already resident in O(1) time. for a given z page (512b), which page
+; in aux memory (always a multiple of 2) contains its data, or zero if the page
+; isn't resident.
 vm_map		!byte $10,$12,$14,$16,$18,$1A,$1C,$1E
 			!byte $20,$22,$24,$26,$28,$2A,$2C,$2E
 			!byte $30,$32,$34,$36,$38,$3A,$3C,$3E
@@ -5431,6 +5435,8 @@ vm_map		!byte $10,$12,$14,$16,$18,$1A,$1C,$1E
 ; it's tempting to use larger pages on V5 and V8 but that will likely
 ; lead to a lot more disk thrashing.
 page_ages	!fill 88,1			; 0 is freshly used
+; for a given page (512b) in aux memory $1000-$BFFF which entry in vm_map points at us?
+; this is so that when identifying an old page, we can quickly zero out its vm_map slot.
 page_owners_lo
 			!byte  0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15
 			!byte 16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
