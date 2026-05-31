@@ -189,7 +189,8 @@ u8 myapple2::read_byte(u16 addr) const {
                 u16 dest = read_word(pb+2);
                 u16 block = read_word(pb+4);
                 u8 *base = (block < 24)? interpreter + block * 512 : story + (block-24) * 512;
-                fprintf(stderr,"{read from block %04x to address %04x}\n",block,dest);
+                fprintf(stdout,"{read from block %04x (z addr %06x) to address %04x}\n",block,
+			block < 24? 0 : (block-24) * 512,dest);
                 for (int i=0; i<512; i++)
                     that->write_byte(dest+i,base[i]);
                 that-> p &= ~1; // clear carry
@@ -379,15 +380,19 @@ int main(int argc,char **argv) {
         return 1;
     }
 
+    uint16_t header = 0x0800;
+    uint16_t ramtop = 0xc000;
+    uint16_t ramsize = ramtop - header;
+
     // for now hack appropriate initial state and jump to zentry
     // are we emulating a disk drive load?
     if (interpreter[0]==3) {
         memcpy(computer.ram + 0xD000, interpreter, 12 * 1024);
-        size_t lowPart = storySize > 0xB000? 0xB000 : storySize;
+        size_t lowPart = storySize > ramsize ? 0xB000 : storySize;
         size_t highPart = storySize - lowPart;
         printf("loading story into %zu bytes of main memory and %zu bytes of aux memory\n",lowPart,highPart);
-        memcpy(computer.ram + 0x1000, story, lowPart);
-        memcpy(computer.ram + 0x11000, story + lowPart, highPart);
+        memcpy(computer.ram + header, story, lowPart);
+        memcpy(computer.ram + 0x1'0000 + header, story + lowPart, highPart);
         computer.pc = 0xD300;
         computer.writeprotect = 0;
         computer.ssw_bsreadram = 0x80;

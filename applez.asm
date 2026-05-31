@@ -5,6 +5,14 @@ DEBUG_TOKENISE = 0
 DEBUG_TOKENISE_VERBOSE = 0
 DEBUG_VM = 0
 
+!if ZVERSION=3 {
+STORYSIZE = 128
+} else if ZVERSION<8 {
+STORYSIZE = 256
+} else {
+STORYSIZE = 512
+}
+
 !macro bp {
 	bit $c00e
 }
@@ -262,7 +270,7 @@ stage1
 	sta $500-1,y
 	jsr read_next_track
 	lda data_page
-	cmp #$C0
+	cmp #>RAMTOP
 	bne -
 	sta _80STOREON
 	sta PAGE1	; switch to aux memory
@@ -596,7 +604,7 @@ temp
 	inc read_block
 	inc read_dest+1
 	inc read_dest+1
-	bne -			; keep going until we wrap
+	bne -			; keep going until we wrap past 64k
 
 	lda #>HEADER
 	sta read_dest+1
@@ -635,10 +643,10 @@ temp
 	lda blocks_remaining+1
 	bne clamp_story_size
 	lda blocks_remaining
-	cmp #$B0
+	cmp #(RAMSIZE*4)
 	bcc +
 clamp_story_size
-	lda #$B0
+	lda #(RAMSIZE*4)
 	sta blocks_remaining
 +
 } 
@@ -651,7 +659,7 @@ read_story
 	lda read_dest+1
 	; for memory model 1, which supports stories up to 88k, we fill banked memory too.
 !if MEM_MODEL > 0 {
-	cmp #$C0
+	cmp #>RAMTOP
 	bne +
 	; switch to aux memory
 	lda #>HEADER
@@ -1147,6 +1155,7 @@ oldest_page_index = $92
 oldest_page_value = $94
 !if MEM_MODEL>1 {
 vm_ptr = $96
+vm_ptr_old = $98
 }
 
 !if ZVERSION>3 {
@@ -1250,7 +1259,15 @@ DICT_WORD_LEN = 6
 ; If the page is already resident, reset its age to 0. Done.
 ; If the page is not already resident, find an oldest page to replace, reset its age to 1, and then age all OTHER pages by 1
 
-HEADER = $1000
+; Address of bottom and top of usable Z-machine memory
+HEADER = $0800
+RAMTOP = $C000
+
+; Size of usable Z-machine memory, in kilobytes
+; We use twice this value to get size in 512b blocks,
+; and four times this value to get size in 256b pages.
+RAMSIZE = (RAMTOP - HEADER) / 1024
+
 ;  +0 version
 ;  +1 flags
 ;  +2 pad0
@@ -1344,7 +1361,7 @@ increment_zpc_mid
 +	inc zptr+1
 	pha
 	lda zptr+1
-	cmp #$C0
+	cmp #>RAMTOP
 	bne +
 	jsr update_zptr
 +	pla
@@ -1362,7 +1379,7 @@ update_zptr
 	lda zpc_hi
 	bne .update_zptr_hi
 	lda zpc_mid
-	cmp #$B0
+	cmp #(RAMSIZE*4)
 	bcs .update_zptr_upper
 	adc #>HEADER	; carry clear
 	sta RAMRDOFF
@@ -1372,7 +1389,7 @@ update_zptr
 	; B0->10, C0->20, D0->30, E0->40, F0->50
 .update_zptr_upper
 	; carry already set (A contains upper byte)
-	sbc #$A0
+	sbc #((RAMSIZE*4)-(>HEADER))
 	sta zptr+1
 	sta RAMRDON
 	rts
@@ -1380,7 +1397,7 @@ update_zptr
 .update_zptr_hi
 	clc
 	lda zpc_mid
-	adc #$60
+	adc #(256-((RAMSIZE*4)-(>HEADER)))
 	sta zptr+1
 	sta RAMRDON
 	rts
@@ -1397,7 +1414,7 @@ update_zptr
 	lsr				; get even/odd block
 	rol zpc_mid_low ; put carry bit (even/odd page) in LSB
 	sec
-	sbc #88				; now value beteen 0-167
+	sbc #(RAMSIZE*2)	; now value beteen 0-167
 	bcs update_vmem		; in virtual memory?
 	sta RAMRDOFF		; nope, it's in dynamic (resident) memory.
 	lda zpc_mid
@@ -1427,7 +1444,7 @@ update_vmem_hi
 	sta zpc_mid_low		; pull out carry for even/odd
 	lda desired_page
 	sec
-	sbc #88
+	sbc #(RAMSIZE*2)
 	sta desired_page
 	lda desired_page+1
 	sbc #0
@@ -1513,7 +1530,7 @@ page_miss_2
 	; sty $c0fe ;; enable trace
 
 	; find oldest page (and age all pages once)
-	ldy #87
+	ldy #(RAMSIZE*2)-1
 	lda page_ages,Y
 	clc
 	adc #1
@@ -1521,9 +1538,8 @@ page_miss_2
 	sta page_ages,y
 	sty oldest_page_index
 -	dey
-	cpy #40				; first 64k always stays resident for now
-	bcc +
-	; bmi +
+
+	bmi +
 	lda page_ages,Y
 	clc
 	adc #1
@@ -1567,17 +1583,27 @@ page_miss_2
 	lda page_owners_hi,Y
 	clc
 	adc #>vm_map
-	sta .vm_store+2
+	sta vm_ptr_old+1
 	lda page_owners_lo,Y
 	tay
+;	lda (vm_ptr_old),Y
+;	bne +
+;	jsr fatal_error
+;	!text "oldest page wasn't resident",13,0
+;+
 	lda #0
-.vm_store
-	sta vm_map,y
+	sta (vm_ptr_old),y
 }
 
 	; change owner of this vm page to new page, reset age to 1
 	ldy oldest_page_index
 	lda desired_page			; 0-167
+!if DEBUG_VM {
+	jsr debug_print
+	!text " new page ",0
+	jsr print_hex_byte
+}
+
 	sta page_owners_lo,y		; that page owns this slot (0-87)
 !if ZVERSION>3 {
 	lda desired_page+1
@@ -1612,7 +1638,7 @@ page_miss_2
 
 	; figure out block to read
 	lda desired_page
-	adc #(24+88)		; interpreter is 24 blocks, resident is 88 blocks (carry still clear)
+	adc #(24+(RAMSIZE*2))		; interpreter is 24 blocks, resident is 88 blocks (carry still clear)
 	sta read_block
 !if ZVERSION>3 {
 	lda desired_page+1
@@ -1696,7 +1722,7 @@ zentry
 	lda HEADER+8
 	adc #>HEADER
 	sta dict_ptr+1
-	cmp #$C0
+	cmp #>RAMTOP
 	bcc not44k
 	jsr fatal_error
 	!text "dictionary starts past 44k",13,0
@@ -1781,6 +1807,7 @@ not44k
 !if MEM_MODEL>1 {
 	lda #<vm_map
 	sta vm_ptr
+	sta vm_ptr_old
 	; upper word is always rewritten
 }
 
@@ -3513,9 +3540,9 @@ loadb
 !if MEM_MODEL>=3 {
 	; memory beyond 44k will be paged.
 loadb_common
-	cmp #$B0
+	cmp #(RAMSIZE*4)
 	bcc +
-	sbc #$B0		; carry already set
+	sbc #(RAMSIZE*4)		; carry already set
 	lsr				; get VM index (and carry is even/odd)
 	sty static_y_save+1
 	tay
@@ -5353,7 +5380,7 @@ zalphabet
 	; 0=8, .=18, ,=19, !=20, ?=21, _=22, #=23, '=24, "=25, /=26, \=27, -=28, :=29 (=30, )=31
 
 	!align 255, 0
-dispatch +table16 _2op_s_s,_2op_s_s,_2op_s_v,_2op_s_v,_2op_v_s,_2op_v_s,_2op_v_v,_2op_v_v,_1op_large,_1op_small,_1op_variable,_0op,_2op_var,_2op_var,_vop,_vop
+dispatch !byte <_2op_s_s,<_2op_s_s,<_2op_s_v,<_2op_s_v,<_2op_v_s,<_2op_v_s,<_2op_v_v,<_2op_v_v,<_1op_large,<_1op_small,<_1op_variable,<_0op,<_2op_var,<_2op_var,<_vop,<_vop
 
 !if ZVERSION>4 {
 _2opTbl +table32 z_ill,z_je,z_jl,z_jg,z_dec_chk,z_inc_chk,z_jin,z_test,z_or,z_and,z_test_attr,z_set_attr,z_clear_attr,z_store,z_insert_obj,z_loadw,z_loadb,z_get_prop,z_get_prop_addr,z_get_next_prop,z_add,z_sub,z_mul,z_div,z_mod,z_call_2s,z_call_2n,z_set_colour,z_throw,z_ill,z_ill,z_ill
@@ -5403,50 +5430,30 @@ stack_hi	!fill 256
 globals_lo	!fill 256
 globals_hi	!fill 256
 
-
-
 ; the initial vm_map is always the next 44k of the story. we always use 512b blocks,
 ; since that is the minimum read size for smartport. this allows us to determine if
 ; a page is already resident in O(1) time. for a given z page (512b), which page
 ; in aux memory (always a multiple of 2) contains its data, or zero if the page
 ; isn't resident.
-vm_map		!byte $10,$12,$14,$16,$18,$1A,$1C,$1E
-			!byte $20,$22,$24,$26,$28,$2A,$2C,$2E
-			!byte $30,$32,$34,$36,$38,$3A,$3C,$3E
-			!byte $40,$42,$44,$46,$48,$4A,$4C,$4E
-			!byte $50,$52,$54,$56,$58,$5A,$5C,$5E
-			!byte $60,$62,$64,$66,$68,$6A,$6C,$6E
-			!byte $70,$72,$74,$76,$78,$7A,$7C,$7E
-			!byte $80,$82,$84,$86,$88,$8A,$8C,$8E
-			!byte $90,$92,$94,$96,$98,$9A,$9C,$9E
-			!byte $A0,$A2,$A4,$A6,$A8,$AA,$AC,$AE
-			!byte $B0,$B2,$B4,$B6,$B8,$BA,$BC,$BE
-!if ZVERSION=3 {
-			; story size in kilobytes minus 44k dynamic and 44k initial vram, at two 512b blocks per kilobyte.
-			!fill (128-88)*2,0
-} else if (ZVERSION<=5) {
-			!fill (256-88)*2,0
-} else {
-			!fill (512-88)*2,0
+vm_map !for Counter, 0, (RAMSIZE*2)-1 {
+	!byte (>HEADER) + (Counter*2)
 }
+		!fill (STORYSIZE-RAMSIZE-RAMSIZE)*2,0
 
 !if MEM_MODEL > 1 {
 ; this contains the age of each 512b page
 ; it's tempting to use larger pages on V5 and V8 but that will likely
 ; lead to a lot more disk thrashing.
-page_ages	!fill 88,1			; 0 is freshly used
+page_ages	!fill RAMSIZE*2,1			; 0 is freshly used
 ; for a given page (512b) in aux memory $1000-$BFFF which entry in vm_map points at us?
 ; this is so that when identifying an old page, we can quickly zero out its vm_map slot.
 page_owners_lo
-			!byte  0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15
-			!byte 16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
-			!byte 32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47
-			!byte 48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63
-			!byte 64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79
-			!byte 80,81,82,83,84,85,86,87
+			!for Counter, 0, (RAMSIZE*2)-1 {
+			!byte Counter
+			}
 !if ZVERSION>3 {
 page_owners_hi
-			!fill 88
+			!fill RAMSIZE*2,0
 }
 } ; MEM_MODEL>1
 
