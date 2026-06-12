@@ -98,9 +98,23 @@ routine ortest2 [a b] {
 		rfalse;
 }
 
+routine randomtest [; i] {
+	for (i=0; i<25; ++i) {
+		print_num random(10);
+		print_char 32;
+	}
+	crlf;
+	rfalse;
+}
+
 routine main[] {
 	// andtest(0,0); andtest(1,0); andtest(0,1); andtest(1,1);
 	// ortest(0,0); ortest(1,0); ortest(0,1); ortest(1,1);
-	andtest2(0,0);
+	// andtest2(0,0);
+	print "press any key to start";
+	read_char;
+	random(0); // seed based on delay
+	crlf;
+	randomtest();
 	quit;
 }

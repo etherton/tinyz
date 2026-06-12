@@ -1086,6 +1086,7 @@
 	};
 	struct expr_varop1: public expr {
 		expr_varop1(_var o,expr *u) : opcode(o), unary(u) { }
+		~expr_varop1() { delete unary; }
 		_var opcode;
 		expr *unary;
 		void emit(uint8_t dest) const {
@@ -1120,6 +1121,19 @@
 		virtual bool isReturn() const { return false; }
 		virtual bool isJustReturnBool(int &) const { return false; }
 		virtual bool isPrint() const { return false; }
+	};
+	struct stmt_expr: public stmt {
+		stmt_expr(expr *e) : ignored(e) { }
+		~stmt_expr() { delete ignored; }
+		expr* ignored;
+		void emit() const {
+			ignored->emit(SCRATCH);
+		}
+		unsigned size() const { return ignored->size(); }
+		void dump() const {
+			printNode("stmt_expr");
+			printNode(ignored);
+		}
 	};
 	struct stmts: public stmt {
 		stmts(list_node<stmt*> *s): slist(s) { 
@@ -1670,7 +1684,7 @@
 %left PARENT
 %right '~' NOT
 
-%type <eval> expr pname objref primary aname arg
+%type <eval> expr pname objref primary aname arg ignorable_expr
 %type <brval> bool_expr cond_expr opt_bool_expr
 %type <ival> vname opt_parent opt_default opt_wordbit opt_arrow has_or_hasnt phrase dict counted_string
 %type <rval> routine_body pvalue rname
@@ -2165,6 +2179,7 @@ stmt
 	| UNPARENT objref ';'			{ $$ = NEW stmt_1op(_1op::remove_obj,$2); }
 	| CONTINUE ';'					{ $$ = NEW stmt_continue(); }
 	| BREAK ';'						{ $$ = NEW stmt_break(); }
+	| ignorable_expr ';'			{ $$ = NEW stmt_expr($1); }
 	; 
 
 opt_assign
@@ -2239,8 +2254,12 @@ expr
 	| PNAME				{ $$ = NEW expr_literal($1 & 63); }
 	| RNAME opt_call_args { $$ = NEW expr_call(NEW list_node<expr*>(NEW expr_reloc($1),$2)); }
 	| CALL expr opt_call_args { $$ = NEW expr_call(NEW list_node<expr*>($2,$3)); }
-	| READ_CHAR '(' expr ')' { $$ = NEW expr_varop1(_var::read_char,$3); }
-	| RANDOM '(' expr ')' { $$ = NEW expr_varop1(_var::random,$3); }
+	| ignorable_expr	{ $$ = $1; }
+	;
+
+ignorable_expr
+	: READ_CHAR 			{ $$ = NEW expr_varop1(_var::read_char,NEW expr_literal(1)); }
+	| RANDOM '(' expr ')'	{ $$ = NEW expr_varop1(_var::random,$3); }
 	;
 
 bool_expr

@@ -314,6 +314,14 @@ Passes if variable was previously zero. The variable is incremented either way. 
 Passes the item is found in the table (and the address of the match
 is stored in the variable). If you really don't need the result, just use `scratch` here explicitly.
 
+`read_char`\
+Reads a character (V4+ only) and returns its ZSCII value. May appear as a statement or an expression.
+
+`random(expr)`\
+Returns a random number from 1 to expr. If expr is negative, it seeds the RNG with the negation of that value.
+If expr is zero, the interpreter should seed from a source of entropy (time of day etc). May appear as a
+statement or expression, although it only makes sense as a statement if the input is negative or zero.
+
 Numeric Expressions
 -------------------
 `expr + expr`\
