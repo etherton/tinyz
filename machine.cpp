@@ -353,12 +353,19 @@ void machine::setOutput(int enable,uint16_t tableAddr) {
 	}
 }
 
-static int32_t random_seed = 0;
-static int randomNumber(void) {
-	// borrowed from mojozork so I can use that project's validation script
-    // this is POSIX.1-2001's potentially bad suggestion, but we're not exactly doing cryptography here.
-    random_seed = random_seed * 1103515245 + 12345;
-    return (int) ((unsigned int) (random_seed / 65536) % 32768);
+static uint16_t random_seed = 1;
+
+uint16_t randomNumber(uint16_t &state) {
+	/* WARNING: State must never be initialized to 0 */
+    state ^= state << 7;
+    state ^= state >> 9;
+    state ^= state << 8;
+    return state;
+}
+
+uint16_t rangedRandom(uint16_t range) {
+	uint16_t value = randomNumber(random_seed) & 0x7FFF;
+	return (value % range) + 1;
 }
 
 void machine::encode_text(word dest[],const char *src,uint8_t len) {
@@ -649,7 +656,6 @@ bool machine::restoreGame(uint32_t &pc,int &dest) {
 }
 
 void machine::run(uint32_t pc) {
-	random_seed = 2;
 	for (;;) {
 		m_faultpc = pc;
 		// if (pc == 0x8c6) __builtin_debugtrap();
@@ -769,7 +775,7 @@ void machine::run(uint32_t pc) {
 				if (branch_offset==0||branch_offset==1)
 					printf(" ?%s%s",branch_cond?"":"~",branch_offset?"rtrue":"rfalse");
 				else
-					printf(" ?%s (%04X)",branch_cond?"":"~",branch_offset);
+					printf(" ?%s (%04X)",branch_cond?"":"~",branch_offset & 0x3FFF);
 			}
 #endif
 		}
@@ -788,7 +794,7 @@ void machine::run(uint32_t pc) {
 				else {
 					if (branch_offset < 0 && pc < -branch_offset)
 						fault("branch to invalid address below zero");
-					else if (branch_offset > 0 && pc + branch_offset >= m_readOnlySize)
+					else if (branch_offset > 0 && pc + branch_offset - 2 >= m_readOnlySize)
 						fault("branch to invalid address past end of story");
 					pc += branch_offset - 2;
 					if (pc < m_dynamicSize)
@@ -913,7 +919,7 @@ void machine::run(uint32_t pc) {
 								random_seed = time(NULL);
 							else if (operands[0].getS() < 0)
 								random_seed = -operands[0].getS();
-							ref(dest,true).set(operands[0].getS() > 1? ((randomNumber() % (operands[0].getS() - 1)) + 1) : 0);
+							ref(dest,true).set(rangedRandom(operands[0].getS()));
 							break;
 				case _var::push: push(operands[0]); break;
 				case _var::pull: var(operands[0].getS()) = pop(); break;

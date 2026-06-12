@@ -135,6 +135,7 @@ sector_map_hi = $36
 blocks_remaining = $34
 }
 seed = $38
+rover = $3A
 
 PH0OFF		= $C080
 PH0ON		= $C081
@@ -1012,7 +1013,10 @@ print_char_upper
 
 	; returns last keypress in A
 read_char
-	lda $C000
+	inc rover 
+	bne +
+	inc rover+1
++	lda $C000
 	bpl read_char
 	bit $C010
 	and #$7f
@@ -1690,6 +1694,7 @@ zentry
 	sta chars_stored
 	sta zpc_hi
 	sta stackptr
+	sta seed+1
 
 	; get default property table minus 2 (since objects are 1-based)
 	clc
@@ -1745,6 +1750,7 @@ not44k
 	lda #1
 	sta window_split
 	sta vblprev
+	sta seed
 	lda #(COLUMNS)
 	sta prev_top_cursor_x
 
@@ -2665,12 +2671,19 @@ negate_operand
 
 z_random
 	lda operands_hi+0
-	bmi .seed_random
-	bpl .random_range
+	bmi .seed_random		; negative?
+	bne .random_range		; if nonzero, definitely ranged
 	ldx operands_lo+0
-	bne .random_range
-	; random(0) should seed based on system randomness.
-	eor #$FF
+	bne .random_range		; still nonzero, so it's ranged
+	; otherwise input is zero, use "random noise"
+	ldx rover
+	bne .rover_not_zero
+	lda rover+1
+	bne .rover_not_zero
+	inx
+.rover_not_zero
+	stx operands_lo+0
+	lda rover+1	
 .seed_random
 	sta seed+1
 	ldx operands_lo+0
@@ -2679,30 +2692,30 @@ z_random
 	ldx #0
 	jmp store_common
 .random_range
-	; LFSR (came from google AI query)
-    lda seed
-    lsr
-    lda seed+1
-    ror
-    eor seed
-    sta seed
-    eor seed+1
-    lsr
-    lda seed
-    ror
-    eor seed
-    sta seed
-    eor seed+1
-    sta seed+1
+    ; state ^= state << 7;
+    ; state ^= state >> 9;
+    ; state ^= state << 8;
+	ldx #7
+	jsr .random_shl_xor
+	ldx #9
+	jsr .random_shr_xor
+	ldx #8
+	jsr .random_shl_xor
 	; divide seed by range
-	lda operands_lo+0
-	sta operands_lo+1
 	lda operands_hi+0
 	sta operands_hi+1
+	lda operands_lo+0
+	sta operands_lo+1
+
+	lda seed+1
+	and #$7F; prevent it from going negative
+	sta operands_hi+0
+	;jsr print_hex_byte
 	lda seed
 	sta operands_lo+0
-	lda seed+1
-	sta operands_hi+1
+	;jsr print_hex_byte
+	;jsr newline
+
 	jsr divide
 	; increment result
 	lda operands_hi+2
@@ -2712,6 +2725,36 @@ z_random
 	clc
 	adc #1
 +	jmp store_common
+
+.random_shl_xor
+	lda seed
+	sta operands_lo+3
+	lda seed+1
+	sta operands_hi+3
+.random_shl_xor_loop
+	asl operands_lo+3
+	rol operands_hi+3
+	dex
+	bne .random_shl_xor_loop
+.random_xor_common
+	lda seed
+	eor operands_lo+3
+	sta seed
+	lda seed+1
+	eor operands_hi+3
+	sta seed+1
+	rts
+.random_shr_xor
+	lda seed
+	sta operands_lo+3
+	lda seed+1
+	sta operands_hi+3
+.random_shr_xor_loop
+	lsr operands_hi+3
+	ror operands_lo+3
+	dex
+	bne .random_shr_xor_loop
+	beq .random_xor_common
 
 z_div
 	jsr divide
@@ -5457,6 +5500,6 @@ page_owners_hi
 }
 } ; MEM_MODEL>1
 
-	; round interpreter up to next 8k boundary for alignment (we start at 4k)
-	; the non-debug version of the interpreter fits in 8k though.
-	!align 8191, 0
+	!align 511, 0
+extra_pages
+	!align 8191,0

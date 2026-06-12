@@ -1084,6 +1084,24 @@
 			printNode("saveRestore");
 		}
 	};
+	struct expr_varop1: public expr {
+		expr_varop1(_var o,expr *u) : opcode(o), unary(u) { }
+		_var opcode;
+		expr *unary;
+		void emit(uint8_t dest) const {
+			operand uval;
+			unary->eval(uval);
+			emitvarop(opcode,uval);
+			emitByte(dest);
+		}
+		unsigned size() const {
+			return unary->size() + 2;
+		}
+		void dump() const {
+			printNode("varop1:");
+			printNode(unary);
+		}
+	};
 	enum scope_enum: uint8_t { SCOPE_GLOBAL, SCOPE_OBJECT, SCOPE_LOCATION };
 	uint8_t expected_scope;
 	const uint8_t SCOPE_OBJECT_MASK = 0x40;
@@ -1628,7 +1646,7 @@
 %token WHILE REPEAT IF ELSE
 %token LE "<=" GE ">=" EQ "==" NE "!="
 // %token DEC_CHK "--<" INC_CHK "++>"
-%token SAVE RESTORE SCAN_TABLE
+%token SAVE RESTORE SCAN_TABLE READ_CHAR RANDOM
 %token LSH "<<" RSH ">>"
 %token ARROW "->" INCR "++" DECR "--"
 %token RFALSE RTRUE RETURN
@@ -2221,6 +2239,8 @@ expr
 	| PNAME				{ $$ = NEW expr_literal($1 & 63); }
 	| RNAME opt_call_args { $$ = NEW expr_call(NEW list_node<expr*>(NEW expr_reloc($1),$2)); }
 	| CALL expr opt_call_args { $$ = NEW expr_call(NEW list_node<expr*>($2,$3)); }
+	| READ_CHAR '(' expr ')' { $$ = NEW expr_varop1(_var::read_char,$3); }
+	| RANDOM '(' expr ')' { $$ = NEW expr_varop1(_var::random,$3); }
 	;
 
 bool_expr
@@ -2564,6 +2584,8 @@ void init(int version) {
 	rw["#endif"] = HASH_ENDIF;
 	rw["#include"] = HASH_INCLUDE;
 	rw["separators"] = SEPARATORS;
+	rw["read_char"] = READ_CHAR;
+	rw["random"] = RANDOM;
 
 #define MACRO1(b)		(0x10000000 | uint8_t(b))
 #define MACRO3(b,t,v)	(0x30000000 | (uint8_t(b)|((t)<<8)|((v)<<16)))
@@ -2597,7 +2619,6 @@ void init(int version) {
 		f_varop1["get_cursor"] = _var::get_cursor;
 		f_varop1["set_text_style"] = _var::set_text_style;
 		f_varop1["buffer_mode"] = _var::buffer_mode;
-		f_varop1["read_char"] = _var::read_char; // not quite correct
 
 		f_0op["normal"] = MACRO3(_var::set_text_style,0x7F,0);
 		f_0op["reverse"] = MACRO3(_var::set_text_style,0x7F,1);
