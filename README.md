@@ -266,6 +266,14 @@ is ignored. If you want a routine call's result to be printed, enclose it in an 
 of parentheses. You can also include simple calls like `crlf`, `rfalse`, `rtrue`, `normal`,
 `bold`, `italic`, and `reverse`. The latter four set the text style (or do nothing on v3 games).
 
+`read_char`\
+Reads a character (V4+ only) and returns its ZSCII value. May appear as a statement or an expression.
+
+`random(expr)`\
+Returns a random number from 1 to expr. If expr is negative, it seeds the RNG with the negation of that value.
+If expr is zero, the interpreter should seed from a source of entropy (time of day etc). May appear as a
+statement or expression, although it only makes sense as a statement if the input is negative or zero.
+
 Branch Expressions
 ------------------
 `expr < expr`\
@@ -313,14 +321,6 @@ Passes if variable was previously zero. The variable is incremented either way. 
 `scan_table(expr,expr,expr[,expr]) -> variable`\
 Passes the item is found in the table (and the address of the match
 is stored in the variable). If you really don't need the result, just use `scratch` here explicitly.
-
-`read_char`\
-Reads a character (V4+ only) and returns its ZSCII value. May appear as a statement or an expression.
-
-`random(expr)`\
-Returns a random number from 1 to expr. If expr is negative, it seeds the RNG with the negation of that value.
-If expr is zero, the interpreter should seed from a source of entropy (time of day etc). May appear as a
-statement or expression, although it only makes sense as a statement if the input is negative or zero.
 
 Numeric Expressions
 -------------------
