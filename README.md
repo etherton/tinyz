@@ -330,8 +330,7 @@ Numeric Expressions
 `expr / expr`\
 `expr % expr`\
 Addition, subtraction, multiplication, division, and modulo. Note there is no unary negation, since the Z machine doesn't include that. Just
-subtract from zero if you need that. Note that `a=a-1;` will not parse correctly because `-1` is seen as an 
-integer literal. `a=a- 1;` or `a = a - 1;` will work
+subtract from zero if you need that.
 
 `expr & expr`\
 `expr | expr`\
@@ -339,6 +338,9 @@ These are binary operations. There is no xor operation in the Z machine.
 
 `~expr`\
 Unary bitwise negation.
+
+`-expr`\
+Unary negation, implemented internally by subtracting from zero.
 
 `expr << expr`\
 `expr >> expr`\

@@ -1686,7 +1686,7 @@
 
 %type <eval> expr pname objref primary aname arg ignorable_expr
 %type <brval> bool_expr cond_expr opt_bool_expr
-%type <ival> vname opt_parent opt_default opt_wordbit opt_arrow has_or_hasnt phrase dict counted_string
+%type <ival> vname opt_parent opt_default opt_wordbit opt_arrow has_or_hasnt phrase dict counted_string intlit
 %type <rval> routine_body pvalue rname
 %type <scopeval> scope
 %type <dlist> dict_list;
@@ -1771,12 +1771,12 @@ property_def
 
 opt_default
 	: 				{ $$ = 0; }
-	| '=' INTLIT	{ $$ = $2; }
+	| '=' intlit	{ $$ = $2; }
 	;
 
 opt_wordbit
 	:					{ $$ = 0; }
-	| WORDBIT INTLIT	{ $$ = $2; }
+	| WORDBIT intlit	{ $$ = $2; }
 	;
 
 dict_list
@@ -1803,10 +1803,10 @@ global_def
 
 opt_global_init
 	:					{ globals_blob->storeWord(0); }
-	| '=' INTLIT		{ globals_blob->storeWord($2); }
+	| '=' intlit		{ globals_blob->storeWord($2); }
 	| '=' counted_string { globals_blob->addRelocation($2); }
-	| '=' BYTE_ARRAY '(' INTLIT ')'	{ globals_blob->addRelocation((current_global = relocatableBlob::create($4,UD_DYNAMIC,"byte array"))->index); } opt_byte_list { current_global = nullptr; }
-	| '=' WORD_ARRAY '(' INTLIT ')' { globals_blob->addRelocation((current_global = relocatableBlob::create($4,UD_DYNAMIC,"word array"))->index); } opt_word_list { current_global = nullptr; }
+	| '=' BYTE_ARRAY '(' intlit ')'	{ globals_blob->addRelocation((current_global = relocatableBlob::create($4,UD_DYNAMIC,"byte array"))->index); } opt_byte_list { current_global = nullptr; }
+	| '=' WORD_ARRAY '(' intlit ')' { globals_blob->addRelocation((current_global = relocatableBlob::create($4,UD_DYNAMIC,"word array"))->index); } opt_word_list { current_global = nullptr; }
 	;
 
 opt_byte_list
@@ -1820,7 +1820,7 @@ byte_list
 	;
 
 byte
-	: INTLIT	
+	: intlit	
 	{ 
 		if ($1 < 0 || $1 > 255) 
 			yyerror("value of out range for BYTE_ARRAY"); 
@@ -1841,7 +1841,7 @@ word_list
 	;
 
 word
-	: INTLIT 
+	: intlit 
 	{ 
 		if (current_global->offset == current_global->size) 
 			yyerror("too many word initializers"); 
@@ -1974,7 +1974,7 @@ pvalue
 			p->addRelocation($1);
 			$$ = p->index;
 		}
-	| INTLIT ';' { $$ = relocatableBlob::createInt($1,currentProperty); }
+	| intlit ';' { $$ = relocatableBlob::createInt($1,currentProperty); }
 	| routine_body { 
 			auto p = relocatableBlob::createProperty(2,currentProperty); 
 			p->addRelocation($1);
@@ -2047,7 +2047,7 @@ routine_def
 	;
 
 wordbit_def
-	: WORDBIT INTLIT dict_list ';'
+	: WORDBIT intlit dict_list ';'
 		{
 			for (auto it=$3; it; it = it->cdr)
 				z_dict_payload(it->car) |= $2;
@@ -2056,8 +2056,8 @@ wordbit_def
 	;
 
 action_def
-	: ACTION INTLIT ';'
-	| ACTION INTLIT '{' { action_bit = 32; } action_list ':' rname '}' { actions_blob->addRelocation($7); }
+	: ACTION intlit ';'
+	| ACTION intlit '{' { action_bit = 32; } action_list ':' rname '}' { actions_blob->addRelocation($7); }
 	;
 
 rname
@@ -2165,7 +2165,7 @@ stmt
 	| PRINT print_sequence ';'			{ $$ = NEW stmts($2); }
 	| PRINT_RET print_sequence ';'		{ stmt_print::modify($2,_0op::print_ret,false); $$ = NEW stmts($2); }
 	| PRINT_RETF print_sequence ';'		{ stmt_print::modify($2,_0op::print,true); $$ = NEW stmts($2); }
-	| TRACE INTLIT print_sequence ';'				
+	| TRACE intlit print_sequence ';'				
 		{ 
 			// depending on trace_level_expr, this will dead strip in release builds.
 			auto c = NEW expr_binary_branch(trace_level_expr(),_2op::test,false,NEW expr_literal($2),[](int16_t a,int16_t b)->int16_t { return (a&b)==b; });
@@ -2234,6 +2234,11 @@ arg
 	: expr				{ $$ = $1; }
 	;
 
+intlit
+	: INTLIT			{ $$ = $1; }
+	| '-' INTLIT		{ $$ = -$2; }
+	;
+
 expr
 	: expr '+' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::add,$3,[](int16_t a,int16_t b)->int16_t{return a+b;})); }
 	| expr '-' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::sub,$3,[](int16_t a,int16_t b)->int16_t{return a-b;})); }
@@ -2241,6 +2246,7 @@ expr
 	| expr '/' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::div,$3,[](int16_t a,int16_t b)->int16_t{if (!b) yyerror("division by zero"); return a/b;})); }
 	| expr '%' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::mod,$3,[](int16_t a,int16_t b)->int16_t{if (!b) yyerror("modulo by zero"); return a%b;})); }
 	| '~' expr      	{ $$ = NEW expr_unary(_1op::not_call_1n,$2); }
+//	| '-' expr %prec NEGATE { $$ = $$ = expr::fold_constant(NEW expr_binary(NEW expr_literal(0),_2op::sub,$2,[](int16_t a,int16_t b)->int16_t{return a-b;})); }
 	| expr '&' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::and_,$3,[](int16_t a,int16_t b)->int16_t{return a&b;})); }
 	| expr '|' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::or_,$3,[](int16_t a,int16_t b)->int16_t{return a|b;})); }
 	| expr LSH expr		{ $$ = NEW expr_binary_log_shift($1,$3); }
@@ -2249,7 +2255,7 @@ expr
 	| SIZEOF '(' expr ')' { $$ = NEW expr_unary(_1op::get_prop_len,$3); }
 	| '(' expr ')'  	{ $$ = expr::fold_constant($2); }
 	| primary       	{ $$ = $1; }
-	| INTLIT        	{ $$ = NEW expr_literal($1); }
+	| intlit        	{ $$ = NEW expr_literal($1); }
 	| dict				{ $$ = NEW expr_literal($1); }
 	| PNAME				{ $$ = NEW expr_literal($1 & 63); }
 	| RNAME opt_call_args { $$ = NEW expr_call(NEW list_node<expr*>(NEW expr_reloc($1),$2)); }
@@ -2962,21 +2968,18 @@ int yylex_() {
 	}
 	else switch(yych) {
 		case '-':
-			yytoken[yylen++] = '-';
 			yynext();
-			if (yych<'0'||yych>'9') {
-				if (yych=='>') {
-					yynext();
-					return ARROW;
-				}
-				else if (yych=='-') {
-					yynext();
-					return DECR;
-				}
-				else	
-					return '-';
+			if (yych=='>') {
+				yynext();
+				return ARROW;
 			}
-			[[fallthrough]];
+			else if (yych=='-') {
+				yynext();
+				return DECR;
+			}
+			else
+				return '-';
+			break;
 		case '0': case '1': case '2': case '3': case '4':
 		case '5': case '6': case '7': case '8': case '9': {
 			int base = 10;
