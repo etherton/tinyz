@@ -339,9 +339,6 @@ These are binary operations. There is no xor operation in the Z machine.
 `~expr`\
 Unary bitwise negation.
 
-`-expr`\
-Unary negation, implemented internally by subtracting from zero.
-
 `expr << expr`\
 `expr >> expr`\
 These are logical shifts. They can appear in constant expressions in any Z-machine version, but are illegal at runtime in v3 and v4
