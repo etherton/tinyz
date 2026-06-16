@@ -2710,11 +2710,8 @@ z_random
 	lda seed+1
 	and #$7F; prevent it from going negative
 	sta operands_hi+0
-	;jsr print_hex_byte
 	lda seed
 	sta operands_lo+0
-	;jsr print_hex_byte
-	;jsr newline
 
 	jsr divide
 	; increment result
