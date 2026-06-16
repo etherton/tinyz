@@ -404,6 +404,10 @@ int main(int argc,char **argv) {
         computer.x = 0x50;
         computer.y = 0x00;
     }
+    srand(time(0));
+    // init 'rover' to random value
+    computer.ram[0x3A] = rand();
+    computer.ram[0x3B] = rand();
 
 	computer.exec();
 }
