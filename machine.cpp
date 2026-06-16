@@ -364,8 +364,8 @@ uint16_t randomNumber(uint16_t &state) {
 }
 
 uint16_t rangedRandom(uint16_t range) {
-	uint16_t value = randomNumber(random_seed) & 0x7FFF;
-	return (value % range) + 1;
+	uint16_t value = (randomNumber(random_seed) * range) >> 16;
+	return value + 1;
 }
 
 void machine::encode_text(word dest[],const char *src,uint8_t len) {

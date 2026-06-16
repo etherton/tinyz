@@ -2596,6 +2596,7 @@ z_mul
 	jmp store_common
 
 	; standard 16x16->16 unsigned
+	
 .z_mul_16x16u
 	; result -> operands_lo+2, result+1 -> operands_hi+2, result+2 -> operands_lo+3, result+3 -> operands_hi+3
 	; destroys A, X, Y, operands+1 (num2); operands+0 (num1) is preserved
@@ -2701,22 +2702,16 @@ z_random
 	jsr .random_shr_xor
 	ldx #8
 	jsr .random_shl_xor
-	; divide seed by range
-	lda operands_hi+0
+	; multiply seed by range, and take upper 16 bits
+	lda seed+1
 	sta operands_hi+1
-	lda operands_lo+0
+	lda seed
 	sta operands_lo+1
 
-	lda seed+1
-	and #$7F; prevent it from going negative
-	sta operands_hi+0
-	lda seed
-	sta operands_lo+0
-
-	jsr divide
+	jsr .z_mul_16x16u
 	; increment result
-	lda operands_hi+2
-	ldx operands_lo+2
+	lda operands_hi+3
+	ldx operands_lo+3
 	inx
 	bne +
 	clc
