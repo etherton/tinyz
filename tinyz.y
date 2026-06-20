@@ -496,6 +496,7 @@
 		};
 	};
 	std::map<std::string,symbol> the_globals, the_locals;
+	std::map<std::string,symbol>::iterator last_global;
 	void open_scope() { 
 		current_routine = nullptr;
 		next_local = 0;
@@ -1693,6 +1694,7 @@
 %type <elist> opt_call_args arg_list
 %type <stval> stmt print_item opt_assign opt_assign_incr
 %type <stlist> stmts print_sequence
+%type <sval> opt_name
 
 %%
 
@@ -1858,7 +1860,8 @@ location_def
 	;
 
 object_or_location_def
-	: ONAME STRLIT opt_parent '{' {
+	: ONAME opt_name opt_parent '{' 
+	{
 		self_value = $1;
 		cdef = the_object_table[$1];
 		// don't overwrite child here, it was already zeroed on
@@ -1901,6 +1904,27 @@ object_or_location_def
 		cdef->propertySize = finalSize;
 		self_value = 0;
 	}
+	;
+
+opt_name
+	: STRLIT { $$ = $1; }
+	|	{
+			const char *src = last_global->first.c_str() + 1;
+			size_t newLen = 1;
+			// every capital letter past the first inserts a space.
+			while (*src)
+				newLen += isupper(*src++)? 2 : 1;
+			src = last_global->first.c_str();
+			char *dest = NEW char[newLen + 1];
+			$$ = dest;
+			*dest++ = *src++;
+			while (*src) {
+				if (isupper(*src))
+					*dest++ = ' ';
+				*dest++ = *src++;
+			}
+			*dest = 0;
+		}
 	;
 
 opt_parent
@@ -2953,6 +2977,7 @@ int yylex_() {
 		// finally search globals
 		auto s = the_globals.find(yytoken);
 		if (s != the_globals.end()) {
+			last_global = s;
 			yylval.ival = s->second.ival;
 			return s->second.token;
 		}
