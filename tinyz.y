@@ -1981,16 +1981,17 @@ pvalue
 			$$ = p->index;
 		}
 	| dict_list ';' { 
-		auto p = relocatableBlob::createProperty($1->size() * 2,currentProperty);
-		$$ = p->index;
-		auto s = $1;
-		while (s) { 
-			z_dict_payload(s->car) |= property_bits[currentBits];
-			p->storeWord(s->car);
-			s = s->cdr;
+			auto p = relocatableBlob::createProperty($1->size() * 2,currentProperty);
+			$$ = p->index;
+			auto s = $1;
+			while (s) { 
+				z_dict_payload(s->car) |= property_bits[currentBits];
+				p->storeWord(s->car);
+				s = s->cdr;
+			}
+			delete $1;
 		}
-		delete $1;
-	}
+	| NEWSYM ';' { yyerror("unknown symbol '%s'",$1->first.c_str()); }
 	;
 
 counted_string
