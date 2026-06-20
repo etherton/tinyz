@@ -225,9 +225,8 @@ routine CallAfter [act obj;r] {
 	rtrue;
 }
 
-
-routine Exits [;i j] {
-	for (i = n_to; i <= down_to; ++i) {
+routine Exits [;i j k exitBits exitCount] {
+	for (i = n_to, k=1<<n_to; i <= down_to; ++i,k=k+k) {
 		if (isnonzero room.i) {
 			j = room.i;
 			if (j > $object_count) {
@@ -245,13 +244,29 @@ routine Exits [;i j] {
 				print ".^";
 			}
 			else {
-				print "There is an exit ";
-				if (not i in {up_to,down_to})
-					print "to the ";
-				PrStr(CompassRose.i);
-				print ".^";
+				exitBits = exitBits | k;
+				++exitCount;
 			}
 		}
+	}
+	// Only one bit set (ie power of two)
+	if (exitCount is 1)
+		print "There is an exit ";
+	else if (exitCount isn't zero)
+		print "There are exits ";
+	k = 0;
+	while (exitBits isn't 0) {
+		if (exitBits & 1 isn't zero) {
+			if (exitBits is 1 and exitCount isn't 1)
+				print "and ";
+			PrStr(CompassRose.k);
+			if (exitBits > 1)
+				print ", ";
+			else
+				print ".^";
+		}
+		exitBits = exitBits/2;
+		++k;
 	}
 	rfalse;
 }
@@ -326,8 +341,8 @@ routine Take [obj] {
 }
 
 routine Examine [obj; desc] {
-	if (room hasn't lit)
-		print_retf "It's too dark to see anything.";
+	if (isfalse ContainsAttribute(room,lit))
+		print_retf "It's too dark to see it.";
 	desc = obj.description;
 	if (isnz desc)
 		return call desc();
