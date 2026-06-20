@@ -1,0 +1,223 @@
+// Bunker Blues
+// Design and code by Nate Taylor
+// TinyZ implementation by David Etherton
+// MIT License
+
+// This is special and sets the release number in the header (and is available as the constant as well)
+constant ReleaseNumber = 1;
+
+object Player "Player" in Airlock {
+}
+
+#include "core.tzh"
+
+location Airlock in Locations {
+	description: "You are standing in a dimly lit airlock of a 
+		fallout shelter. You hear the faint hum of the emergency 
+		light, and an acrid smell from the fire you escaped lingers 
+		in the air.^^As you look around the otherwise sterile room, 
+		you notice a small control panel on the wall to your left, 
+		next to the internal door.";
+	s_to: MainCorridor;
+	lit;
+}
+
+object Paperclip "paperclip" in Airlock {
+	description: "The pinnacle of modern stationery, it holds 
+		small piles of papers together.";
+	noun: 'paperclip' 'clip';
+	adjective: 'paper';
+}
+
+location Canteen in Locations {
+	description: "The canteen.";
+	e_to: MainCorridor;
+	s_to: Kitchen;
+	lit;
+}
+
+object CoffeeFilter "coffee filter" in Canteen {
+	noun: 'filter';
+	adjective: 'coffee';
+}
+
+location MainCorridor in Locations {
+	description: "Fluorescent strips flicker overhead, casting a 
+		sickly pallor over the metal-lined corridor running 
+		the full length of the bunker. Rows of identical 
+		painted-steel doors line each side, their stencilled 
+		numbers faded to near-illegibility.";
+	n_to: Airlock;
+	s_to: WECorridor;
+	sw_to: Lounge;
+	w_to: Canteen;
+	e_to: BunkRoom;
+	lit;
+}
+
+object LightStick "light stick" in MainCorridor {
+	description: "It's a light stick. You can shake it to make it give off light.";
+	noun: 'stick' 'lightstick';
+	adjective: 'light';
+	after: [act] {
+		if (act is #shake) {
+			if (self has lit)
+				print_ret "It's already lit!";
+			else {
+				self gains lit;
+				print_ret "It starts giving off a faint light.";
+			}
+		}
+		rfalse;
+	}
+}
+
+action #shake { 'shake' Held: [do] { return CallAfter(#shake,do); } }
+
+location BunkRoom in Locations {
+	w_to: MainCorridor;
+	e_to: Closet;
+	s_to: Latrine;
+	lit;
+}
+
+location Closet in Locations {
+	w_to: BunkRoom;
+}
+
+object CodeBook "code book" in Closet {
+	noun: 'codebook' 'book';
+	adjective: 'code';
+}
+
+location Storeroom in Locations {
+	description: "The storeroom.";
+	e_to: Kitchen;
+	s_to: Hydroponic;
+}
+
+object Crowbar "crowbar" in Storeroom {
+	noun: 'crowbar';
+}
+
+location Kitchen in Locations {
+	w_to: Storeroom;
+	n_to: Canteen;
+	s_to: Pantry;
+}
+
+object BreadKnife "bread knife" in Kitchen {
+	noun: 'knife';
+	adjective: 'bread';
+}
+
+location Latrine in Locations {
+	n_to: BunkRoom;
+}
+
+object ToiletBrush "toilet brush" in Latrine {
+	noun: 'brush';
+	adjective: 'toilet' 'loo';
+}
+
+location Hydroponic in Locations {
+	n_to: Storeroom;
+	e_to: Pantry;
+	s_to: ToolRoom;
+}
+
+object BonsaiTree "bonsai tree" in Hydroponic {
+	noun: 'tree';
+	adjective: 'bonsai';
+}
+
+location Pantry in Locations {
+	w_to: Hydroponic;
+	n_to: Kitchen;
+}
+
+object Hose "hose" in Pantry {
+	noun: 'hose';
+}
+
+location Gymnasium in Locations {
+	w_to: MainCorridor;
+	s_to: MedicalBay;
+}
+
+object Helmet "helmet" in Gymnasium {
+	noun: 'helmet';
+}
+
+object Hand "hand" in Gymnasium {
+	description: "I have no idea what this is.";
+	noun: 'hand';
+}
+
+location Library in Locations {
+	s_to: Lounge;
+}
+
+location MedicalBay in Locations {
+	n_to: Gymnasium;
+}
+
+location Lounge in Locations {
+	e_to: MainCorridor;
+}
+
+location WECorridor "East/West Corridor" in Locations {
+	n_to: MainCorridor;
+	sw_to: Workshop;
+	s_to: ControlRoom;
+	se_to: Generator;
+}
+
+location Reservoir in Locations {
+	down_to: PumpRoom;
+}
+
+location ToolRoom in Locations {
+	n_to: Hydroponic;
+}
+
+location Workshop in Locations {
+	n_to: WECorridor;
+	w_to: ToolRoom;
+	e_to: ControlRoom;
+}
+
+location ControlRoom in Locations {
+	w_to: Workshop;
+	n_to: WECorridor;
+	s_to: Armoury;
+	e_to: Generator;
+}
+
+location Generator in Locations {
+	w_to: ControlRoom;
+	n_to: WECorridor;
+	e_to: PumpRoom;
+}
+
+location PumpRoom in Locations {
+	e_to: Generator;
+	up_to: Reservoir;
+}
+
+location Armoury in Locations {
+	n_to: ControlRoom;
+}
+
+global ifid = `UUID://2191F624-E980-46F6-B6F1-85792F494E81//`;
+
+routine main[] {
+	room = Player parent;
+	print "Bunker Blues, by Nate Taylor^";
+	ReleaseInfo();
+	Look();
+	for (;;) {
+		turns = turns + DoTurn();
+	}
+	quit;
+}
