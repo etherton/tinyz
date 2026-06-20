@@ -38,7 +38,7 @@ attribute object scenery;
 attribute object supporter;
 attribute object clothing;
 
-attribute location lit;
+attribute global lit;
 attribute location visited;
 
 // plain properties can be attached to rooms or objects
@@ -256,8 +256,20 @@ routine Exits [;i j] {
 	rfalse;
 }
 
+routine ContainsAttribute [obj attr; i] {
+	if (obj has attr)
+		rtrue;
+	if (obj has child -> i) {
+		repeat {
+			if (istruth ContainsAttribute(i,attr))
+				rtrue;
+		} while (i has sibling -> i);
+	}
+	rfalse;
+}
+
 routine Look [; i r f] {
-	if (room hasn't lit)
+	if (isfalse ContainsAttribute(room,lit))
 		print_ret "It's too dark to see anything.";
 	r = call room.description();
 	if (room has child -> i) {
