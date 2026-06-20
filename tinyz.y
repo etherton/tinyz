@@ -2361,7 +2361,7 @@ primary
 objref
 	: ONAME			{ $$ = NEW expr_literal($1); }
 	| SELF			{ $$ = NEW expr_literal(self_value); }
-	| vname			{ $$ = NEW expr_variable($1); }
+	| aname			{ $$ = $1; } 
 	| objref '.' pname	{ $$ = NEW expr_binary($1,_2op::get_prop,$3); }
 	| objref PARENT { $$ = NEW expr_unary(_1op::get_parent,$1); }
 	| objref CHILD 	{ $$ = NEW expr_unary(_1op::get_child,$1); }
@@ -2442,7 +2442,7 @@ const uint8_t* print_encoded_string(const uint8_t *src,void (*pr)(char ch)) {
 
 const unsigned maxString = 512;
 static char captured_string[maxString];
-static uint8_t captured_string_length;
+static uint16_t captured_string_length;
 static void capture_string(char ch) {
 	captured_string[captured_string_length++] = ch;
 }
