@@ -1692,8 +1692,8 @@
 %type <scopeval> scope
 %type <dlist> dict_list;
 %type <elist> opt_call_args arg_list
-%type <stval> stmt print_item opt_assign opt_assign_incr
-%type <stlist> stmts print_sequence
+%type <stval> stmt print_item for_item opt_for_item_list
+%type <stlist> stmts print_sequence for_item_list
 %type <sval> opt_name
 
 %%
@@ -2171,8 +2171,7 @@ stmt
 	| IF cond_expr stmt ELSE stmt 	%prec IF	{ $$ = NEW stmt_if($2,$3,$5); }
 	| REPEAT stmt WHILE cond_expr ';'	{ $$ = NEW stmt_repeat($2,$4); }
 	| WHILE cond_expr stmt				{ $$ = NEW stmt_while($2,$3); }
-	| FOR '(' opt_assign ';' opt_bool_expr ';' opt_assign_incr ')' stmt { $$ = NEW stmt_for($3,$5,$7,$9); }
-	// | FOR '(' opt_init_expr ';' opt_bool_expr
+	| FOR '(' opt_for_item_list ';' opt_bool_expr ';' opt_for_item_list ')' stmt { $$ = NEW stmt_for($3,$5,$7,$9); }
 	| '{' stmts '}'			{ $$ = NEW stmts($2); }
 	| vname '=' expr ';'	{ $$ = NEW stmt_assign($1,expr::fold_constant($3)); }
 	| vname '[' expr ']' '=' expr ';' { $$ = NEW stmt_store(_var::storeb,NEW expr_variable($1),$3,$6); }
@@ -2207,20 +2206,25 @@ stmt
 	| ignorable_expr ';'			{ $$ = NEW stmt_expr($1); }
 	; 
 
-opt_assign
+opt_for_item_list
 	:					{ $$ = nullptr; }
-	| vname '=' expr	{ $$ = NEW stmt_assign($1,expr::fold_constant($3)); }
+	| for_item_list		{ $$ = NEW stmts($1); }
+	;
+
+for_item
+	: vname '=' expr		{ $$ = NEW stmt_assign($1,expr::fold_constant($3)); }
+	| INCR vname			{ $$ = NEW stmt_1op(_1op::inc,NEW expr_literal($2)); }
+	| DECR vname			{ $$ = NEW stmt_1op(_1op::dec,NEW expr_literal($2)); }
+	;
+
+for_item_list
+	: for_item ',' for_item_list	{ $$ = NEW list_node<stmt*>($1,$3); }
+	| for_item						{ $$ = NEW list_node<stmt*>($1,nullptr); }
 	;
 
 opt_bool_expr
 	:					{ $$ = nullptr; }
 	| bool_expr			{ $$ = $1; }
-	;
-
-opt_assign_incr
-	: opt_assign		{ $$ = $1; }
-	| INCR vname		{ $$ = NEW stmt_1op(_1op::inc,NEW expr_literal($2)); }
-	| DECR vname		{ $$ = NEW stmt_1op(_1op::dec,NEW expr_literal($2)); }
 	;
 
 print_sequence
