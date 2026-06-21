@@ -1,7 +1,10 @@
 all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3 advent.do advent.po demogame.do \
-	sieve_2p.do sieve_2e.do sieve_2ee.do cloak.do zork.do dejavu.do hibernated.do czech_z3.do czech_z5.do minimal.do loh.do \
+	sieve_2p.do sieve_2e.do sieve_2ee.do cloak.do hibernated.do czech_z3.do czech_z5.do minimal.do minimal.hdv \
 	applez_2e.bin applez_2e40_0.bin applez_2e40_1.bin applez_2e40_2.bin applez_2e_2.bin applez_2e_v5.bin czech.z3 czech.z5 \
 	applez_2e_v4.bin applez_2e_v5_2.bin applez_2e_v5_3.bin applez_2e_v8.bin
+
+# these require story files not included
+optional: zork.do hibernated.do loh.do
 
 tinyzcd: opcodes.h header.h tinyz.y debug.h debug.cpp Makefile
 	bison --debug tinyz.y -v -o tinyz.debug.tab.cpp && clang++ -DDEBUG_MEM=1 -g -std=c++17 tinyz.debug.tab.cpp debug.cpp -o tinyzcd
@@ -120,17 +123,20 @@ zork.do: zork1-r88-s840726.z3 applez_2e.bin Makefile makedsk
 demogame.do: demogame.z3 applez_2e.bin Makefile makedsk
 	./makedsk applez_2e.bin demogame.z3 -o demogame.do
 
-dejavu.do: dejavu.z3 applez_2e.bin Makefile makedsk
-	./makedsk applez_2e.bin dejavu.z3 -o dejavu.do
-
 hibernated.do: hibernated1.z3 applez_2e.bin Makefile makedsk
 	./makedsk applez_2e.bin hibernated1.z3 -o hibernated.do
 
 minimal.z3: minimal.tz tinyzc
-	./tinyzc -Aadvent.abbrev minimal.tz
+	./tinyzc -z3 minimal.tz
+
+minimal.z4: minimal.tz tinyzc
+	./tinyzc -z4 minimal.tz
 
 minimal.do: minimal.z3 applez_2e.bin Makefile makedsk
 	./makedsk applez_2e.bin minimal.z3 -o minimal.do
+
+minimal.hdv: minimal.z4 applez_2e_v4.bin Makefile makedsk
+	./makedsk applez_2e_v4.bin minimal.z4 -o minimal.hdv
 
 czech.z3: czech.inf
 	inform -v3 czech.inf
