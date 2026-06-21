@@ -516,7 +516,7 @@
 			relocatableBlob *finalProps;
 		};
 	} *cdef;
-	uint16_t self_value, action_count;
+	uint16_t self_value, prev_value, action_count;
 	std::vector<object*> the_object_table;
 	struct action {
 	};
@@ -1106,6 +1106,8 @@
 	};
 	enum scope_enum: uint8_t { SCOPE_GLOBAL, SCOPE_OBJECT, SCOPE_LOCATION };
 	uint8_t expected_scope;
+	int16_t hierarchy, 		// 0/CONTAINS/AND
+		default_location; 
 	const uint8_t SCOPE_OBJECT_MASK = 0x40;
 	const uint8_t SCOPE_LOCATION_MASK = 0x80;
 	const uint8_t scope_masks[3] = { SCOPE_OBJECT_MASK | SCOPE_LOCATION_MASK, SCOPE_OBJECT_MASK, SCOPE_LOCATION_MASK };
@@ -1653,7 +1655,7 @@
 
 %token ATTRIBUTE PROPERTY GLOBAL OBJECT LOCATION ROUTINE WORDBIT ACTION HAS HASNT IN HOLDS SYNONYM CONTINUE BREAK
 %token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET PRINT_RETF SELF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF ONCE
-%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF HASH_INCLUDE TRACE UNPARENT FOR
+%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF HASH_INCLUDE TRACE UNPARENT FOR CONTAINS
 %token <ival> DICT ANAME PNAME LNAME GNAME INTLIT ONAME
 %token <sval> STRLIT CSTRLIT SEPARATORS
 %token <rval> RNAME
@@ -1687,7 +1689,7 @@
 
 %type <eval> expr pname objref primary aname arg ignorable_expr
 %type <brval> bool_expr cond_expr opt_bool_expr
-%type <ival> vname opt_parent opt_default opt_wordbit opt_arrow has_or_hasnt phrase dict counted_string intlit
+%type <ival> vname opt_parent opt_default opt_wordbit opt_arrow has_or_hasnt phrase dict counted_string intlit opt_hierarchy
 %type <rval> routine_body pvalue rname
 %type <scopeval> scope
 %type <dlist> dict_list;
@@ -1852,16 +1854,36 @@ word
 	;
 
 object_def
-	: OBJECT { expected_scope = SCOPE_OBJECT_MASK; } object_or_location_def
+	: opt_hierarchy OBJECT { expected_scope = SCOPE_OBJECT_MASK; hierarchy = $1; } object_or_location_def
 	;
 
 location_def
-	: LOCATION { expected_scope = SCOPE_LOCATION_MASK; } object_or_location_def
+	: opt_hierarchy LOCATION { expected_scope = SCOPE_LOCATION_MASK; hierarchy = $1; } object_or_location_def
+	;
+
+opt_hierarchy
+	: CONTAINS			{ $$ = CHILD; if (!prev_value) yyerror("No previous object!"); }
+	| AND				{ $$ = SIBLING; if (!prev_value) yyerror("No pervious object!"); }
+	|					{ $$ = 0; }
 	;
 
 object_or_location_def
 	: ONAME opt_name opt_parent '{' 
 	{
+		if (expected_scope == SCOPE_LOCATION_MASK) {
+			if (!default_location)
+				default_location = $1;
+			else if ($3==-1)
+				$3 = default_location;
+		}
+
+		if (hierarchy && $3!=-1)
+			yyerror("Cannot specify both 'contains' or 'and' and also 'in'");
+		else if (hierarchy)
+			$3 = hierarchy==CHILD? prev_value : the_object_table[prev_value]->parent;
+		else if ($3==-1)
+			$3 = 0;
+
 		self_value = $1;
 		cdef = the_object_table[$1];
 		// don't overwrite child here, it was already zeroed on
@@ -1902,6 +1924,7 @@ object_or_location_def
 		delete [] cdef->properties;
 		cdef->finalProps = finalProps;
 		cdef->propertySize = finalSize;
+		prev_value = self_value;
 		self_value = 0;
 	}
 	;
@@ -1921,14 +1944,15 @@ opt_name
 			while (*src) {
 				if (isupper(*src))
 					*dest++ = ' ';
-				*dest++ = *src++;
+				*dest++ = *src=='_'? ' ' : *src;
+				src++;
 			}
 			*dest = 0;
 		}
 	;
 
 opt_parent
-	: 						{ $$ = 0; }
+	: 						{ $$ = -1; }
 	| '(' ONAME ')'			{ $$ = $2; }
 	| IN ONAME				{ $$ = $2; }
 	;
@@ -2640,6 +2664,7 @@ void init(int version) {
 	rw["separators"] = SEPARATORS;
 	rw["read_char"] = READ_CHAR;
 	rw["random"] = RANDOM;
+	rw["contains"] = CONTAINS;
 
 #define MACRO1(b)		(0x10000000 | uint8_t(b))
 #define MACRO3(b,t,v)	(0x30000000 | (uint8_t(b)|((t)<<8)|((v)<<16)))
@@ -2734,6 +2759,8 @@ void init(int version) {
 	the_globals["$v4"] = { INTLIT, int16_t(version >= 4) };
 	the_globals["$v5"] = { INTLIT, int16_t(version >= 5) };
 	the_globals["$v8"] = { INTLIT, int16_t(version >= 8) };
+	the_globals["Limbo"] = { ONAME, int16_t(0) };
+
 }
 
 int encode_string(const char *src) {

@@ -11,7 +11,7 @@ object Player "Player" in Airlock {
 
 #include "core.tzh"
 
-location Airlock in Locations {
+location Airlock {
 	description: "You are standing in a dimly lit airlock of a 
 		fallout shelter. You hear the faint hum of the emergency 
 		light, and an acrid smell from the fire you escaped lingers 
@@ -22,26 +22,28 @@ location Airlock in Locations {
 	lit;
 }
 
-object Paperclip "paperclip" in Airlock {
+contains
+object paperclip  {
 	description: "The pinnacle of modern stationery, it holds 
 		small piles of papers together.";
 	noun: 'paperclip' 'clip';
 	adjective: 'paper';
 }
 
-location Canteen in Locations {
+location Canteen {
 	description: "The canteen.";
 	e_to: MainCorridor;
 	s_to: Kitchen;
 	lit;
 }
 
-object CoffeeFilter "coffee filter" in Canteen {
+contains
+object coffee_filter {
 	noun: 'filter';
 	adjective: 'coffee';
 }
 
-location MainCorridor in Locations {
+location MainCorridor {
 	description: "Fluorescent strips flicker overhead, casting a 
 		sickly pallor over the metal-lined corridor running 
 		the full length of the bunker. Rows of identical 
@@ -55,7 +57,8 @@ location MainCorridor in Locations {
 	lit;
 }
 
-object LightStick "light stick" in MainCorridor {
+contains
+object light_stick  {
 	description: "It's a light stick. You can shake it to make it give off light.";
 	noun: 'stick' 'lightstick';
 	adjective: 'light';
@@ -74,138 +77,146 @@ object LightStick "light stick" in MainCorridor {
 
 action #shake { 'shake' Held: [do] { return CallAfter(#shake,do); } }
 
-location BunkRoom in Locations {
+location BunkRoom {
 	w_to: MainCorridor;
 	e_to: Closet;
 	s_to: Latrine;
 	lit;
 }
 
-location Closet in Locations {
+location Closet {
 	w_to: BunkRoom;
 }
 
-object CodeBook "code book" in Closet {
+contains 
+object code_book {
 	noun: 'codebook' 'book';
 	adjective: 'code';
 }
 
-location Storeroom in Locations {
+location Storeroom {
 	description: "The storeroom.";
 	e_to: Kitchen;
 	s_to: Hydroponic;
 }
 
-object Crowbar "crowbar" in Storeroom {
+contains
+object crowbar {
 	noun: 'crowbar';
 }
 
-location Kitchen in Locations {
+location Kitchen {
 	w_to: Storeroom;
 	n_to: Canteen;
 	s_to: Pantry;
 }
 
-object BreadKnife "bread knife" in Kitchen {
+contains
+object bread_knife {
 	noun: 'knife';
 	adjective: 'bread';
 }
 
-location Latrine in Locations {
+location Latrine {
 	n_to: BunkRoom;
 }
 
-object ToiletBrush "toilet brush" in Latrine {
+contains
+object toilet_brush {
 	noun: 'brush';
 	adjective: 'toilet' 'loo';
 }
 
-location Hydroponic in Locations {
+location Hydroponic {
 	n_to: Storeroom;
 	e_to: Pantry;
 	s_to: ToolRoom;
 }
 
-object BonsaiTree "bonsai tree" in Hydroponic {
+contains
+object bonsai_tree {
 	noun: 'tree';
 	adjective: 'bonsai';
 }
 
-location Pantry in Locations {
+location Pantry {
 	w_to: Hydroponic;
 	n_to: Kitchen;
 }
 
-object Hose "hose" in Pantry {
+contains
+object hose {
 	noun: 'hose';
 }
 
-location Gymnasium in Locations {
+location Gymnasium {
 	w_to: MainCorridor;
 	s_to: MedicalBay;
 }
 
-object Helmet "helmet" in Gymnasium {
+contains
+object helmet {
 	noun: 'helmet';
 }
 
-object Hand "hand" in Gymnasium {
+and
+object hand {
 	description: "I have no idea what this is.";
 	noun: 'hand';
 }
 
-location Library in Locations {
+location Library {
 	s_to: Lounge;
 }
 
-location MedicalBay in Locations {
+location MedicalBay {
 	n_to: Gymnasium;
 }
 
-location Lounge in Locations {
+location Lounge {
 	e_to: MainCorridor;
 }
 
-location WECorridor "East/West Corridor" in Locations {
+location WECorridor "East/West Corridor" {
 	n_to: MainCorridor;
 	sw_to: Workshop;
 	s_to: ControlRoom;
 	se_to: Generator;
 }
 
-location Reservoir in Locations {
+location Reservoir {
 	down_to: PumpRoom;
 }
 
-location ToolRoom in Locations {
+location ToolRoom {
 	n_to: Hydroponic;
 }
 
-location Workshop in Locations {
+location Workshop {
 	n_to: WECorridor;
 	w_to: ToolRoom;
 	e_to: ControlRoom;
 }
 
-location ControlRoom in Locations {
+location ControlRoom {
 	w_to: Workshop;
 	n_to: WECorridor;
 	s_to: Armoury;
 	e_to: Generator;
 }
 
-location Generator in Locations {
+location Generator {
 	w_to: ControlRoom;
 	n_to: WECorridor;
 	e_to: PumpRoom;
 }
 
-location PumpRoom in Locations {
+location PumpRoom {
 	e_to: Generator;
 	up_to: Reservoir;
 }
 
-location Armoury in Locations {
+location Armoury {
 	n_to: ControlRoom;
 }
 

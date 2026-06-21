@@ -63,11 +63,12 @@ property location up_to;
 property location down_to;
 property location cant_go;
 
-// Parent for all locations
+// Parent for all locations. The first location defined is the default for all
+// locations.
 location Locations "Locations" {
 }
 
-location CompassRose "Compass" {
+location CompassRose "Compass" in Limbo {
 	n_to: `north`;
 	ne_to: `northeast`;
 	e_to: `east`;
