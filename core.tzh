@@ -570,6 +570,7 @@ action #quit { 'quit'/'quit game': [] { if (istruth Yes()) quit; rfalse; } }
 action #traceOn { '#trace on' : [] { $tracebits = 1; rfalse; } }
 action #traceOff { '#trace off' : [] { $tracebits = 0; rfalse; }}
 #endif
+action #wait { 'wait' : [] { rtrue; } }
 action #leave;
 action #enter;
 
