@@ -11,6 +11,8 @@ object Player "Player" in Airlock {
 
 #include "core.tzh"
 
+property object general;
+
 location Airlock {
 	description: "You are standing in a dimly lit airlock of a 
 		fallout shelter. You hear the faint hum of the emergency 
@@ -59,7 +61,19 @@ location MainCorridor {
 
 contains
 object light_stick  {
-	description: "It's a light stick. You can shake it to make it give off light.";
+	description: [] {
+		if (self hasn't lit)
+			print_ret "It's a light stick. You can shake it to make it give off light.";
+		else {
+			print "It's a light stick, currently giving off ";
+			if (self.general > 100)
+				print_ret "quite a surprising bit of light.";
+			else if (self.general > 30)
+				print_ret "a good amount of light.";
+			else
+				print_ret "a rather feeble amount of light.";
+		}
+	}
 	noun: 'stick' 'lightstick';
 	adjective: 'light';
 	after: [act] {
@@ -68,11 +82,13 @@ object light_stick  {
 				print_ret "It's already lit!";
 			else {
 				self gains lit;
+				self.general = 150;
 				print_ret "It starts giving off a faint light.";
 			}
 		}
 		rfalse;
 	}
+	general: 0;
 }
 
 action #shake { 'shake' Held: [do] { return CallAfter(#shake,do); } }
@@ -222,13 +238,25 @@ location Armoury {
 
 global ifid = `UUID://2191F624-E980-46F6-B6F1-85792F494E81//`;
 
+routine RunTasks[] {
+	if (isnz light_stick.general) {
+		--light_stick.general;
+		if (iszero light_stick.general % 30)
+			print "The light stick is a little dimmer than it was before.^";
+	}
+	rtrue;
+}
+
 routine main[] {
 	room = Player parent;
 	print "Bunker Blues, by Nate Taylor^";
 	ReleaseInfo();
 	Look();
 	for (;;) {
-		turns = turns + DoTurn();
+		if (isnz DoTurn()) {
+			++turns;
+			RunTasks();
+		}
 	}
 	quit;
 }

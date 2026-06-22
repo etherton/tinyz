@@ -89,6 +89,29 @@
 	bool write_debug_info;
 	int16_t release_number;
 
+	struct slab_allocated {
+		static size_t slabHeapSize, slabHeapOffset;
+		static char *slabHeap;
+		static void* operator new(size_t size) {
+			size_t alignMask = sizeof(void*) - 1;
+			size = (size + alignMask) & ~alignMask;
+			if (!slabHeap)
+				slabHeap = (char*) malloc(slabHeapSize);
+			void *a = slabHeap + slabHeapOffset;
+			slabHeapOffset += size;
+			return a;
+		}
+		static void operator delete(void*) {
+			// does nothing for now
+		}
+		static void reset() {
+			// TODO: In ASAN configurations, catch stale references instead.
+			slabHeapOffset = 0;
+		}
+	};
+	size_t slab_allocated::slabHeapSize = 256 * 1024, slab_allocated::slabHeapOffset;
+	char* slab_allocated::slabHeap;
+
 	template <typename T> struct list_node {
 		list_node<T>(T a,list_node<T> *b) : car(a), cdr(b) { }
 		~list_node() {
@@ -505,7 +528,9 @@
 		current_routine = nullptr;
 		the_locals.clear();
 		next_local = -1;
+		slab_allocated::reset();
 	 }
+
 	struct object {
 		int16_t child, sibling, parent;
 		uint8_t attributes[6];
@@ -538,7 +563,7 @@
 	typedef int16_t (*binary_eval)(int16_t,int16_t);
 	typedef int16_t (*unary_eval)(int16_t);
 
-	struct core {
+	struct core: public slab_allocated {
 		virtual ~core() { }
 		virtual void dump() const = 0;
 		void printNode(const char *s) const {
@@ -568,6 +593,7 @@
 		static int indentLevel;
 	};
 	int core::indentLevel;
+
 	struct expr: public core {
 		virtual void emit(uint8_t dest) const { }
 		virtual void eval(operand &o) const {
@@ -963,7 +989,7 @@
 			if (e->isConstant(c)) {
 				delete e;
 				// printf("constant folded to %d\n",c);
-				return NEW expr_literal(c);
+				return new expr_literal(c);
 			}
 			else
 				return e;
@@ -982,11 +1008,11 @@
 		static auto tl = the_globals.find("$tracebits");
 		if (tl != the_globals.end()) {
 			if (tl->second.token == GNAME)
-				return NEW expr_variable(tl->second.ival + 16);
+				return new expr_variable(tl->second.ival + 16);
 			else if (tl->second.token == INTLIT)
-				return NEW expr_literal(tl->second.ival);
+				return new expr_literal(tl->second.ival);
 		}
-		return NEW expr_literal(0);
+		return new expr_literal(0);
 	}
 	struct expr_logical_not: public expr_branch {
 		expr_logical_not(expr_branch *e) : unary(e), expr_branch(!e->negated) { }
@@ -1548,6 +1574,28 @@
 			printNode(expr1);
 		}
 	};
+	struct stmt_varop3: public stmt {
+		stmt_varop3(_var op,expr *a,expr *b,expr *c) : opcode(op), expr0(a), expr1(b), expr2(c) { }
+		~stmt_varop3() { delete expr0; delete expr1; delete expr2; }
+		_var opcode;
+		expr *expr0, *expr1, *expr2;
+		void emit() const {
+			operand op0, op1, op2;
+			expr2->eval(op2);
+			expr1->eval(op1);
+			expr0->eval(op0);
+			emitvarop(opcode,op0,op1,op2);
+		}
+		unsigned size() const {
+			return expr0->size() + expr1->size() + expr2->size() + 2;
+		}
+		void dump() const {
+			printNode(opcode_names[(uint8_t)opcode + 0xE0]);
+			printNode(expr0);
+			printNode(expr1);
+			printNode(expr2);
+		}
+	};
 	struct stmt_call: public stmt {
 		stmt_call(list_node<expr*> *a) : call(a) { }
 		void emit() const {
@@ -1603,6 +1651,103 @@
 		}
 		bool isPrint() const { return true; }
 	};
+
+	struct lvalue: public core {
+		lvalue() { }
+		virtual stmt* store(expr *rhs) {
+			yyerror("cannot store to this type of lvalue");
+			return nullptr;
+		}
+		// default impl just adds or subtracts one.
+		virtual stmt* incDec(bool inc) {
+			return store(new expr_binary(load(),inc?_2op::add:_2op::sub,new expr_literal(1)));
+		}
+		virtual expr* load() = 0;
+		void dump() const { }
+	};
+	struct lvalue_variable: public lvalue {
+		lvalue_variable(uint8_t v) : value(v) { };
+		uint8_t value;
+		stmt* store(expr *rhs) {
+			return new stmt_assign(value,rhs);
+		}
+		stmt* incDec(bool inc) {
+			return new stmt_1op(inc? _1op::inc : _1op::dec,new expr_literal(value));
+		}
+		expr* load() {
+			return new expr_variable(value);
+		}
+	};
+	struct lvalue_literal: public lvalue {
+		lvalue_literal(int16_t v) : value(v) { }
+		int16_t value;
+		expr* load() {
+			return new expr_literal(value);
+		}
+	};
+	struct lvalue_unary: public lvalue {
+		lvalue_unary(_1op o,lvalue *b) : base(b), opcode(o) { }
+		~lvalue_unary() { delete base; }
+		lvalue *base;
+		_1op opcode;
+		expr* load() {
+			return new expr_unary(opcode,base->load());
+		}
+	};
+	struct lvalue_array: public lvalue {
+		lvalue_array(lvalue *b,expr *i,bool w) : base(b), index(i), isWord(w) { }
+		~lvalue_array() {
+			delete base;
+			delete index;
+		}
+		lvalue *base;
+		expr *index;
+		bool isWord; 
+		stmt* store(expr *rhs) {
+			return new stmt_store(isWord? _var::storew : _var::storeb,base->load(),index,rhs);
+		}
+		expr *load() {
+			return new expr_binary(base->load(),isWord? _2op::loadw : _2op::loadb,index);
+		}
+	};
+	struct lvalue_property: public lvalue {
+		lvalue_property(lvalue *b,expr *p) : base(b), property(p) { }
+		~lvalue_property() {
+			delete base;
+			delete property;
+		}
+		lvalue *base;
+		expr *property;
+		stmt* store(expr *rhs) {
+			return new stmt_varop3(_var::put_prop,base->load(),property,rhs);
+		}
+		expr* load() {
+			return new expr_binary(base->load(),_2op::get_prop,property);
+		}
+	};
+	/* struct lvalue_attribute {
+		lvalue_attribute(lvalue *b,expr *a) : base(b), attribute(a) { }
+		~lvalue_attribute() {
+			delete base;
+			delete attribute;
+		}
+		lvalue *base;
+		expr *attribute;
+		stmt* store(expr *rhs) {
+			int flag;
+			if (rhs->isConstant(flag)) 
+				return new stmt_2op(flag?_2op::set_attr : _2op::clear_attr,base->load(),attribute);
+			else
+				yyerror("assignment to attribute must be zero or nonzero");
+		}
+		stmt* incDec(bool inc) {
+			return new stmt_2op(inc? _2op::set_attr : _2op::clear_attr,base->load(),attribute);
+		}
+		expr* load() {
+			yyerror("cannot use an attribute this way");
+		}
+	}; */
+
 	uint16_t emit_routine(int numLocals,stmt *body) {
 		if (!current_routine)
 			current_routine = relocatableBlob::create(1024,UD_HIGH);
@@ -1640,6 +1785,7 @@
 	uint16_t rval;
 	const char *sval;
 	expr *eval;
+	lvalue *lval;
 	expr_branch *brval;
 	std::pair<const std::string,symbol> *sym;
 	scope_enum scopeval;
@@ -1680,14 +1826,14 @@
 %left '&'
 %left LSH RSH
 %left EQ NE
-%left '<' LE '>' GE
-%nonassoc HAS HASNT
+%left '<' LE '>' GE%nonassoc HAS HASNT
 %left '+' '-'
 %left '*' '/' '%'
 %left PARENT
 %right '~' NOT
 
-%type <eval> expr pname objref primary aname arg ignorable_expr
+%type <eval> expr pname primary aname arg ignorable_expr
+%type <lval> lvalue
 %type <brval> bool_expr cond_expr opt_bool_expr
 %type <ival> vname opt_parent opt_default opt_wordbit opt_arrow has_or_hasnt phrase dict counted_string intlit opt_hierarchy
 %type <rval> routine_body pvalue rname
@@ -1729,10 +1875,10 @@ constant_def
 				yyerror("constant directive must evaluate to compile-time constant value");
 			 $2->second.token = INTLIT; 
 			 $2->second.ival = v;
-			 delete $4;
 			 // printf("constant = %d\n",v);
 			 if ($2->first == "ReleaseNumber")
 			 	release_number = v;
+			core::reset();
 		}
 	;
 
@@ -1802,7 +1948,7 @@ syn
 	;
 
 global_def
-	: GLOBAL GNAME opt_global_init ';'
+	: GLOBAL GNAME opt_global_init ';' { core::reset(); }
 	;
 
 opt_global_init
@@ -1994,7 +2140,7 @@ pvalue
 		{
 			open_scope();
 			auto p = relocatableBlob::createProperty(2,currentProperty);
-			p->addRelocation(emit_routine(0,NEW stmts($2)));
+			p->addRelocation(emit_routine(0,new stmts($2)));
 			close_scope();
 			$$ = p->index;
 		}
@@ -2003,7 +2149,7 @@ pvalue
 			open_scope();
 			auto p = relocatableBlob::createProperty(2,currentProperty);
 			stmt_print::modify($2,_0op::print_ret,false);
-			p->addRelocation(emit_routine(0,NEW stmts($2)));
+			p->addRelocation(emit_routine(0,new stmts($2)));
 			close_scope();
 			$$ = p->index;
 		}
@@ -2012,7 +2158,7 @@ pvalue
 			// string literal is just a shorthand for the address of a routine that calls print_ret with that string
 			open_scope();
 			auto p = relocatableBlob::createProperty(2,currentProperty);
-			p->addRelocation(emit_routine(0,NEW stmt_print(_0op::print_ret,false,$1)));
+			p->addRelocation(emit_routine(0,new stmt_print(_0op::print_ret,false,$1)));
 			close_scope();
 			$$ = p->index;
 		}
@@ -2191,54 +2337,52 @@ stmts
 	;
 
 stmt
-	: IF cond_expr stmt  				{ $$ = NEW stmt_if($2,$3,nullptr); }
-	| IF cond_expr stmt ELSE stmt 	%prec IF	{ $$ = NEW stmt_if($2,$3,$5); }
-	| REPEAT stmt WHILE cond_expr ';'	{ $$ = NEW stmt_repeat($2,$4); }
-	| WHILE cond_expr stmt				{ $$ = NEW stmt_while($2,$3); }
-	| FOR '(' opt_for_item_list ';' opt_bool_expr ';' opt_for_item_list ')' stmt { $$ = NEW stmt_for($3,$5,$7,$9); }
-	| '{' stmts '}'			{ $$ = NEW stmts($2); }
-	| vname '=' expr ';'	{ $$ = NEW stmt_assign($1,expr::fold_constant($3)); }
-	| vname '[' expr ']' '=' expr ';' { $$ = NEW stmt_store(_var::storeb,NEW expr_variable($1),$3,$6); }
-	| vname '[' '[' expr ']' ']' '=' expr ';' { $$ = NEW stmt_store(_var::storew,NEW expr_variable($1),$4,$8); }
-	| RETURN expr ';'		{ $$ = NEW stmt_return(expr::fold_constant($2)); }
-	| RFALSE ';'			{ $$ = NEW stmt_return(NEW expr_literal(0)); }
-	| RTRUE ';'				{ $$ = NEW stmt_return(NEW expr_literal(1)); }
-	| CALL expr opt_call_args ';'	{ $$ = NEW stmt_call(NEW list_node<expr*>($2,$3));  }
-	| RNAME opt_call_args ';'		{ $$ = NEW stmt_call(NEW list_node<expr*>(NEW expr_reloc($1),$2)); }
-	| STMT_0OP ';'					{ $$ = NEW stmt_0op($1); }
-	| STMT_1OP  expr  ';'			{ $$ = NEW stmt_1op($1,$2); }
-	| STMT_2OP '(' expr ',' expr ')' ';' { $$ = NEW stmt_2op($1,$3,$5); } 
-	| STMT_VAROP1 expr  ';'			{ $$ = NEW stmt_varop1($1,$2); }
-	| STMT_VAROP2 '(' expr ',' expr ')'  ';'	{ $$ = NEW stmt_varop2($1,$3,$5); }
-	| PRINT print_sequence ';'			{ $$ = NEW stmts($2); }
-	| PRINT_RET print_sequence ';'		{ stmt_print::modify($2,_0op::print_ret,false); $$ = NEW stmts($2); }
-	| PRINT_RETF print_sequence ';'		{ stmt_print::modify($2,_0op::print,true); $$ = NEW stmts($2); }
+	: IF cond_expr stmt  				{ $$ = new stmt_if($2,$3,nullptr); }
+	| IF cond_expr stmt ELSE stmt 	%prec IF	{ $$ = new stmt_if($2,$3,$5); }
+	| REPEAT stmt WHILE cond_expr ';'	{ $$ = new stmt_repeat($2,$4); }
+	| WHILE cond_expr stmt				{ $$ = new stmt_while($2,$3); }
+	| FOR '(' opt_for_item_list ';' opt_bool_expr ';' opt_for_item_list ')' stmt { $$ = new stmt_for($3,$5,$7,$9); }
+	| '{' stmts '}'			{ $$ = new stmts($2); }
+	| lvalue '=' expr ';'	{ $$ = $1->store($3); }
+	| RETURN expr ';'		{ $$ = new stmt_return(expr::fold_constant($2)); }
+	| RFALSE ';'			{ $$ = new stmt_return(new expr_literal(0)); }
+	| RTRUE ';'				{ $$ = new stmt_return(new expr_literal(1)); }
+	| CALL expr opt_call_args ';'	{ $$ = new stmt_call(NEW list_node<expr*>($2,$3));  }
+	| RNAME opt_call_args ';'		{ $$ = new stmt_call(NEW list_node<expr*>(new expr_reloc($1),$2)); }
+	| STMT_0OP ';'					{ $$ = new stmt_0op($1); }
+	| STMT_1OP  expr  ';'			{ $$ = new stmt_1op($1,$2); }
+	| STMT_2OP '(' expr ',' expr ')' ';' { $$ = new stmt_2op($1,$3,$5); } 
+	| STMT_VAROP1 expr  ';'			{ $$ = new stmt_varop1($1,$2); }
+	| STMT_VAROP2 '(' expr ',' expr ')'  ';'	{ $$ = new stmt_varop2($1,$3,$5); }
+	| PRINT print_sequence ';'			{ $$ = new stmts($2); }
+	| PRINT_RET print_sequence ';'		{ stmt_print::modify($2,_0op::print_ret,false); $$ = new stmts($2); }
+	| PRINT_RETF print_sequence ';'		{ stmt_print::modify($2,_0op::print,true); $$ = new stmts($2); }
 	| TRACE intlit print_sequence ';'				
 		{ 
 			// depending on trace_level_expr, this will dead strip in release builds.
-			auto c = NEW expr_binary_branch(trace_level_expr(),_2op::test,false,NEW expr_literal($2),[](int16_t a,int16_t b)->int16_t { return (a&b)==b; });
-			$$ = NEW stmt_if(c,NEW stmts($3),nullptr);
+			auto c = new expr_binary_branch(trace_level_expr(),_2op::test,false,new expr_literal($2),[](int16_t a,int16_t b)->int16_t { return (a&b)==b; });
+			$$ = new stmt_if(c,new stmts($3),nullptr);
 		}
-	| INCR vname ';'				{ $$ = NEW stmt_1op(_1op::inc,NEW expr_literal($2)); }
-	| DECR vname ';'				{ $$ = NEW stmt_1op(_1op::dec,NEW expr_literal($2)); }
-	| objref GAINS aname ';' 		{ $$ = NEW stmt_2op(_2op::set_attr,$1,$3); }
-	| objref LOSES aname ';'		{ $$ = NEW stmt_2op(_2op::clear_attr,$1,$3); }
-	| MOVE objref INTO objref ';'	{ $$ = NEW stmt_2op(_2op::insert_obj,$2,$4); }
-	| UNPARENT objref ';'			{ $$ = NEW stmt_1op(_1op::remove_obj,$2); }
-	| CONTINUE ';'					{ $$ = NEW stmt_continue(); }
-	| BREAK ';'						{ $$ = NEW stmt_break(); }
-	| ignorable_expr ';'			{ $$ = NEW stmt_expr($1); }
+	| INCR lvalue ';'				{ $$ = $2->incDec(true); }
+	| DECR lvalue ';'				{ $$ = $2->incDec(false); }
+	| lvalue GAINS aname ';' 		{ $$ = new stmt_2op(_2op::set_attr,$1->load(),$3); }
+	| lvalue LOSES aname ';'		{ $$ = new stmt_2op(_2op::clear_attr,$1->load(),$3); }
+	| MOVE lvalue INTO lvalue ';'	{ $$ = new stmt_2op(_2op::insert_obj,$2->load(),$4->load()); }
+	| UNPARENT lvalue ';'			{ $$ = new stmt_1op(_1op::remove_obj,$2->load()); }
+	| CONTINUE ';'					{ $$ = new stmt_continue(); }
+	| BREAK ';'						{ $$ = new stmt_break(); }
+	| ignorable_expr ';'			{ $$ = new stmt_expr($1); }
 	; 
 
 opt_for_item_list
 	:					{ $$ = nullptr; }
-	| for_item_list		{ $$ = NEW stmts($1); }
+	| for_item_list		{ $$ = new stmts($1); }
 	;
 
 for_item
-	: vname '=' expr		{ $$ = NEW stmt_assign($1,expr::fold_constant($3)); }
-	| INCR vname			{ $$ = NEW stmt_1op(_1op::inc,NEW expr_literal($2)); }
-	| DECR vname			{ $$ = NEW stmt_1op(_1op::dec,NEW expr_literal($2)); }
+	: vname '=' expr		{ $$ = new stmt_assign($1,expr::fold_constant($3)); }
+	| INCR vname			{ $$ = new stmt_1op(_1op::inc,new expr_literal($2)); }
+	| DECR vname			{ $$ = new stmt_1op(_1op::dec,new expr_literal($2)); }
 	;
 
 for_item_list
@@ -2257,15 +2401,15 @@ print_sequence
 	;
 
 print_item
-	: primary { $$ = NEW stmt_varop1(_var::print_num,$1); }
-	| '(' expr ')' { $$ = NEW stmt_varop1(_var::print_num,$2); }
-	| RNAME '(' arg_list ')' { $$ = NEW stmt_call(NEW list_node<expr*>(NEW expr_reloc($1),$3)) }
-	| OBJECT expr { $$ = NEW stmt_1op(_1op::print_obj,$2); }
-	| STMT_0OP { $$ = NEW stmt_0op($1); }
-	| STRLIT { $$ = NEW stmt_print(_0op::print,false,$1); }
-	| RFALSE { $$ = NEW stmt_return(NEW expr_literal(0)); }
-	| RTRUE { $$ = NEW stmt_return(NEW expr_literal(1)); }
-	| RETURN expr { $$ = NEW stmt_return($2); }
+	: primary { $$ = new stmt_varop1(_var::print_num,$1); }
+	| '(' expr ')' { $$ = new stmt_varop1(_var::print_num,$2); }
+	| RNAME '(' arg_list ')' { $$ = new stmt_call(NEW list_node<expr*>(new expr_reloc($1),$3)) }
+	| OBJECT expr { $$ = new stmt_1op(_1op::print_obj,$2); }
+	| STMT_0OP { $$ = new stmt_0op($1); }
+	| STRLIT { $$ = new stmt_print(_0op::print,false,$1); }
+	| RFALSE { $$ = new stmt_return(new expr_literal(0)); }
+	| RTRUE { $$ = new stmt_return(new expr_literal(1)); }
+	| RETURN expr { $$ = new stmt_return($2); }
 	;
 	
 cond_expr
@@ -2273,7 +2417,7 @@ cond_expr
 	;
 
 opt_call_args
-	: STRLIT			{ $$ = NEW list_node<expr*>(NEW expr_literal(encode_string($1)),nullptr); delete[] $1; }
+	: STRLIT			{ $$ = NEW list_node<expr*>(new expr_literal(encode_string($1)),nullptr); delete[] $1; }
 	| '(' ')'			{ $$ = nullptr; }
 	| '(' arg_list ')'	{ $$ = $2; }
 	;
@@ -2293,75 +2437,75 @@ intlit
 	;
 
 expr
-	: expr '+' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::add,$3,[](int16_t a,int16_t b)->int16_t{return a+b;})); }
-	| expr '-' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::sub,$3,[](int16_t a,int16_t b)->int16_t{return a-b;})); }
-	| expr '*' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::mul,$3,[](int16_t a,int16_t b)->int16_t{return a*b;})); }
-	| expr '/' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::div,$3,[](int16_t a,int16_t b)->int16_t{if (!b) yyerror("division by zero"); return a/b;})); }
-	| expr '%' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::mod,$3,[](int16_t a,int16_t b)->int16_t{if (!b) yyerror("modulo by zero"); return a%b;})); }
-	| '~' expr      	{ $$ = NEW expr_unary(_1op::not_call_1n,$2); }
-//	| '-' expr %prec NEGATE { $$ = $$ = expr::fold_constant(NEW expr_binary(NEW expr_literal(0),_2op::sub,$2,[](int16_t a,int16_t b)->int16_t{return a-b;})); }
-	| expr '&' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::and_,$3,[](int16_t a,int16_t b)->int16_t{return a&b;})); }
-	| expr '|' expr 	{ $$ = expr::fold_constant(NEW expr_binary($1,_2op::or_,$3,[](int16_t a,int16_t b)->int16_t{return a|b;})); }
-	| expr LSH expr		{ $$ = NEW expr_binary_log_shift($1,$3); }
-	| expr RSH expr		{ $$ = NEW expr_binary_log_shift($1,NEW expr_binary(NEW expr_literal(0),_2op::sub,$3)); }
-	| ADDROF '(' objref '.' pname ')' { $$ = NEW expr_binary($3,_2op::get_prop_addr,$5); }
-	| SIZEOF '(' expr ')' { $$ = NEW expr_unary(_1op::get_prop_len,$3); }
+	: expr '+' expr 	{ $$ = expr::fold_constant(new expr_binary($1,_2op::add,$3,[](int16_t a,int16_t b)->int16_t{return a+b;})); }
+	| expr '-' expr 	{ $$ = expr::fold_constant(new expr_binary($1,_2op::sub,$3,[](int16_t a,int16_t b)->int16_t{return a-b;})); }
+	| expr '*' expr 	{ $$ = expr::fold_constant(new expr_binary($1,_2op::mul,$3,[](int16_t a,int16_t b)->int16_t{return a*b;})); }
+	| expr '/' expr 	{ $$ = expr::fold_constant(new expr_binary($1,_2op::div,$3,[](int16_t a,int16_t b)->int16_t{if (!b) yyerror("division by zero"); return a/b;})); }
+	| expr '%' expr 	{ $$ = expr::fold_constant(new expr_binary($1,_2op::mod,$3,[](int16_t a,int16_t b)->int16_t{if (!b) yyerror("modulo by zero"); return a%b;})); }
+	| '~' expr      	{ $$ = new expr_unary(_1op::not_call_1n,$2); }
+//	| '-' expr %prec NEGATE { $$ = $$ = expr::fold_constant(new expr_binary(new expr_literal(0),_2op::sub,$2,[](int16_t a,int16_t b)->int16_t{return a-b;})); }
+	| expr '&' expr 	{ $$ = expr::fold_constant(new expr_binary($1,_2op::and_,$3,[](int16_t a,int16_t b)->int16_t{return a&b;})); }
+	| expr '|' expr 	{ $$ = expr::fold_constant(new expr_binary($1,_2op::or_,$3,[](int16_t a,int16_t b)->int16_t{return a|b;})); }
+	| expr LSH expr		{ $$ = new expr_binary_log_shift($1,$3); }
+	| expr RSH expr		{ $$ = new expr_binary_log_shift($1,new expr_binary(new expr_literal(0),_2op::sub,$3)); }
+	| ADDROF '(' lvalue '.' pname ')' { $$ = new expr_binary($3->load(),_2op::get_prop_addr,$5); }
+	| SIZEOF '(' expr ')' { $$ = new expr_unary(_1op::get_prop_len,$3); }
 	| '(' expr ')'  	{ $$ = expr::fold_constant($2); }
 	| primary       	{ $$ = $1; }
-	| intlit        	{ $$ = NEW expr_literal($1); }
-	| dict				{ $$ = NEW expr_literal($1); }
-	| PNAME				{ $$ = NEW expr_literal($1 & 63); }
-	| RNAME opt_call_args { $$ = NEW expr_call(NEW list_node<expr*>(NEW expr_reloc($1),$2)); }
-	| CALL expr opt_call_args { $$ = NEW expr_call(NEW list_node<expr*>($2,$3)); }
+	| intlit        	{ $$ = new expr_literal($1); }
+	| dict				{ $$ = new expr_literal($1); }
+	| PNAME				{ $$ = new expr_literal($1 & 63); }
+	| RNAME opt_call_args { $$ = new expr_call(NEW list_node<expr*>(new expr_reloc($1),$2)); }
+	| CALL expr opt_call_args { $$ = new expr_call(NEW list_node<expr*>($2,$3)); }
 	| ignorable_expr	{ $$ = $1; }
 	;
 
 ignorable_expr
-	: READ_CHAR 			{ $$ = NEW expr_varop1(_var::read_char,NEW expr_literal(1)); }
-	| RANDOM '(' expr ')'	{ $$ = NEW expr_varop1(_var::random,$3); }
+	: READ_CHAR 			{ $$ = new expr_varop1(_var::read_char,new expr_literal(1)); }
+	| RANDOM '(' expr ')'	{ $$ = new expr_varop1(_var::random,$3); }
 	;
 
 bool_expr
-	: expr '<' expr		{ $$ = NEW expr_binary_branch($1,_2op::jl,false,$3,[](int16_t a,int16_t b)->int16_t{return a<b;}); }
-	| expr LE expr		{ $$ = NEW expr_binary_branch($1,_2op::jg,true,$3,[](int16_t a,int16_t b)->int16_t{return a<=b;}); }
-	| expr '>' expr		{ $$ = NEW expr_binary_branch($1,_2op::jg,false,$3,[](int16_t a,int16_t b)->int16_t{return a>b;}); }
-	| expr GE expr		{ $$ = NEW expr_binary_branch($1,_2op::jl,true,$3,[](int16_t a,int16_t b)->int16_t{return a>=b;}); }
+	: expr '<' expr		{ $$ = new expr_binary_branch($1,_2op::jl,false,$3,[](int16_t a,int16_t b)->int16_t{return a<b;}); }
+	| expr LE expr		{ $$ = new expr_binary_branch($1,_2op::jg,true,$3,[](int16_t a,int16_t b)->int16_t{return a<=b;}); }
+	| expr '>' expr		{ $$ = new expr_binary_branch($1,_2op::jg,false,$3,[](int16_t a,int16_t b)->int16_t{return a>b;}); }
+	| expr GE expr		{ $$ = new expr_binary_branch($1,_2op::jl,true,$3,[](int16_t a,int16_t b)->int16_t{return a>=b;}); }
 	| expr EQ expr		
 		{ 
 			if ($3->isZero()) { 
-				$$ = NEW expr_unary_branch(_1op::jz,false,$1);
+				$$ = new expr_unary_branch(_1op::jz,false,$1);
 				delete $3;
 			}
 			else 
-				$$ = NEW expr_binary_branch($1,_2op::je,false,$3,[](int16_t a,int16_t b)->int16_t{return a==b;}); 
+				$$ = new expr_binary_branch($1,_2op::je,false,$3,[](int16_t a,int16_t b)->int16_t{return a==b;}); 
 		}
 	| expr NE expr		
 		{ 
 			if ($3->isZero()) {
-				$$ = NEW expr_unary_branch(_1op::jz,true,$1);
+				$$ = new expr_unary_branch(_1op::jz,true,$1);
 				delete $3;
 			}
 			else
-				$$ = NEW expr_binary_branch($1,_2op::je,true,$3,[](int16_t a,int16_t b)->int16_t{return a!=b;}); 
+				$$ = new expr_binary_branch($1,_2op::je,true,$3,[](int16_t a,int16_t b)->int16_t{return a!=b;}); 
 		}
-	| ISZERO expr		{ $$ = NEW expr_unary_branch(_1op::jz,false,$2); }
-	| ISNONZERO expr	{ $$ = NEW expr_unary_branch(_1op::jz,true,$2); }
-	| expr '&' '=' expr { $$ = NEW expr_binary_branch($1,_2op::test,false,$4,[](int16_t a,int16_t b)->int16_t { return (a&b)==b; }); }
-	| expr IN '{' expr '}'	{ $$ = NEW expr_in($1,$4); }
-	| expr IN '{' expr ',' expr '}' { $$ = NEW expr_in($1,$4,$6); }
-	| expr IN '{' expr ',' expr ',' expr '}' { $$ = NEW expr_in($1,$4,$6,$8); }
-	| NOT bool_expr		{ $$ = NEW expr_logical_not($2); }
-	| bool_expr AND bool_expr		{ $$ = NEW expr_logical_and($1,$3); }
-	| bool_expr OR bool_expr		{ $$ = NEW expr_logical_or($1,$3); }
-	| objref has_or_hasnt aname	{ $$ = NEW expr_binary_branch($1,_2op::test_attr,$2,$3); }
-	| objref has_or_hasnt CHILD opt_arrow { $$ = NEW expr_unary_branch_store(_1op::get_child,$2,$1,$4); }
-	| objref has_or_hasnt SIBLING opt_arrow { $$ = NEW expr_unary_branch_store(_1op::get_sibling,$2,$1,$4); }
-	| objref HOLDS objref 	{ $$ = NEW expr_binary_branch($3,_2op::jin,false,$1); }
-	| ONCE vname		{ $$ = NEW expr_binary_branch(NEW expr_literal($2),_2op::inc_chk,true,NEW expr_literal(1)); }
-	| SAVE				{ $$ = NEW expr_saveRestore(_0op::save); }
-	| RESTORE			{ $$ = NEW expr_saveRestore(_0op::restore); }
-	| SCAN_TABLE '(' expr ',' expr ',' expr ')' ARROW vname { $$ = NEW expr_scan_table_branch_store($3,$5,$7,nullptr,$10); }
-	| SCAN_TABLE '(' expr ',' expr ',' expr ',' expr ')' ARROW vname { $$ = NEW expr_scan_table_branch_store($3,$5,$7,$9,$12); }
+	| ISZERO expr		{ $$ = new expr_unary_branch(_1op::jz,false,$2); }
+	| ISNONZERO expr	{ $$ = new expr_unary_branch(_1op::jz,true,$2); }
+	| expr '&' '=' expr { $$ = new expr_binary_branch($1,_2op::test,false,$4,[](int16_t a,int16_t b)->int16_t { return (a&b)==b; }); }
+	| expr IN '{' expr '}'	{ $$ = new expr_in($1,$4); }
+	| expr IN '{' expr ',' expr '}' { $$ = new expr_in($1,$4,$6); }
+	| expr IN '{' expr ',' expr ',' expr '}' { $$ = new expr_in($1,$4,$6,$8); }
+	| NOT bool_expr		{ $$ = new expr_logical_not($2); }
+	| bool_expr AND bool_expr		{ $$ = new expr_logical_and($1,$3); }
+	| bool_expr OR bool_expr		{ $$ = new expr_logical_or($1,$3); }
+	| lvalue has_or_hasnt aname	{ $$ = new expr_binary_branch($1->load(),_2op::test_attr,$2,$3); }
+	| lvalue has_or_hasnt CHILD opt_arrow { $$ = new expr_unary_branch_store(_1op::get_child,$2,$1->load(),$4); }
+	| lvalue has_or_hasnt SIBLING opt_arrow { $$ = new expr_unary_branch_store(_1op::get_sibling,$2,$1->load(),$4); }
+	| lvalue HOLDS lvalue 	{ $$ = new expr_binary_branch($3->load(),_2op::jin,false,$1->load()); }
+	| ONCE vname		{ $$ = new expr_binary_branch(new expr_literal($2),_2op::inc_chk,true,new expr_literal(1)); }
+	| SAVE				{ $$ = new expr_saveRestore(_0op::save); }
+	| RESTORE			{ $$ = new expr_saveRestore(_0op::restore); }
+	| SCAN_TABLE '(' expr ',' expr ',' expr ')' ARROW vname { $$ = new expr_scan_table_branch_store($3,$5,$7,nullptr,$10); }
+	| SCAN_TABLE '(' expr ',' expr ',' expr ',' expr ')' ARROW vname { $$ = new expr_scan_table_branch_store($3,$5,$7,$9,$12); }
 	| '(' bool_expr ')' { $$ = $2; }
 	;
 
@@ -2376,29 +2520,30 @@ opt_arrow
 	;
 
 pname
-	: PNAME			{ $$ = NEW expr_literal($1 & 63); }
-	| vname			{ $$ = NEW expr_variable($1); }
+	: PNAME			{ $$ = new expr_literal($1 & 63); }
+	| vname			{ $$ = new expr_variable($1); }
 	;
 
 primary
-	: objref						{ $$ = $1; }
-	| primary '[' expr ']'			{ $$ = NEW expr_binary($1,_2op::loadb,$3); }
-	| primary '[' '[' expr ']' ']'	{ $$ = NEW expr_binary($1,_2op::loadw,$4); }
+	: lvalue		{ $$ = $1->load(); }
+	| ANAME			{ $$ = new expr_literal($1 & 63); }
 	;
 
-objref
-	: ONAME			{ $$ = NEW expr_literal($1); }
-	| SELF			{ $$ = NEW expr_literal(self_value); }
-	| aname			{ $$ = $1; } 
-	| objref '.' pname	{ $$ = NEW expr_binary($1,_2op::get_prop,$3); }
-	| objref PARENT { $$ = NEW expr_unary(_1op::get_parent,$1); }
-	| objref CHILD 	{ $$ = NEW expr_unary(_1op::get_child,$1); }
-	| objref SIBLING { $$ = NEW expr_unary(_1op::get_sibling,$1); }
+lvalue
+	: vname				{ $$ = new lvalue_variable($1); }
+	| ONAME				{ $$ = new lvalue_literal($1); }
+	| SELF				{ $$ = new lvalue_literal(self_value); }
+	| lvalue '.' pname	{ $$ = new lvalue_property($1,$3); }
+	| lvalue PARENT		{ $$ = new lvalue_unary(_1op::get_parent,$1); }
+	| lvalue CHILD		{ $$ = new lvalue_unary(_1op::get_child,$1); }
+	| lvalue SIBLING	{ $$ = new lvalue_unary(_1op::get_sibling,$1); }
+	| lvalue '[' expr ']'			{ $$ = new lvalue_array($1,$3,false); }
+	| lvalue '[' '[' expr ']' ']' 	{ $$ = new lvalue_array($1,$4,true); }
 	;
 
 aname
-	: ANAME			{ $$ = NEW expr_literal($1 & 63); }
-	| vname			{ $$ = NEW expr_variable($1); }
+	: ANAME			{ $$ = new expr_literal($1 & 63); }
+	| vname			{ $$ = new expr_variable($1); }
 	;
 
 vname
