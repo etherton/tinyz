@@ -34,9 +34,13 @@ synonym 'again' 'g';
 synonym 'look' 'l';
 
 attribute object vowel;
+attribute object plural;
 attribute object scenery;
 attribute object supporter;
 attribute object clothing;
+attribute object open;
+attribute object openable;
+attribute object container;
 
 attribute global lit;
 attribute location visited;
@@ -62,6 +66,7 @@ property location nw_to;
 property location up_to;
 property location down_to;
 property location cant_go;
+property location pobjects;	// Short for pseudo objects, which is a pain to type.
 
 // Parent for all locations. The first location defined is the default for all
 // locations.
@@ -122,6 +127,13 @@ routine Compass [word] {
 		rfalse;
 }
 
+routine DoorHelper [doorObj otherSide] {
+	if (doorObj has open)
+		return otherSide;
+	else
+		print_ret "You'll need to open the door first.";
+}
+
 routine PrStr [cstr i] {
 	while (i < cstr[0]) {
 		++i;
@@ -173,16 +185,34 @@ routine perform [act obj iobj] {
 
 routine An [obj] {
 	if (obj has vowel)
-		print "An ",rfalse;
+		print "An ",object obj,rfalse;
+	else if (obj has plural)
+		print "Some ",object obj,rfalse;
 	else
-		print "A ",rfalse;
+		print "A ",object obj,rfalse;
 }
 
 routine an [obj] {
 	if (obj has vowel)
-		print "an ",rfalse;
+		print "an ",object obj,rfalse;
+	else if (obj has plural)
+		print "some ",object obj,rfalse;
 	else
-		print "a ",rfalse;
+		print "a ",object obj,rfalse;
+}
+
+routine The [obj] {
+	if (obj has plural)
+		print "Some ",object obj,rfalse;
+	else
+		print "The ",object obj,rfalse;
+}
+
+routine the [obj] {
+	if (obj has plural)
+		print "some ",object obj,rfalse;
+	else
+		print "the ",object obj,rfalse;
 }
 
 // General actions should return true if they worked, and false if they failed.
@@ -293,7 +323,7 @@ routine Look [; i r f] {
 			if (i isn't Player and i has $is_object and i hasn't scenery) {
 				if (once f)
 					print "You can also see:^";
-				print An(i),object i,crlf;
+				print An(i),crlf;
 			}
 		} while (i has sibling -> i);
 	}
@@ -338,7 +368,7 @@ routine Take [obj] {
 		rfalse;
 	move obj into Player;
 	CallAfter(#take,obj);
-	print_ret "You pick up the ",object obj,".";
+	print_ret "You pick up ",the(obj),".";
 }
 
 routine Examine [obj; desc] {
@@ -360,7 +390,7 @@ routine Drop [obj] {
 		if (istruth BlockBefore(#drop,obj))
 			rfalse;
 		move obj into Player parent;
-		print_ret "You drop the ",object obj,".";
+		print_ret "You drop ",the(obj),".";
 	}
 	else
 		print_retf "You're not carrying that.";
@@ -384,10 +414,10 @@ routine PutOn [do ido] {
 		CallAfter(#puton,ido);
 		CallAfter(#puton,do);
 		CallAfter(#puton,room);
-		print_ret "You place the ",object do," on the ",object ido,".";
+		print_ret "You place ",the(do)," on ",the(ido),".";
 	}
 	else
-		print_retf "You can't put the ",object do," on the ",object ido,".";
+		print_retf "You can't put ",the(do)," on ",the(ido),".";
 }
 
 // The action table starts with the action routine, or -1 to terminate the entire list.
@@ -434,6 +464,19 @@ routine MatchPropertyWord [match obj prop; j k] {
 }
 
 routine RecurseMatch [obj; j k] {
+	if (obj hasn't $is_object) {
+		k = addrof(obj.pobjects);
+		if (isnz k) {
+			while (j+j < sizeof(k)) {
+				if (istruth MatchPropertyWord(MatchWord,k[[j]],MatchProp)) {
+					if (ObjectListCount < MaxObjectList)
+						ObjectList[[ObjectListCount]] = k[[j]];
+					++ObjectListCount;	
+				}	
+				++j;			
+			}
+		}
+	}
 	if (obj has child -> obj) {
 		repeat {
 			// print_num obj; print_char @ ; print_obj obj; crlf;
@@ -488,10 +531,10 @@ routine ParseCommon [root; i adj] {
 			}
 			print "I'm not sure which one you meant: ";
 			while (i < ObjectListCount - 1) {
-				print "the ",object ObjectList[[i]],", ";
+				print the(ObjectList[[i]]),", ";
 				++i;
 			}
-			print "or the ",object ObjectList[[i]],"?^";
+			print "or ",the(ObjectList[[i]]),"?^";
 			rfalse;
 		}
 		if (ObjectListCount is 1) {
@@ -667,7 +710,7 @@ routine CheckErrors [tb pb; i j] {
 routine ObjLoop[;i j k w] {
 	while (i < $object_count) {
 		++i;
-		print An(i),object i,crlf;
+		print An(i),crlf;
 		if (i has $is_object) {
 			j = addrof(i.adjective);
 			if (j isnt 0) {
