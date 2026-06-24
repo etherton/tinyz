@@ -701,7 +701,7 @@ global ActionRoutine;
 global DirectObject;
 global IndirectObject;
 
-routine ScanParseTable [; n matched] {
+routine ScanParseTable [; n matched warned] {
 	na = 0;
 	DirectObject = 0;
 	IndirectObject = 0;
@@ -733,14 +733,18 @@ routine ScanParseTable [; n matched] {
 						matched = $actions[[na]];
 						if (DirectObject isn't zero) {
 							IndirectObject = call matched();
-							if (isfalse IndirectObject)
-								rfalse;
+							if (isfalse IndirectObject) {
+								if (once warned) print "I don't know what indirect object you mean.^";
+								matched = 0;
+							}
 							trace 1 "IndirectObject now ",IndirectObject,crlf;
 						}
 						else {
 							DirectObject = call matched();
-							if (isfalse DirectObject)
-								rfalse;
+							if (isfalse DirectObject) {
+								if (once warned) print "I don't know which direct object you mean.^";
+								matched = 0;
+							}
 							trace 1 "DirectObject now ",DirectObject,crlf;
 						}
 					}
@@ -756,7 +760,7 @@ routine ScanParseTable [; n matched] {
 			matched = 0;
 		} while (n >= 0);
 	}
-	print "I didn't understand that.^";
+	if (once warned) print "I didn't understand that.^";
 	rfalse;
 }
 

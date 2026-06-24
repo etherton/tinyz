@@ -106,7 +106,6 @@ object light_stick  {
 }
 
 routine ShakeSub[do] {
-	print "ShakeSub ",object do,crlf;
 	if (Player holds do) {
 		if (isfalse CallAfter(#shake,do)) 
 			print_ret "Shaking that is pointless."; 
