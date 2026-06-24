@@ -216,14 +216,14 @@ routine BlockBefore [act obj arg;r] {
 }
 
 // This calls the after function, after an action has already succeeded. The return
-// value is currently unimportant.
+// value indicates whether it was understood or not.
 routine CallAfter [act obj;r] {
 	if (isnz obj) {
 		r = obj.after;
 		if (isnz r)
 			return call r(act,obj);	
 	}
-	rtrue;
+	rfalse;
 }
 
 routine Exits [;i j k exitBits exitCount] {
