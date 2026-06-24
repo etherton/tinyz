@@ -1,4 +1,4 @@
-all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3 advent.do advent.po demogame.do \
+all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3 advent.do advent.po demogame.do bunkerblues.z3 \
 	sieve_2p.do sieve_2e.do sieve_2ee.do cloak.do hibernated.do czech_z3.do czech_z5.do minimal.do minimal.hdv \
 	applez_2e.bin applez_2e40_0.bin applez_2e40_1.bin applez_2e40_2.bin applez_2e_2.bin applez_2e_v5.bin czech.z3 czech.z5 \
 	applez_2e_v4.bin applez_2e_v5_2.bin applez_2e_v5_3.bin applez_2e_v8.bin
@@ -35,6 +35,9 @@ cloak.z5: cloak.tz tinyzc Makefile
 
 demogame.z3: demogame.tz core.tzh tinyzc Makefile
 	./tinyzc -z3 demogame.tz
+
+bunkerblues.z3: bunkerblues.tz core.tzh tinyzc Makefile
+	./tinyzc -z3 bunkerblues.tz
 
 debug3: cloak.z3 Makefile tinyzterpd
 	./tinyzterpd cloak.z3 -debug -di cloak.z3.dbg
