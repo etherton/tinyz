@@ -1843,10 +1843,10 @@
 %type <eval> expr pname primary aname arg ignorable_expr
 %type <lval> lvalue
 %type <brval> bool_expr cond_expr opt_bool_expr
-%type <ival> vname opt_parent opt_default opt_wordbit opt_arrow has_or_hasnt phrase dict counted_string intlit opt_hierarchy
+%type <ival> vname opt_parent opt_default opt_wordbit opt_arrow has_or_hasnt phrase dict counted_string intlit opt_hierarchy property_initializer
 %type <rval> routine_body pvalue rname
 %type <scopeval> scope
-%type <dlist> dict_list;
+%type <dlist> dict_list property_initializer_list
 %type <elist> opt_call_args arg_list
 %type <stval> stmt print_item for_item opt_for_item_list
 %type <stlist> stmts print_sequence for_item_list
@@ -1940,6 +1940,17 @@ opt_wordbit
 dict_list
 	: dict dict_list	{ $$ = NEW list_node<uint16_t>($1,$2); }
 	| dict				{ $$ = NEW list_node<uint16_t>($1,nullptr); }
+	;
+
+property_initializer_list
+	: property_initializer ',' property_initializer_list	{ $$ = NEW list_node<uint16_t>($1,$3); }
+	| property_initializer									{ $$ = NEW list_node<uint16_t>($1,nullptr); }
+	;
+
+property_initializer
+	: intlit			{ $$ = $1; }
+	| ONAME				{ $$ = $1; }
+	| PNAME				{ $$ = $1 & 63; }
 	;
 
 synonym_def
@@ -2143,8 +2154,7 @@ property_or_attribute
 	;
 
 pvalue
-	: ONAME ';' { $$ = relocatableBlob::createInt($1,currentProperty); }
-	| PRINT print_sequence ';'
+	: PRINT print_sequence ';'
 		{
 			open_scope();
 			auto p = relocatableBlob::createProperty(2,currentProperty);
@@ -2176,13 +2186,25 @@ pvalue
 			p->addRelocation($1);
 			$$ = p->index;
 		}
-	| intlit ';' { $$ = relocatableBlob::createInt($1,currentProperty); }
-	| routine_body { 
+	| property_initializer_list ';' 
+		{ 
+			auto p = relocatableBlob::createProperty($1->size() * 2,currentProperty); 
+			$$ = p->index;
+			auto s = $1;
+			while (s) {
+				p->storeWord(s->car);
+				s = s->cdr;
+			}
+			delete $1;
+		}
+	| routine_body 
+		{ 
 			auto p = relocatableBlob::createProperty(2,currentProperty); 
 			p->addRelocation($1);
 			$$ = p->index;
 		}
-	| dict_list ';' { 
+	| dict_list ';' 
+		{ 
 			auto p = relocatableBlob::createProperty($1->size() * 2,currentProperty);
 			$$ = p->index;
 			auto s = $1;
