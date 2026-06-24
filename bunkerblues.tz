@@ -40,7 +40,21 @@ location Canteen {
 }
 
 contains
-object coffee_filter {
+object coffee_maker {
+	noun: 'maker';
+	adjective: 'coffee';
+	description: [] {
+		move coffee_filter into self parent;
+		self.description = [] { print_ret "It's just an ordinary coffee maker, with nothing inside it."; };
+		print_ret "It's just an ordinary coffee maker-- hey, wait, a coffee filter just fell out of it.";
+	}
+	before: [act] {
+		if (act==#take) print_ret "It's fixed in place on the counter.";
+		rfalse;
+	}
+}
+
+object coffee_filter in Limbo {
 	noun: 'filter';
 	adjective: 'coffee';
 }

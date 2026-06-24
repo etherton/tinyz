@@ -104,10 +104,6 @@
 		static void operator delete(void*) {
 			// does nothing for now
 		}
-		static void reset() {
-			// TODO: In ASAN configurations, catch stale references instead.
-			slabHeapOffset = 0;
-		}
 	};
 	size_t slab_allocated::slabHeapSize = 256 * 1024, slab_allocated::slabHeapOffset;
 	char* slab_allocated::slabHeap;
@@ -518,17 +514,29 @@
 			uint16_t uval;
 		};
 	};
+	struct scope_state {
+		size_t slabHeapOffset;
+		relocatableBlob *current_routine;
+		std::map<std::string,symbol> the_locals;
+		int8_t next_local;
+	};
+	std::vector<scope_state> prev_scope;
 	std::map<std::string,symbol> the_globals, the_locals;
 	std::map<std::string,symbol>::iterator last_global;
-	void open_scope() { 
+	void open_scope() {
+		scope_state prev = { slab_allocated::slabHeapOffset, current_routine, the_locals, next_local };
+		prev_scope.push_back(prev);
 		current_routine = nullptr;
+		the_locals.clear();
 		next_local = 0;
 	}
 	void close_scope() { 
-		current_routine = nullptr;
-		the_locals.clear();
-		next_local = -1;
-		slab_allocated::reset();
+		scope_state prev = prev_scope.back();
+		prev_scope.pop_back();
+		slab_allocated::slabHeapOffset = prev.slabHeapOffset;
+		current_routine = prev.current_routine;
+		the_locals = prev.the_locals;
+		next_local = prev.next_local;
 	 }
 
 	struct object {
@@ -1868,17 +1876,17 @@ decl
 	;
 
 constant_def
-	: CONSTANT NEWSYM '=' expr ';'
+	: CONSTANT NEWSYM '=' { open_scope(); } expr ';'
 		{
 			int v;
-			if (!$4->isConstant(v))
+			if (!$5->isConstant(v))
 				yyerror("constant directive must evaluate to compile-time constant value");
 			 $2->second.token = INTLIT; 
 			 $2->second.ival = v;
 			 // printf("constant = %d\n",v);
 			 if ($2->first == "ReleaseNumber")
 			 	release_number = v;
-			core::reset();
+			close_scope();
 		}
 	;
 
@@ -1948,7 +1956,7 @@ syn
 	;
 
 global_def
-	: GLOBAL GNAME opt_global_init ';' { core::reset(); }
+	: GLOBAL GNAME opt_global_init ';' 
 	;
 
 opt_global_init
@@ -2344,6 +2352,7 @@ stmt
 	| FOR '(' opt_for_item_list ';' opt_bool_expr ';' opt_for_item_list ')' stmt { $$ = new stmt_for($3,$5,$7,$9); }
 	| '{' stmts '}'			{ $$ = new stmts($2); }
 	| lvalue '=' expr ';'	{ $$ = $1->store($3); }
+	| lvalue '=' routine_body ';' {  $$ = $1->store(new expr_reloc($3)); }
 	| RETURN expr ';'		{ $$ = new stmt_return(expr::fold_constant($2)); }
 	| RFALSE ';'			{ $$ = new stmt_return(new expr_literal(0)); }
 	| RTRUE ';'				{ $$ = new stmt_return(new expr_literal(1)); }
