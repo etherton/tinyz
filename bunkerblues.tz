@@ -20,12 +20,43 @@ location Airlock {
 		in the air.^^As you look around the otherwise sterile room, 
 		you notice a small control panel on the wall to your left, 
 		next to the internal door.";
-	s_to: MainCorridor;
+	s_to: [] { return DoorHelper(internal_door,MainCorridor); }
+	pobjects: internal_door;
 	lit;
 }
 
 contains
-object paperclip  {
+object emergency_pack {
+	noun: 'pack' 'backpack' 'bag' 'sack';
+	adjective: 'emergency';
+	description: "A battered canvas emergency pack with worn straps. Wearing it across your back gives you considerably more carrying capacity.";
+	clothing;
+}
+
+and
+object panel {
+	noun: 'panel';
+	adjective: 'control';
+
+}
+
+// Can't do containers yet.
+and object papers {
+	noun: 'paper' 'papers';
+	description: [] {
+		self.description = [] { print_ret "It's instructions on how to survive the apocalypse"; };
+		move paperclip into room;
+		print_ret "As you look at the papers, the paperclip holding them together falls to the floor.";
+	}
+	plural;
+}
+
+object internal_door { // This exists in both the Airlock and the MainCorridor.
+	noun: 'door';
+	description: "The internal door is made out of metal.";
+}
+
+object paperclip in Limbo  {
 	description: "The pinnacle of modern stationery, it holds 
 		small piles of papers together.";
 	noun: 'paperclip' 'clip';
@@ -44,7 +75,7 @@ object coffee_maker {
 	noun: 'maker';
 	adjective: 'coffee';
 	description: [] {
-		move coffee_filter into self parent;
+		move coffee_filter into room;
 		self.description = [] { print_ret "It's just an ordinary coffee maker, with nothing inside it."; };
 		print_ret "It's just an ordinary coffee maker-- hey, wait, a coffee filter just fell out of it.";
 	}
@@ -65,12 +96,13 @@ location MainCorridor {
 		the full length of the bunker. Rows of identical 
 		painted-steel doors line each side, their stencilled 
 		numbers faded to near-illegibility.";
-	n_to: Airlock;
+	n_to: [] { return DoorHelper(internal_door,Airlock); }
 	s_to: WECorridor;
 	sw_to: Lounge;
 	w_to: Canteen;
 	e_to: BunkRoom;
 	lit;
+	pobjects: internal_door;
 }
 
 contains
