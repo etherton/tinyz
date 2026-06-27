@@ -125,17 +125,17 @@ object coffee_filter in Limbo {
 }
 
 global TibblesBanter = word_array(6) {
-	"^Tibbles: ~I'm a cleaner, not a magician, but watch this dirt disappear!~^",
-	"^Tibbles: ~Why walk when you can vacuum?~^",
-    "^Tibbles: ~Clean floors, happy life.~^",
-    "^Tibbles: ~I've got the suction, and I'm not afraid to use it.~^",
-    "^Tibbles: ~I'm not just a pretty face, I'm a pretty powerful vacuum too!~^",
-	"^Tibbles: ~Dirt, dust, and debris beware, I'm on the prowl!~^"
+	"~I'm a cleaner, not a magician, but watch this dirt disappear!~",
+	"~Why walk when you can vacuum?~",
+    "~Clean floors, happy life.~",
+    "~I've got the suction, and I'm not afraid to use it.~",
+    "~I'm not just a pretty face, I'm a pretty powerful vacuum too!~",
+	"~Dirt, dust, and debris beware, I'm on the prowl!~"
 };
 
 location MainCorridor {
 	description: [] {
-		print_paddr TibblesBanter[[random(6)-1]];
+		print "Tibbles: ", paddr TibblesBanter[[random(6)-1]], crlf;
 		if (PuzzleState &= ELECTRICITY_STATUS)
 			print_ret "The main corridor runs the full length of the bunker under steady, bright fluorescent 
 				light - a relief after the emergency flicker. Rows of painted-steel doors line each side, 
