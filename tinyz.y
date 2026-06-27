@@ -1230,7 +1230,6 @@
 		~stmt_if() { delete cond; delete ifTrue; delete ifFalse; }
 		expr_branch *cond;
 		stmt *ifTrue, *ifFalse;
-		// TODO: if ifTrue is rfalse/rtrue, we just need the non-negated branch to 0/1
 		// TODO: else if ifFalse is rfalse/rtrue, we just need the negated branch to 0/1
 		// TODO: If ifTrue ends in a return, we don't need the jump past false block
 		void emit() const {
@@ -2378,6 +2377,10 @@ stmt
 	| RETURN expr ';'		{ $$ = new stmt_return(expr::fold_constant($2)); }
 	| RFALSE ';'			{ $$ = new stmt_return(new expr_literal(0)); }
 	| RTRUE ';'				{ $$ = new stmt_return(new expr_literal(1)); }
+	| RFALSE IF expr ';'	{ $$ = new stmt_if(new expr_unary_branch(_1op::jz,true,$3),new stmt_return(new expr_literal(0)),nullptr); }
+	| RTRUE IF expr ';'		{ $$ = new stmt_if(new expr_unary_branch(_1op::jz,true,$3),new stmt_return(new expr_literal(1)),nullptr); }
+	| RFALSE IF NOT expr ';'	{ $$ = new stmt_if(new expr_unary_branch(_1op::jz,false,$4),new stmt_return(new expr_literal(0)),nullptr); }
+	| RTRUE IF NOT expr ';'		{ $$ = new stmt_if(new expr_unary_branch(_1op::jz,false,$4),new stmt_return(new expr_literal(1)),nullptr); }
 	| CALL expr opt_call_args ';'	{ $$ = new stmt_call(NEW list_node<expr*>($2,$3));  }
 	| RNAME opt_call_args ';'		{ $$ = new stmt_call(NEW list_node<expr*>(new expr_reloc($1),$2)); }
 	| STMT_0OP ';'					{ $$ = new stmt_0op($1); }
