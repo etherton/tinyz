@@ -150,7 +150,7 @@ Language Syntax
 ---------------
 Toplevel declarations include the following:
 
-`constant symbol integer-expression;`\
+`constant symbol = integer-expression;`\
 Defines a symbol having the specified value, which
 must evaluate to a compile-time constant.
 
@@ -159,8 +159,8 @@ Declares a named attribute. It can
 be applied to either any object or location, an object, or a location. Internally all objects
 have the $is_object attribute set on them; it is missing on locations.
 
-`property {global|object|location} property-name [wordbit integer-literal];`\Declares a named
-property, with scope like attributes. Additionally you can specify any word defined in that
+`property {global|object|location} property-name [wordbit integer-literal];`\
+Declares a named property, with scope like attributes. Additionally you can specify any word defined in that
 property has the specified value or'd into its dictionary type byte.
 
 `synonym word syn1 [syn2...];`\
@@ -198,12 +198,21 @@ can consist of either one or two dictionary words. Note that lexigraphically 'on
 are identical for all intents and purposes, but the former is clearer. Under the hood, the action
 list is built as a large table; implementation details are in `ScanParseTable`.
 
-`{object|location} symbol "short description" [(initial-location)] { decl.. }`\
+`{object|location} symbol ["short description"] [(initial-location)] { decl.. }`\
 Declares either an object or a location. The internal declarations can either be attributes, which appear on
 their own with a semicolon, or properties, which are a property name, a colon, and its value.
 The value of a property can either be an object name, an integer, a string, a lambda or routine name, or one or
 more dictionary words (up to four in v3 games, sixteen in others). Internally, a property that
-is a string is turned into a routine with a print_ret.
+is a string is turned into a routine with a print_ret. If the short description is omitted, it
+is generated from the symbol name. If the symbol name has MixedCase, it becomes "Mixed Case" and if the
+symbol name contains underscores like some_object, it becomes "some object". If locations don't have
+an initial location, they default to the first location defined, which is typical Locations in core.tzh.
+The initial-location can either be `( location-name )` or `in location-name`.
+
+Further objects and locations can have the `contains` or `and` keywords in front of them. `contains` means
+the object is a child of the previous object. `and` means the object is a sibling of the previous object.
+This can usually describe the hierarchy you need in common cases; when it does not, you can use the
+syntax above. Having both, obviously, is not allowed.
 
 Routine Syntax
 --------------
@@ -261,11 +270,11 @@ There are more, but I'm sick of typing.
 `--variable;`\
 These increment or decrement a variable.
 
-`objref GAINS attribute-name;` is an alias for `set_attr`.
+`lvalue gains attribute-name;` is an alias for `set_attr`.
 
-`objref LOSES attribute-name;` is an alias for `clear_attr`.
+`lvalue loses attribute-name;` is an alias for `clear_attr`.
 
-`move objref into objref;` is an alias for `insert_obj`.
+`move lvalue into lvalue;` is an alias for `insert_obj`.
 
 `print`, `print_ret`, `print_retf` and `trace integer-literal`\
 These all offer extended syntax for printing text. It can be a mixture of 
@@ -299,7 +308,7 @@ These are the standard relational operators.
 These test an expression against zero or nonzero. They are equivalent to `expr is 0` or `expr isn't 0` but with less typing.
 
 `expr &= expr`\
-This succeeds if exactly the bits in the second expression are set in the first, and saves a few bytes over `expr & expr isn't 0`.
+This succeeds if exactly the bits in the second expression are set in the first, and saves a few bytes over `(expr & expr) is expr`.
 
 `expr in {expr[,expr[,expr]]]}`\
 This tests whether the first expression is equal to up to three
@@ -313,7 +322,7 @@ Does a short-circuit logical and. The expression passes only if both
 expressions pass. If the first expression fails, the second is not evauated.
 
 `branch-expr or branch-expr`\
-Does a short-circuit logical or. It passes immediate if the first expression
+Does a short-circuit logical or. It passes immediately if the first expression
 passes, without evaluating the second expression. Otherwise, the expression depends solely on the second expression.
 
 `objref {has|hasn't|hasnt} attribute-name`\
@@ -322,7 +331,7 @@ Passes if the object has (or does not have) the specified attribute set.
 `objref {has|hasn't|hasnt} {child|sibling} [-> variable]`\
 Passes if the object has (or does not have) any children or siblings. If the optional variable is included, it will contain the child or sibling object number. Otherwise, the result is written to the scratch variable.
 
-`objref HOLDS objref`\
+`objref holds objref`\
 Passes if the second object's parent is the first object (the @jin instruction).
 
 `once variable`
@@ -354,11 +363,11 @@ Unary bitwise negation.
 These are logical shifts. They can appear in constant expressions in any Z-machine version, but are illegal at runtime in v3 and v4
 targets because the instructions simply don't exist there. There isn't currently an arithmetic (sign preserving) shift.
 
-`objref . property-name`\
+`lvalue . property-name`\
 This gets the value of a propery as an integer. The property name can be a fixed property name or a variable to indicate
 it should use the property index contained in the variable. This wraps the `@get_prop` instruction.
 
-`addrof(objref.property-name)`\
+`addrof(lvalue.property-name)`\
 Returns the address of the property blob, or zero if it doesn't exist. This wraps the `@get_prop_addr` instruction.
 Use `sizeof` below to determine the size of the property blob.
 
