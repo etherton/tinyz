@@ -40,7 +40,9 @@ attribute object supporter;
 attribute object clothing;
 attribute object open;
 attribute object openable;
-attribute object container;
+attribute object container;			// can contain other things
+attribute object transparent;		// can see inside it even if it's not open
+attribute object static;
 
 attribute global lit;
 attribute location visited;
@@ -247,11 +249,13 @@ routine BlockBefore [act obj arg;r] {
 
 // This calls the after function, after an action has already succeeded. The return
 // value indicates whether it was understood or not.
-routine CallAfter [act obj;r] {
+routine CallAfter [act obj value;r] {
+	if (iszero value)
+		value = obj;
 	if (isnz obj) {
 		r = obj.after;
 		if (isnz r)
-			return call r(act,obj);	
+			return call r(act,value);	
 	}
 	rfalse;
 }
@@ -362,33 +366,64 @@ routine Take [obj] {
 		print_ret "You're already carrying it.";
 	else if (obj has scenery)
 		print_retf "You can't take that, it's just scenery.";
-	if (istruth BlockBefore(#take,room))
-		rfalse;
-	if (istruth BlockBefore(#take,obj))
-		rfalse;
+	rfalse if BlockBefore(#take,room);
+	rfalse if BlockBefore(#take,obj);
 	move obj into Player;
-	CallAfter(#take,obj);
+	rtrue if CallAfter(#take,obj);
 	print_ret "You pick up ",the(obj),".";
 }
 
-routine Examine [obj; desc] {
+routine Examine [obj; desc i f] {
 	if (isfalse ContainsAttribute(room,lit))
 		print_retf "It's too dark to see it.";
 	desc = obj.description;
 	if (isnz desc)
-		return call desc();
+		call desc();
 	else
-		print_ret "It's just an ordinary ",object obj,".";
+		print "It's just an ordinary ",object obj,".^";
+
+	if (obj has container and (obj has open or obj has transparent)) {
+		if (obj has child -> i) {
+			repeat {
+				if (once f)
+					print "Inside it you can see:^";
+				print An(i),crlf;
+			} while (i has sibling -> i);
+		}
+		else
+			print "It has nothing inside it.^";
+	}
+	rtrue;
+}
+
+routine Open [obj] {
+	if (obj hasn't openable)
+		print_retf "You cannot open that.";
+	rfalse if BlockBefore(#open,obj);
+	if (obj has open)
+		print_retf "It's already open";
+	obj gains open;
+	rtrue if CallAfter(#open,obj);
+	print_ret "Opened.";
+}
+
+routine Close [obj] {
+	if (obj hasn't openable)
+		print_retf "You cannot close that.";
+	rfalse if BlockBefore(#close,obj);
+	if (obj hasn't open)
+		print_retf "It's already closed";
+	obj loses open;
+	rtrue if CallAfter(#close,obj);
+	print_ret "Closed.";
 }
 
 routine Drop [obj] {
 	// print "Dropping "; print_num obj; crlf;
 	// print_num obj parent; crlf;
 	if (Player holds obj) {
-		if (istruth BlockBefore(#drop,room))
-			rfalse;
-		if (istruth BlockBefore(#drop,obj))
-			rfalse;
+		rfalse if BlockBefore(#drop,room);
+		rfalse if BlockBefore(#drop,obj);
 		move obj into Player parent;
 		print_ret "You drop ",the(obj),".";
 	}
@@ -398,22 +433,26 @@ routine Drop [obj] {
 
 routine PutOn [do ido] {
 	// print "PutOn!^"; print_num do; crlf; print_num ido; crlf;
-	if (ido has supporter) {
-		if (ido has child)
+	if (ido has supporter or ido has container) {
+		if (ido has supporter and ido has child)
 			print_retf "There's no room.";
-		if (do hasn't clothing)
+		if (ido has supporter and do hasn't clothing)
 			print_retf "It's only meant to hold clothing.";
-		if (istruth BlockBefore(#puton,room))
-			rfalse;
-		if (istruth BlockBefore(#puton,do))
-			rfalse;
-		if (istruth BlockBefore(#puton,ido))
-			rfalse;
+		if (ido has container and ido hasn't open) {
+			it = ido;
+			print_retf "You need to open ",the(ido)," first.";
+		}
+
+		rfalse if BlockBefore(#puton,room);
+		rfalse if BlockBefore(#receive,do);
+		rfalse if BlockBefore(#puton,ido);
 
 		move do into ido;
-		CallAfter(#puton,ido);
-		CallAfter(#puton,do);
-		CallAfter(#puton,room);
+
+		rtrue if CallAfter(#puton,ido);
+		rtrue if CallAfter(#receive,ido,do);
+		rtrue if CallAfter(#puton,room);
+
 		print_ret "You place ",the(do)," on ",the(ido),".";
 	}
 	else
@@ -604,18 +643,17 @@ action #inv { 'inventory'/'take inventory': Inventory }
 action #take { 'get'/'take'/'pick up' Here: Take }
 action #drop { 'drop'/'put down' Held: Drop }
 action #look { 'look at'/'examine' Nearby: Examine }
+action #open { 'open' Nearby: Open }
+action #close { 'close' Nearby: Close }
 action #lookHere { 'look': Look }
-action #puton { 'hang'/'place'/'put' Held 'on'/'upon'/'on to'/'onto' Here: PutOn }
+action #puton { 'hang'/'place'/'put'/'attach' Held 'on'/'upon'/'on to'/'onto' Here: PutOn }
 action #go { 'go'/'go to' Direction: Travel }
 action #restart { 'restart'/'restart game': [] { if (istruth Yes()) restart; rfalse; } }
 action #quit { 'quit'/'quit game': [] { if (istruth Yes()) quit; rfalse; } }
-#if not RELEASE
-action #traceOn { '#trace on' : [] { $tracebits = 1; rfalse; } }
-action #traceOff { '#trace off' : [] { $tracebits = 0; rfalse; }}
-#endif
 action #wait { 'wait' : [] { rtrue; } }
 action #leave;
 action #enter;
+action #receive;
 
 global text_buffer = byte_array(64) { 63 };
 
@@ -819,6 +857,7 @@ routine DoTurn[; i] {
 	// first two bytes is address of the word, or 0 if unknown
 	// next byte is the length of the word, then the position in text_buffer.
 	repeat {
+		print "> ";
 #if $v5
 		text_buffer[1] = 0;
 #endif
@@ -870,6 +909,12 @@ routine DebugActions[;a n] {
 	}
 	rfalse;
 }
+
+#if not RELEASE
+action #traceOn { '#trace on' : [] { $tracebits = 1; rfalse; } }
+action #traceOff { '#trace off' : [] { $tracebits = 0; rfalse; }}
+action #debugActions { '#debug actions' : DebugActions }
+#endif
 
 routine ReleaseInfo [; hdr] {
    print "Release ",hdr[[1]]," compiled on ",PrintString(18,6)," by tinyzc v",PrintString(60,4),"^";

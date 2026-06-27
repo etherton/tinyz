@@ -13,6 +13,12 @@ object Player "Player" in Airlock {
 
 property object general;
 
+global PuzzleState;
+constant ELECTRICITY_STATUS = 1 << 0;
+constant HELMET_FREE = 1 << 1;
+constant CHARCOAL_IN_FILTER = 1 << 2;
+constant FILTER_IN_HELMET = 1 << 3;
+
 location Airlock {
 	description: "You are standing in a dimly lit airlock of a 
 		fallout shelter. You hear the faint hum of the emergency 
@@ -31,17 +37,39 @@ object emergency_pack {
 	adjective: 'emergency';
 	description: "A battered canvas emergency pack with worn straps. Wearing it across your back gives you considerably more carrying capacity.";
 	clothing;
+	container;
+	transparent;
 }
 
 and
 object panel {
-	noun: 'panel';
-	adjective: 'control';
-
+	noun: 'panel' 'board' 'wire';
+	adjective: 'control' 'circuit';
+	scenery;
+	openable;
+	container;
+	description: [] {
+		if (self has open) {
+			if (internal_door has open)
+				print_ret "The panel is open. A paperclip is now permanently fused to the circuit board, providing power to the inner door.";
+			else
+				print_ret "The panel is open. A wire on the circuit board has burnt out, stopping the door from working.";
+		}
+		else
+			print_ret "A small control panel on the wall next to the internal door. It is closed.";
+	}
+	after: [act obj] {
+		// print_obj obj; crlf;
+		if (act is #receive and obj is paperclip) {
+			internal_door gains open;
+			print_ret "The paperclip shorts out the broken wire and the door slides slowly open on the dwindling emergency power.";
+		}
+		rfalse;
+	}
 }
 
-// Can't do containers yet.
-and object papers {
+
+object papers in emergency_pack {
 	noun: 'paper' 'papers';
 	description: [] {
 		self.description = [] { print_ret "It's instructions on how to survive the apocalypse"; };
@@ -54,6 +82,12 @@ and object papers {
 object internal_door { // This exists in both the Airlock and the MainCorridor.
 	noun: 'door';
 	description: "The internal door is made out of metal.";
+	openable;
+	before: [act obj] {
+		if (act is #open)
+			print_ret "You'll need to find some other way to do that, try examining the panel.";
+		rfalse;
+	}
 }
 
 object paperclip in Limbo  {
@@ -64,7 +98,7 @@ object paperclip in Limbo  {
 }
 
 location Canteen {
-	description: "The canteen.";
+	description: "Rows of moulded plastic chairs sit askew around bolted-down tables, their surfaces sticky with the residue of years of institutional meals. A serving hatch at the far end stands open, the kitchen beyond cold and still.";
 	e_to: MainCorridor;
 	s_to: Kitchen;
 	lit;
@@ -91,14 +125,22 @@ object coffee_filter in Limbo {
 }
 
 location MainCorridor {
-	description: "Fluorescent strips flicker overhead, casting a 
-		sickly pallor over the metal-lined corridor running 
-		the full length of the bunker. Rows of identical 
-		painted-steel doors line each side, their stencilled 
-		numbers faded to near-illegibility.";
+	description: [] {
+		if (PuzzleState &= ELECTRICITY_STATUS)
+			print_ret "The main corridor runs the full length of the bunker under steady, bright fluorescent 
+				light - a relief after the emergency flicker. Rows of painted-steel doors line each side, 
+				their stencilled numbers sharp and clear.";
+		else
+			print_ret "Fluorescent strips flicker overhead, casting a 
+				sickly pallor over the metal-lined corridor running 
+				the full length of the bunker. Rows of identical 
+				painted-steel doors line each side, their stencilled 
+				numbers faded to near-illegibility.";
+	}
 	n_to: [] { return DoorHelper(internal_door,Airlock); }
 	s_to: WECorridor;
 	sw_to: Lounge;
+	se_to: Gymnasium;
 	w_to: Canteen;
 	e_to: BunkRoom;
 	lit;
@@ -160,10 +202,19 @@ location Closet {
 	w_to: BunkRoom;
 }
 
-contains 
+contains object jacket {
+	noun: 'jacket';
+	description: [] {
+		self.description = [] { print_ret "It is Bob's jacket. You miss Bob."; };
+		move code_book into room;
+		print_ret "As you look inside the jacket a small booklet falls from one of the pockets.";
+	}
+}
+ 
 object code_book {
-	noun: 'codebook' 'book';
+	noun: 'codebook' 'book' 'booklet';
 	adjective: 'code';
+	description: "A small, well-thumbed notebook containing radio signal codes and door access codes, written in a cramped but legible hand.";
 }
 
 location Storeroom {
@@ -190,6 +241,7 @@ object bread_knife {
 }
 
 location Latrine {
+	description: "A row of lidded steel lavatories and a pair of cracked porcelain sinks occupy this narrow utility room. A persistent drip somewhere keeps time in the silence, and the overhead strip light hums with the effort of staying on.";
 	n_to: BunkRoom;
 }
 
@@ -197,9 +249,11 @@ contains
 object toilet_brush {
 	noun: 'brush';
 	adjective: 'toilet' 'loo';
+	description: "A long-handled toilet brush, not particularly pleasant to handle but sturdy enough to clear a blocked pipe.";
 }
 
 location Hydroponic {
+	description: "Long hydroponic trays run beneath banks of dead overhead grow-lights, the substrate dry and neglected after what must be weeks without tending. A small bonsai tree in the corner has held on better than the rest, its gnarled trunk evidently tougher than it looks.";
 	n_to: Storeroom;
 	e_to: Pantry;
 	s_to: ToolRoom;
@@ -207,11 +261,13 @@ location Hydroponic {
 
 contains
 object bonsai_tree {
-	noun: 'tree';
 	adjective: 'bonsai';
+	noun: 'tree' 'wood';
+    description: "A small but surprisingly dense bonsai tree, its gnarled trunk and compact branches ideal for reducing to charcoal with a good pounding.";
 }
 
 location Pantry {
+	description: "Shelving units hold an orderly supply of tinned goods and sealed containers, though several racks have been cleared at some point. A gas hose runs from a shutoff valve on the wall down to the oven, and a faint metallic smell hangs in the air.";
 	w_to: Hydroponic;
 	n_to: Kitchen;
 }
@@ -222,8 +278,33 @@ object hose {
 }
 
 location Gymnasium {
+	description: [] {
+		if (PuzzleState &= HELMET_FREE and hand hasn't static)
+			print_ret "A compact exercise room, weight racks still overturned, the treadmill on its side. The crewman's body remains pinned beneath the weight cage - helmetless, one hand severed at the wrist.";
+		if (PuzzleState &= HELMET_FREE)
+			print_ret "A compact exercise room, weight racks still overturned, the treadmill on its side. The crewman lies pinned beneath the weight cage, helmetless now.";
+		print_ret "A compact exercise room that took the worst of the earthquake - weight racks overturned, a treadmill on its side, rubber matting buckled and torn. In the far corner a dead crewman lies pinned beneath a toppled cage of weights, still wearing his helmet.";
+	}
 	w_to: MainCorridor;
 	s_to: MedicalBay;
+}
+
+contains object body {
+	adjective: 'crew' 'dead';
+	noun: 'body' 'crewman' 'man' 'corpse';
+	description: [] {
+		if (PuzzleState &= HELMET_FREE and hand hasn't static)
+			print_ret "The crewman lies pinned under the weight cage, helmetless and missing a hand. There is nothing more to take from him.";
+		if (PuzzleState &= HELMET_FREE)
+			print_ret "The crewman lies pinned under the weight cage, helmetless now. One hand remains - you could sever it if you need it for the biometric scanner.";
+		print_ret "A dead crewman pinned under fallen gym equipment, still wearing his sealed helmet. The joints are seized with rust - something might free them up.";
+	}
+	before: [act] {
+		if (act is #take)
+			print_ret "The body is too heavy to move, and there is nothing to be gained by trying.";
+		rfalse;
+	}
+	static;
 }
 
 contains
@@ -233,19 +314,42 @@ object helmet {
 
 and
 object hand {
-	description: "I have no idea what this is.";
 	noun: 'hand';
+	description: [] {
+		// TODO: use @jin here?
+		if (PuzzleState &= CHARCOAL_IN_FILTER)
+			print_ret "The helmet has a charcoal-packed coffee filter fitted - a crude but effective smoke mask.";
+		if (PuzzleState &= FILTER_IN_HELMET)
+			print_ret "The helmet has a coffee filter fitted into its breathing port. Pack it with charcoal to complete the mask.";
+		if (PuzzleState &= HELMET_FREE)
+			print_ret "A sealed helmet, freed from the body. Fit a filter to make it a smoke mask.";
+		print_ret "A sealed helmet, seized up with rust on the dead crewman. It could be freed with WD40.";
+	}
 }
 
 location Library {
+	description: "Floor-to-ceiling shelves hold a mix of technical manuals and battered paperbacks, a handful of volumes knocked to the floor and left where they fell. One shelf along the far wall has come away from its fittings and hangs at an awkward angle.";
 	s_to: Lounge;
 }
 
+contains object shelf_board {
+	adjective: 'wooden';
+	noun: 'shelf' 'board';
+	description: "A solid wooden shelf that has come away from the wall, roughly a metre long. Sturdy enough to act as a ramp if leaned against something.";
+}
+
 location MedicalBay {
+	description: "Banks of white-painted metal cabinets line the walls, most drawers hanging open and rifled through in evident haste. A single examination table sits beneath a surgical light that will never illuminate anything again.";
 	n_to: Gymnasium;
 }
 
+contains object pestle {
+	noun: 'pestle';
+	description: "A heavy pestle, good for crushing things.";
+}
+
 location Lounge {
+	description: "Sagging sofas and a pair of armchairs are arranged around a low table strewn with old magazines and the scattered pieces of several abandoned board games. A television set is bolted to the wall at head height, its screen long dark.";
 	e_to: MainCorridor;
 }
 
