@@ -80,7 +80,6 @@
 	int yylex();
 	void yyerror(const char*,...);
 	uint16_t encode_string(uint8_t *dest,size_t destSize,const char *src,size_t srcSize,bool forDict = false);
-	int encode_string(const char*);
 	const uint8_t* print_encoded_string(const uint8_t *src,void (*pr)(char ch));
 	uint8_t next_global, story_shift = 1, dict_entry_size = 4;
 	int8_t next_local = -1;
@@ -202,6 +201,14 @@
 				r->storeInt(t);
 				return r->index;
 			}
+		}
+		static uint16_t createString(const char *src) {
+			size_t srcLen = strlen(src);
+			uint16_t bytes = encode_string(nullptr,0,src,srcLen);
+			auto b = create(bytes,UD_HIGH,"packed string");
+			b->offset = bytes;
+			encode_string(b->contents,bytes,src,srcLen);
+			return b->index;
 		}
 		static relocatableBlob* createProperty(uint16_t size,uint8_t propertyIndex) {
 			if (!size)
@@ -2451,7 +2458,7 @@ cond_expr
 	;
 
 opt_call_args
-	: STRLIT			{ $$ = NEW list_node<expr*>(new expr_literal(encode_string($1)),nullptr); delete[] $1; }
+	: STRLIT			{ $$ = NEW list_node<expr*>(new expr_reloc(relocatableBlob::createString($1)),nullptr); delete[] $1; }
 	| '(' ')'			{ $$ = nullptr; }
 	| '(' arg_list ')'	{ $$ = $2; }
 	;
@@ -2487,6 +2494,7 @@ expr
 	| '(' expr ')'  	{ $$ = expr::fold_constant($2); }
 	| primary       	{ $$ = $1; }
 	| intlit        	{ $$ = new expr_literal($1); }
+	| STRLIT			{ $$ = new expr_reloc(relocatableBlob::createString($1)); delete[] $1; }
 	| dict				{ $$ = new expr_literal($1); }
 	| PNAME				{ $$ = new expr_literal($1 & 63); }
 	| RNAME opt_call_args { $$ = new expr_call(NEW list_node<expr*>(new expr_reloc($1),$2)); }
@@ -2940,14 +2948,6 @@ void init(int version) {
 	the_globals["$v8"] = { INTLIT, int16_t(version >= 8) };
 	the_globals["Limbo"] = { ONAME, int16_t(0) };
 
-}
-
-int encode_string(const char *src) {
-	size_t srcLen = strlen(src);
-	uint16_t bytes = encode_string(nullptr,0,src,srcLen);
-	uint8_t *dest = NEW uint8_t[bytes];
-	encode_string(dest,bytes,src,srcLen);
-	return 0; // TODO
 }
 
 void emit1op(_1op opcode,operand uval) {
@@ -3662,6 +3662,8 @@ int main(int argc,char **argv) {
 					}
 				}
 			}
+			if (yyscope)
+				yyerror("Unbalanced braces or brackets (too %s closing ones)",yyscope>0?"few":"many");
 			if (!separator_count && the_dictionary.size())
 				yyerror("need at least one separators statement");
 			if (report & R_SUMMARY) 
