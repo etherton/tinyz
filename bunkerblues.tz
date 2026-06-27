@@ -62,7 +62,7 @@ object panel {
 		// print_obj obj; crlf;
 		if (act is #receive and obj is paperclip) {
 			internal_door gains open;
-			print_ret "The paperclip shorts out the broken wire and the door slides slowly open on the dwindling emergency power.";
+			return ScoreMsg(3,"The paperclip shorts out the broken wire and the door slides slowly open on the dwindling emergency power.");
 		}
 		rfalse;
 	}
@@ -310,11 +310,6 @@ contains object body {
 contains
 object helmet {
 	noun: 'helmet';
-}
-
-and
-object hand {
-	noun: 'hand';
 	description: [] {
 		// TODO: use @jin here?
 		if (PuzzleState &= CHARCOAL_IN_FILTER)
@@ -326,6 +321,34 @@ object hand {
 		print_ret "A sealed helmet, seized up with rust on the dead crewman. It could be freed with WD40.";
 	}
 }
+
+and
+object hand {
+	noun: 'hand';
+	static;
+}
+
+routine CutWith [do ido] {
+	if (ido isn't bread_knife)
+		print_retf "You'll need something sharper than that!";
+	if (do isn't hand)
+		print_retf "You don't need to cut that.";
+	if (hand hasn't static)
+		print_retf "You... can't cut it again.";
+	hand loses static;
+	return ScoreMsg(5,"It's grisly work but you managed to separate the hand from the body.");
+}
+
+// This shows how to do a verb that can have a default indirect object. Define the full version first, because
+// they are checked in order.
+action #cut { 'sever'/'cut' Nearby 'with' Held: CutWith }
+action #cut { 'sever'/'cut' Nearby: [do] { rfalse if not DefaultWith(bread_knife); return CutWith(do,IndirectObject); } }
+
+// This shows how to make a command an alias for a different command.
+routine RepairWith [do ido] { return PutOn(ido,do); }
+
+action #repair { 'repair'/'fix' Nearby 'with' Held: RepairWith }
+action #repair { 'repair'/'fix' Nearby: [do] { rfalse if not DefaultWith(paperclip); return RepairWith(do,IndirectObject); } }
 
 location Library {
 	description: "Floor-to-ceiling shelves hold a mix of technical manuals and battered paperbacks, a handful of volumes knocked to the floor and left where they fell. One shelf along the far wall has come away from its fittings and hangs at an awkward angle.";
@@ -406,6 +429,9 @@ routine RunTasks[] {
 	}
 	rtrue;
 }
+
+// To redirect to a different verb, just call the verb handler (Examine, Open, etc) directly
+// with the correct object (and indirect object).
 
 routine main[] {
 	room = Player parent;

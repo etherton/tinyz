@@ -179,10 +179,20 @@ global $tracebits;	// this controls which trace statements display
 // dir_bit, adj_bit, noun_bit, verb_bit
 // directions are also adjectives in most cases
 
+routine Score [delta] {
+	score = score + delta;
+	if (delta > 0)
+		print_ret "Your score just went up by ",delta," points!";
+	else
+		print_ret "Your score just went down by ",delta," points!";
+}
 
-routine perform [act obj iobj] {
-	act = act;
-	rfalse;
+// Given a delta and a string, display the string and adjust
+// the score, and always return true (useful for chaining in action handlers).
+routine ScoreMsg [delta string] {
+	print_paddr string;
+	crlf;
+	return Score(delta);
 }
 
 routine An [obj] {
@@ -237,6 +247,8 @@ routine Inventory [;i] {
 // The before routine should return true if the action is blocked (and explain why).
 // Otherwise it should return false to allow the action. Other side effects should not
 // happen because the action isn't guaranteed to succeed yet. CallAfter should handle that.
+// If any BlockBefore function returns true, we stop further processing on the command
+// by returning false.
 routine BlockBefore [act obj arg;r] {
 	if (isz obj)
 		rfalse;
@@ -248,14 +260,14 @@ routine BlockBefore [act obj arg;r] {
 }
 
 // This calls the after function, after an action has already succeeded. The return
-// value indicates whether it was understood or not.
-routine CallAfter [act obj value;r] {
-	if (iszero value)
-		value = obj;
+// value indicates whether it was understood (true) or not (false). If any CallAfter
+// returns true, verb handlers are expected to immediately return true. If all CallAfter
+// functions return false, a default response should be printed, and then return true.
+routine CallAfter [act obj arg;r] {
 	if (isnz obj) {
 		r = obj.after;
 		if (isnz r)
-			return call r(act,value);	
+			return call r(act,arg);	
 	}
 	rfalse;
 }
@@ -401,7 +413,7 @@ routine Open [obj] {
 		print_retf "You cannot open that.";
 	rfalse if BlockBefore(#open,obj);
 	if (obj has open)
-		print_retf "It's already open";
+		print_retf "It's already open.";
 	obj gains open;
 	rtrue if CallAfter(#open,obj);
 	print_ret "Opened.";
@@ -412,7 +424,7 @@ routine Close [obj] {
 		print_retf "You cannot close that.";
 	rfalse if BlockBefore(#close,obj);
 	if (obj hasn't open)
-		print_retf "It's already closed";
+		print_retf "It's already closed.";
 	obj loses open;
 	rtrue if CallAfter(#close,obj);
 	print_ret "Closed.";
@@ -444,7 +456,7 @@ routine PutOn [do ido] {
 		}
 
 		rfalse if BlockBefore(#puton,room);
-		rfalse if BlockBefore(#receive,do);
+		rfalse if BlockBefore(#receive,ido,do);
 		rfalse if BlockBefore(#puton,ido);
 
 		move do into ido;
@@ -646,10 +658,10 @@ action #look { 'look at'/'examine' Nearby: Examine }
 action #open { 'open' Nearby: Open }
 action #close { 'close' Nearby: Close }
 action #lookHere { 'look': Look }
-action #puton { 'hang'/'place'/'put'/'attach' Held 'on'/'upon'/'on to'/'onto' Here: PutOn }
+action #puton { 'hang'/'place'/'put'/'attach' Held 'on'/'upon'/'on to'/'onto'/'in'/'into' Here: PutOn }
 action #go { 'go'/'go to' Direction: Travel }
-action #restart { 'restart'/'restart game': [] { if (istruth Yes()) restart; rfalse; } }
-action #quit { 'quit'/'quit game': [] { if (istruth Yes()) quit; rfalse; } }
+action #restart { 'restart'/'restart game': [] { rfalse if not Yes(); restart; } }
+action #quit { 'quit'/'quit game': [] { rfalse if not Yes(); quit; } }
 action #wait { 'wait' : [] { rtrue; } }
 action #leave;
 action #enter;
@@ -782,6 +794,14 @@ global ActionRoutine;
 global DirectObject;
 global IndirectObject;
 
+routine DefaultWith [obj] {
+	if (Player holds obj) {
+		IndirectObject = obj;
+		print_ret "(with ",the(obj),")";
+	}
+	print_retf "What do you want to do that with?";
+}
+
 routine ScanParseTable [; n matched warned] {
 	na = 0;
 	DirectObject = 0;
@@ -912,7 +932,7 @@ routine DebugActions[;a n] {
 
 #if not RELEASE
 action #traceOn { '#trace on' : [] { $tracebits = 1; rfalse; } }
-action #traceOff { '#trace off' : [] { $tracebits = 0; rfalse; }}
+action #traceOff { '#trace off' : [] { $tracebits = 0; rfalse; } }
 action #debugActions { '#debug actions' : DebugActions }
 #endif
 
