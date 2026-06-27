@@ -1815,7 +1815,7 @@
 
 %token ATTRIBUTE PROPERTY GLOBAL OBJECT LOCATION ROUTINE WORDBIT ACTION HAS HASNT IN HOLDS SYNONYM CONTINUE BREAK
 %token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET PRINT_RETF SELF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF ONCE
-%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF HASH_INCLUDE TRACE UNPARENT FOR CONTAINS
+%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF HASH_INCLUDE TRACE UNPARENT FOR CONTAINS PADDR
 %token <ival> DICT ANAME PNAME LNAME GNAME INTLIT ONAME
 %token <sval> STRLIT CSTRLIT SEPARATORS
 %token <rval> RNAME
@@ -2450,6 +2450,7 @@ print_item
 	| '(' expr ')' { $$ = new stmt_varop1(_var::print_num,$2); }
 	| RNAME '(' arg_list ')' { $$ = new stmt_call(NEW list_node<expr*>(new expr_reloc($1),$3)) }
 	| OBJECT expr { $$ = new stmt_1op(_1op::print_obj,$2); }
+	| PADDR expr { $$ = new stmt_1op(_1op::print_paddr,$2); }
 	| STMT_0OP { $$ = new stmt_0op($1); }
 	| STRLIT { $$ = new stmt_print(_0op::print,false,$1); }
 	| RFALSE { $$ = new stmt_return(new expr_literal(0)); }
@@ -2794,6 +2795,7 @@ void init(int version) {
 	rw["property"] = PROPERTY;
 	rw["global"] = GLOBAL;
 	rw["object"] = OBJECT;
+	rw["paddr"] = PADDR;
 	rw["location"] = LOCATION;
 	rw["routine"] = ROUTINE;
 	rw["wordbit"] = WORDBIT;
