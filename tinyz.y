@@ -2022,6 +2022,10 @@ word
 			yyerror("too many word initializers"); 
 		current_global->storeWord($1); 
 	}
+	| STRLIT
+	{
+		current_global->addRelocation(relocatableBlob::createString($1)); delete[] $1; 
+	}
 	;
 
 object_def
