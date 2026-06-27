@@ -124,8 +124,18 @@ object coffee_filter in Limbo {
 	adjective: 'coffee';
 }
 
+global TibblesBanter = word_array(6) {
+	"^Tibbles: ~I'm a cleaner, not a magician, but watch this dirt disappear!~^",
+	"^Tibbles: ~Why walk when you can vacuum?~^",
+    "^Tibbles: ~Clean floors, happy life.~^",
+    "^Tibbles: ~I've got the suction, and I'm not afraid to use it.~^",
+    "^Tibbles: ~I'm not just a pretty face, I'm a pretty powerful vacuum too!~^",
+	"^Tibbles: ~Dirt, dust, and debris beware, I'm on the prowl!~^"
+};
+
 location MainCorridor {
 	description: [] {
+		print_paddr TibblesBanter[[random(6)-1]];
 		if (PuzzleState &= ELECTRICITY_STATUS)
 			print_ret "The main corridor runs the full length of the bunker under steady, bright fluorescent 
 				light - a relief after the emergency flicker. Rows of painted-steel doors line each side, 
@@ -429,9 +439,6 @@ routine RunTasks[] {
 	}
 	rtrue;
 }
-
-// To redirect to a different verb, just call the verb handler (Examine, Open, etc) directly
-// with the correct object (and indirect object).
 
 routine main[] {
 	room = Player parent;
