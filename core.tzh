@@ -498,7 +498,7 @@ routine Drop [obj] {
 }
 
 routine PutOn [do ido] {
-	// print "PutOn!^"; print_num do; crlf; print_num ido; crlf;
+	// print "PutOn(", object do, ",", object ido, ")^";
 	// When before is called with an arg of zero, it
 	// should return true if the action is possible.
 	if (isfalse BlockBefore(#puton,ido,0))
@@ -633,7 +633,7 @@ routine ParseCommon [root; i adj] {
 				++i;
 			}
 			print "or ",the(ObjectList[[i]]),"?^";
-			rfalse;
+			rtrue;	// we printed something
 		}
 		if (ObjectListCount is 1) {
 			nw = nw + 2;
@@ -846,9 +846,25 @@ global IndirectObject;
 routine DefaultWith [obj] {
 	if (actor holds obj) {
 		IndirectObject = obj;
-		print_ret "(with ",the(obj),")";
+		print "(with ",the(obj),")^";
+		return DirectObject;
 	}
-	print_retf "What do you want to do that with?";
+	print_ret "What do you want to do that with?";
+}
+
+routine NearbyWithHeld [defaultObject] {
+	// print "NearbyWithHeld ",object defaultObject,crlf;
+	DirectObject = Nearby();
+	if (DirectObject < 2)
+		return DirectObject;
+	if (parse_buffer[[nw]] is 'with') {
+		nw = nw + 2;
+		IndirectObject = Held();
+		if (IndirectObject is false)
+			print_ret "That's not something you're holding?";
+		return DirectObject;
+	}
+	return DefaultWith(defaultObject);
 }
 
 routine ScanParseTable [; n matched warned] {
@@ -883,16 +899,22 @@ routine ScanParseTable [; n matched warned] {
 						matched = $actions[[na]];
 						if (DirectObject isn't zero) {
 							IndirectObject = call matched();
-							if (isfalse IndirectObject) {
-								if (once warned) print "I don't know what indirect object you mean.^";
+							if (IndirectObject < 2) {
+								if (IndirectObject is true)
+									warned = true;
+								else if (once warned) 
+									print "I don't know what indirect object you mean.^";
 								matched = 0;
 							}
 							trace 1 "IndirectObject now ",IndirectObject,crlf;
 						}
 						else {
 							DirectObject = call matched();
-							if (isfalse DirectObject) {
-								if (once warned) print "I don't know which direct object you mean.^";
+							if (DirectObject < 2) {
+								if (DirectObject is true)
+									warned = true;
+								else if (once warned) 
+									print "I don't know which direct object you mean.^";
 								matched = 0;
 							}
 							trace 1 "DirectObject now ",DirectObject,crlf;
@@ -910,7 +932,8 @@ routine ScanParseTable [; n matched warned] {
 			matched = 0;
 		} while (n >= 0);
 	}
-	if (once warned) print "I didn't understand that.^";
+	if (once warned) 
+		print "I didn't understand that.^";
 	rfalse;
 }
 

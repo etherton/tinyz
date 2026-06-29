@@ -378,14 +378,12 @@ routine CutWith [do ido] {
 
 // This shows how to do a verb that can have a default indirect object. Define the full version first, because
 // they are checked in order.
-action #cut { 'sever'/'cut' Nearby 'with' Held: CutWith }
-action #cut { 'sever'/'cut' Nearby: [do] { rfalse if not DefaultWith(bread_knife); return CutWith(do,IndirectObject); } }
+action #cut { 'sever'/'cut' NearbyWithHeld(bread_knife): CutWith }
 
 // This shows how to make a command an alias for a different command.
 routine RepairWith [do ido] { return PutOn(ido,do); }
 
-action #repair { 'repair'/'fix' Nearby 'with' Held: RepairWith }
-action #repair { 'repair'/'fix' Nearby: [do] { rfalse if not DefaultWith(paperclip); return RepairWith(do,IndirectObject); } }
+action #repair { 'repair'/'fix' NearbyWithHeld(paperclip): RepairWith }
 
 location Library {
 	description: "Floor-to-ceiling shelves hold a mix of technical manuals and battered paperbacks, a handful of volumes knocked to the floor and left where they fell. One shelf along the far wall has come away from its fittings and hangs at an awkward angle.";
