@@ -986,6 +986,19 @@ routine DoTurn[; i] {
 	rfalse;
 }
 
+routine ClassifierName [r] {
+	if (r is addrof Nearby)
+		return "Nearby";
+	else if (r is addrof Held)
+		return "Held";
+	else if (r is addrof Here)
+		return "Here";
+	else if (r is addrof Direction)
+		return "Direction";
+	else
+		return "???";
+}
+
 routine DebugActions[;a n] {
 	while ($actions[[a]] isnt -1) {
 		repeat {
@@ -993,11 +1006,11 @@ routine DebugActions[;a n] {
 			++a;
 			PrintDict(n & wordMask);
 			if (n &= hasSecondWord)
-				print "+";
-			else
 				print " ";
+			else if (n & (isRoutine | isEnd) is zero)
+				print "/";
 			if (n &= isRoutine) {
-				print "(routine ",$actions[[a]],") ";
+				print " ",paddr ClassifierName($actions[[a]])," ";
 				++a;
 			}
 		} while (n > 0);
