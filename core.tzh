@@ -852,6 +852,11 @@ routine DefaultWith [obj] {
 	print_ret "What do you want to do that with?";
 }
 
+// Normally classifiers return 0 if they failed, 1 if they failed and printed a message,
+// or the object that they matched. ParseCommon then assigns the result to DirectObject
+// or IndirectObject accordingly. Since NearbyWithHeld is called immediately after the verb,
+// we need to assign to DirectObject directly, then manually consume the 'with' if it's present,
+// then manually call the second classifier, but return the original direct object.
 routine NearbyWithHeld [defaultObject] {
 	// print "NearbyWithHeld ",object defaultObject,crlf;
 	DirectObject = Nearby();
