@@ -74,6 +74,8 @@ object panel {
 			rtrue if not obj;
 			if (self hasn't open)
 				print_ret "You'll need to open the panel first.";
+			else if (obj isn't paperclip)
+				print_ret "You can't repair the panel with that.";
 		}
 		rfalse;
 	}
@@ -378,12 +380,12 @@ routine CutWith [do ido] {
 
 // This shows how to do a verb that can have a default indirect object. Define the full version first, because
 // they are checked in order.
-action #cut { 'sever'/'cut' NearbyWithHeld(bread_knife): CutWith }
+action #cut { 'sever'/'cut' WithHeld(addrof Nearby,bread_knife): CutWith }
 
 // This shows how to make a command an alias for a different command.
 routine RepairWith [do ido] { return PutOn(ido,do); }
 
-action #repair { 'repair'/'fix' NearbyWithHeld(paperclip): RepairWith }
+action #repair { 'repair'/'fix' WithHeld(addrof Nearby,paperclip): RepairWith }
 
 location Library {
 	description: "Floor-to-ceiling shelves hold a mix of technical manuals and battered paperbacks, a handful of volumes knocked to the floor and left where they fell. One shelf along the far wall has come away from its fittings and hangs at an awkward angle.";
@@ -423,8 +425,7 @@ routine CrushWith[do ido] {
 	}
 }
 
-action #crushWith { 'crush'/'smash' Nearby 'with' Held: CrushWith }
-action #crushWith { 'crush'/'smash' Nearby: [do] { rfalse if not DefaultWith(pestle); return CrushWith(do,IndirectObject); } }
+action #crushWith { 'crush'/'smash' WithHeld(addrof Nearby,pestle): CrushWith }
 
 location Lounge {
 	description: "Sagging sofas and a pair of armchairs are arranged around a low table strewn with old magazines and the scattered pieces of several abandoned board games. A television set is bolted to the wall at head height, its screen long dark.";

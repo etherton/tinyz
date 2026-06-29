@@ -857,9 +857,9 @@ routine DefaultWith [obj] {
 // or IndirectObject accordingly. Since NearbyWithHeld is called immediately after the verb,
 // we need to assign to DirectObject directly, then manually consume the 'with' if it's present,
 // then manually call the second classifier, but return the original direct object.
-routine NearbyWithHeld [defaultObject] {
-	// print "NearbyWithHeld ",object defaultObject,crlf;
-	DirectObject = Nearby();
+routine WithHeld [doClassifier defaultObject] {
+	// print "WithHeld ",object defaultObject,crlf;
+	DirectObject = call doClassifier();
 	if (DirectObject < 2)
 		return DirectObject;
 	if (parse_buffer[[nw]] is 'with') {

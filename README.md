@@ -243,11 +243,13 @@ These all exit the current routine. A return with a constant value of zero or on
 to an `rfalse` or `rtrue` as appropriate. Note that all branches of any routine must explicitly return. There is
 no default, intentionally, so that you have to think about whether you want to return zero or nonzero.
 
+`return expr if expr`\
 `rfalse if expr`\
 `rtrue if expr;`\
 These exit the current routine if the expression (usually a function call) evaluates to nonzero. This is shorthand
 for `if (istruth expr) rtrue/rfalse;`
 
+`return expr if not expr`\
 `rfalse if not expr`\
 `rtrue if not expr;`\
 These exit the current routine if the expression (usually a function call) evaluates to zero. This is shorthand

@@ -2532,6 +2532,7 @@ expr
 	| STRLIT			{ $$ = new expr_reloc(relocatableBlob::createString($1)); delete[] $1; }
 	| dict				{ $$ = new expr_literal($1); }
 	| PNAME				{ $$ = new expr_literal($1 & 63); }
+	| ADDROF rname		{ $$ = new expr_reloc($2); }
 	| RNAME opt_call_args { $$ = new expr_call(NEW list_node<expr*>(new expr_reloc($1),$2)); }
 	| CALL expr opt_call_args { $$ = new expr_call(NEW list_node<expr*>($2,$3)); }
 	| ignorable_expr	{ $$ = $1; }
