@@ -38,6 +38,7 @@ attribute object plural;
 attribute object scenery;
 attribute object supporter;
 attribute object clothing;
+attribute object worn;
 attribute object open;
 attribute object openable;
 attribute object container;			// can contain other things
@@ -55,6 +56,7 @@ attribute location visited;
 property global description;
 property global before;
 property global after;
+property global superclass;
 property object adjective wordbit adjectiveBit;
 property object noun wordbit nounBit;
 property location n_to;
@@ -70,9 +72,11 @@ property location down_to;
 property location cant_go;
 property location pobjects;	// Short for pseudo objects, which is a pain to type.
 
-// Parent for all locations. The first location defined is the default for all
-// locations.
+// Parent for all locations. The first location defined is the default for all locations.
 location Locations "Locations" {
+}
+
+location Classes "root" {
 }
 
 location CompassRose "Compass" in Limbo {
@@ -170,8 +174,16 @@ constant $tracebits = 0;
 #else
 global $tracebits;	// this controls which trace statements display
 #endif
+global actor;		// Usually the player, the one performing the current command.
 
 //////////////////// LIBRARY CODE /////////////////////
+
+// Note in classes, self points to the actual object being processed, not the class object itself.
+class container_class {
+	before: [self act arg] {
+		rfalse;
+	}
+}
 
 // there are several ways to declare dictionary words. the syntax always
 // uses single quotes. the context determines which bits are set on the word
@@ -229,14 +241,22 @@ routine the [obj] {
 
 // General actions should return true if they worked, and false if they failed.
 // Failed actions don't cost a game turn.
-routine Inventory [;i] {
+routine Inventory [;i j] {
 	if (Player has child -> i) {
 		print "You are carrying:";
 		crlf;
 		repeat {
-			print "  ";
-			print_obj i;
-			crlf;
+			print "  ",object i;
+			if (i has worn)
+				print " (being worn)";
+			if (i has child -> j) {
+				print ", which contains:^";
+				repeat {
+					print "    ", object j,crlf;
+				} while (j has sibling -> j);
+			}
+			else
+				crlf;
 		} while (i has sibling -> i);
 		rtrue;
 	}
@@ -248,15 +268,18 @@ routine Inventory [;i] {
 // Otherwise it should return false to allow the action. Other side effects should not
 // happen because the action isn't guaranteed to succeed yet. CallAfter should handle that.
 // If any BlockBefore function returns true, we stop further processing on the command
-// by returning false.
+// by returning false. If arg is zero, we are merely checking to see if the action
+// is possible/understood, and should return true in that case.
 routine BlockBefore [act obj arg;r] {
-	if (isz obj)
-		rfalse;
-	r = obj.before;
-	if (isnz r)
-		return call r(act,arg);
-	else
-		rfalse;
+	while (isnz obj) {
+		r = obj.before;
+		if (isnz r) {
+			// print "calling before on ",object obj," with value ",arg,"^";
+			return call r(obj,act,arg);
+		}
+		obj = obj.superclass;
+	}
+	rfalse;
 }
 
 // This calls the after function, after an action has already succeeded. The return
@@ -264,12 +287,37 @@ routine BlockBefore [act obj arg;r] {
 // returns true, verb handlers are expected to immediately return true. If all CallAfter
 // functions return false, a default response should be printed, and then return true.
 routine CallAfter [act obj arg;r] {
-	if (isnz obj) {
+	while (isnz obj) {
+		rfalse if not obj;
 		r = obj.after;
-		if (isnz r)
-			return call r(act,arg);	
+		if (isnz r) {
+			// print "calling after on ",object obj," with value ",arg,"^";
+			return call r(obj,act,arg);
+		}
+		obj = obj.superclass;
 	}
 	rfalse;
+}
+
+
+routine Wear [obj] {
+	if (actor holds obj and obj has worn)
+		print_ret "You're already wearing that!";
+	rfalse if BlockBefore(#wear,obj,obj);
+	if (not actor holds obj)
+		move obj into actor;
+	obj gains worn;
+	rtrue if CallAfter(#wear,obj,obj);
+	print_ret "You put on ",the(obj),".";
+}
+
+routine UnWear [obj] {
+	if (obj hasn't worn)
+		print_ret "You're not wearing it.";
+	rfalse if BlockBefore(#unwear,obj,obj);
+	obj loses worn;
+	rtrue if CallAfter(#unwear,obj,obj);
+	print_ret "You remove ",the(obj),".";
 }
 
 routine Exits [;i j k exitBits exitCount] {
@@ -278,7 +326,7 @@ routine Exits [;i j k exitBits exitCount] {
 			j = room.i;
 			if (j > $object_count) {
 				output_stream -1;
-				j = call j();
+				j = call j(room);
 				output_stream 1;
 				// catch rfalse/rtrue returns and do nothing.
 				if (j <= 1)
@@ -333,7 +381,7 @@ routine ContainsAttribute [obj attr; i] {
 routine Look [; i r f] {
 	if (isfalse ContainsAttribute(room,lit))
 		print_ret "It's too dark to see anything.";
-	r = call room.description();
+	r = call room.description(room);
 	if (room has child -> i) {
 		repeat {
 			if (i isn't Player and i has $is_object and i hasn't scenery) {
@@ -356,10 +404,10 @@ routine Travel [dir;r] {
 			if (isz r)
 				print_retf "You can't go in that direction.";
 			else
-				return call r();
+				return call r(room);
 		}
 		else if (r < zero or r > $object_count)
-			r = call r();
+			r = call r(room);
 		// player is the first object, and cannot be a room.
 		// this leave rfalse and rtrue as valid responses.
 		if (r > 1) {
@@ -378,6 +426,8 @@ routine Take [obj] {
 		print_ret "You're already carrying it.";
 	else if (obj has scenery)
 		print_retf "You can't take that, it's just scenery.";
+	else if (obj has static)
+		print_retf "You can't take that, it's firmly attached.";
 	rfalse if BlockBefore(#take,room);
 	rfalse if BlockBefore(#take,obj);
 	move obj into Player;
@@ -389,8 +439,8 @@ routine Examine [obj; desc i f] {
 	if (isfalse ContainsAttribute(room,lit))
 		print_retf "It's too dark to see it.";
 	desc = obj.description;
-	if (isnz desc)
-		call desc();
+	if (isnz desc) 
+		call desc(obj);
 	else
 		print "It's just an ordinary ",object obj,".^";
 
@@ -433,10 +483,14 @@ routine Close [obj] {
 routine Drop [obj] {
 	// print "Dropping "; print_num obj; crlf;
 	// print_num obj parent; crlf;
-	if (Player holds obj) {
+	if (actor holds obj) {
 		rfalse if BlockBefore(#drop,room);
 		rfalse if BlockBefore(#drop,obj);
 		move obj into Player parent;
+		if (obj has worn) {
+			obj loses worn;
+			print "(taking ",the(obj)," off first...)^";
+		}
 		print_ret "You drop ",the(obj),".";
 	}
 	else
@@ -445,30 +499,23 @@ routine Drop [obj] {
 
 routine PutOn [do ido] {
 	// print "PutOn!^"; print_num do; crlf; print_num ido; crlf;
-	if (ido has supporter or ido has container) {
-		if (ido has supporter and ido has child)
-			print_retf "There's no room.";
-		if (ido has supporter and do hasn't clothing)
-			print_retf "It's only meant to hold clothing.";
-		if (ido has container and ido hasn't open) {
-			it = ido;
-			print_retf "You need to open ",the(ido)," first.";
-		}
+	// When before is called with an arg of zero, it
+	// should return true if the action is possible.
+	if (isfalse BlockBefore(#puton,ido,0))
+		print_retf "You can't put ",the(do)," there.";
 
-		rfalse if BlockBefore(#puton,room);
-		rfalse if BlockBefore(#receive,ido,do);
-		rfalse if BlockBefore(#puton,ido);
+	// rfalse if BlockBefore(#puton,room,room);
+	rfalse if BlockBefore(#receive,ido,do);
+	rfalse if BlockBefore(#puton,ido,do);
 
-		move do into ido;
+	move do into ido;
 
-		rtrue if CallAfter(#puton,ido);
-		rtrue if CallAfter(#receive,ido,do);
-		rtrue if CallAfter(#puton,room);
+	rtrue if CallAfter(#puton,ido,ido);
+	rtrue if CallAfter(#receive,ido,do);
+	// rtrue if CallAfter(#puton,room,);
 
-		print_ret "You place ",the(do)," on ",the(ido),".";
-	}
-	else
-		print_retf "You can't put ",the(do)," on ",the(ido),".";
+	print_ret "You place ",the(do)," on ",the(ido),".";
+
 }
 
 // The action table starts with the action routine, or -1 to terminate the entire list.
@@ -663,6 +710,8 @@ action #go { 'go'/'go to' Direction: Travel }
 action #restart { 'restart'/'restart game': [] { rfalse if not Yes(); restart; } }
 action #quit { 'quit'/'quit game': [] { rfalse if not Yes(); quit; } }
 action #wait { 'wait' : [] { rtrue; } }
+action #wear { 'wear'/'put on' Nearby: Wear }
+action #unwear { 'take off'/'remove'/'disrobe' Held: UnWear }
 action #leave;
 action #enter;
 action #receive;
@@ -795,7 +844,7 @@ global DirectObject;
 global IndirectObject;
 
 routine DefaultWith [obj] {
-	if (Player holds obj) {
+	if (actor holds obj) {
 		IndirectObject = obj;
 		print_ret "(with ",the(obj),")";
 	}
@@ -935,6 +984,12 @@ action #traceOn { '#trace on' : [] { $tracebits = 1; rfalse; } }
 action #traceOff { '#trace off' : [] { $tracebits = 0; rfalse; } }
 action #debugActions { '#debug actions' : DebugActions }
 #endif
+
+routine LibraryInitialize [] {
+	room = Player parent;
+	actor = Player;
+	rfalse;
+}
 
 routine ReleaseInfo [; hdr] {
    print "Release ",hdr[[1]]," compiled on ",PrintString(18,6)," by tinyzc v",PrintString(60,4),"^";

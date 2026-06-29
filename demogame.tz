@@ -58,7 +58,7 @@ object PrayerBook "Prayer Book" {
 }
 
 object Altar "Obsidian Altar" in Clearing {
-	description: [] {
+	description: [self] {
 		print "It is covered in strange runes and has a hidden shelf.^";
 		if (iszero PrayerBook parent) {
 			move PrayerBook into self parent;

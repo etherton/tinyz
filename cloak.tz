@@ -173,7 +173,7 @@ location cloakroom "Cloakroom" (Locations) {
 object hook "small brass hook" (cloakroom) {
 	adjective: 'small' 'brass';
 	noun: 'hook' 'peg';
-	description: [;c] {
+	description: [self ;c] {
 		print "It's just a small brass hook, ";
 		if (self has child -> c)
 			print_ret "with ",an(c),object c," hanging on it.";
@@ -204,7 +204,7 @@ location bar "Foyer Bar" (Locations) {
 			of the foyer to the north, is completely empty. There seems to
 			be some sort of message scrawled in the sawdust on the floor.";
 	n_to: foyer;
-	before: [act arg; temp] {
+	before: [self act arg; temp] {
 		if (act in {#look,#inv})
 			rfalse;
 		else if (act is #leave and arg is n_to)
@@ -231,13 +231,13 @@ object cloak "velvet cloak" (Player) {
 			spattered with raindrops. Its ",italic,"blackness",normal," is so deep that it
 			almost seems to suck light from the room.";
 	}
-	before: [act] {
+	before: [self act] {
 		if (act in {#drop,#puton} and room isnt cloakroom)
 			print_ret "This isn't the best place to leave
 				a smart cloak lying around.";
 		rfalse; // not handled, allow action to continue
 	}
-	after: [act] {
+	after: [self act] {
 		if (act is #take)
 			bar loses lit;
 		else if (act in {#puton,#drop} and room is cloakroom) {
@@ -255,7 +255,7 @@ object cloak "velvet cloak" (Player) {
 object message "scrawled message" (bar) {
 	adjective: 'scrawled';
 	noun: 'message' 'sawdust' 'floor';
-	description: []{
+	description: [self]{
 		if (message_damage < 2) {
 			++score;
 			deadflag = 2;
@@ -308,7 +308,7 @@ routine BlockBefore [act obj arg;r] {
 		rfalse;
 	r = obj.before;
 	if (isnz r)
-		return call r(act,arg);
+		return call r(obj,act,arg);
 	else
 		rfalse;
 }
@@ -319,7 +319,7 @@ routine CallAfter [act obj;r] {
 	if (isnz obj) {
 		r = obj.after;
 		if (isnz r)
-			return call r(act,obj);	
+			return call r(obj,act,obj);	
 	}
 	rtrue;
 }
@@ -327,7 +327,7 @@ routine CallAfter [act obj;r] {
 routine Look [; i r f] {
 	if (room hasn't lit)
 		print_ret "It's too dark to see anything.";
-	r = call room.description();
+	r = call room.description(room);
 	if (room has child -> i) {
 		repeat {
 			if (i isn't Player and i has $is_object and i hasn't scenery) {
@@ -346,7 +346,7 @@ routine Travel [dir;r] {
 		if (isz r)
 			print_retf "You can't go in that direction.";
 		else if (r < zero or r > $object_count)
-			r = call r();
+			r = call r(room);
 		// player is the first object, and cannot be a room.
 		// this leave rfalse and rtrue as valid responses.
 		if (r > 1) {
@@ -380,7 +380,7 @@ routine Examine [obj; desc] {
 		print_retf "It's too dark to see anything.";
 	desc = obj.description;
 	if (isnz desc)
-		return call desc();
+		return call desc(obj);
 	else
 		print_ret "It's just an ordinary ",object obj,".";
 }

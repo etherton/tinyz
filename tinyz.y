@@ -1151,7 +1151,8 @@
 		default_location; 
 	const uint8_t SCOPE_OBJECT_MASK = 0x40;
 	const uint8_t SCOPE_LOCATION_MASK = 0x80;
-	const uint8_t scope_masks[3] = { SCOPE_OBJECT_MASK | SCOPE_LOCATION_MASK, SCOPE_OBJECT_MASK, SCOPE_LOCATION_MASK };
+	const uint8_t SCOPE_GLOBAL_MASK = SCOPE_OBJECT_MASK | SCOPE_LOCATION_MASK;
+	const uint8_t scope_masks[3] = { SCOPE_GLOBAL_MASK, SCOPE_OBJECT_MASK, SCOPE_LOCATION_MASK };
 	uint8_t attribute_next[3] = {31,1,1}; // 31 should be 47 for v4+
 	uint8_t property_next[3] = {31,1,1}; // 31 should be 63 for v4+
 	uint8_t next_value_in_scope(scope_enum sc,uint8_t *state) {
@@ -1814,8 +1815,8 @@
 }
 
 %token ATTRIBUTE PROPERTY GLOBAL OBJECT LOCATION ROUTINE WORDBIT ACTION HAS HASNT IN HOLDS SYNONYM CONTINUE BREAK
-%token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET PRINT_RETF SELF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF ONCE
-%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF HASH_INCLUDE TRACE UNPARENT FOR CONTAINS PADDR
+%token BYTE_ARRAY WORD_ARRAY CALL PRINT PRINT_RET PRINT_RETF SIBLING CHILD PARENT MOVE INTO CONSTANT SIZEOF ADDROF ONCE
+%token ISZERO ISNONZERO HASH_IF HASH_ELSE HASH_ENDIF HASH_INCLUDE TRACE UNPARENT FOR CONTAINS PADDR CLASS
 %token <ival> DICT ANAME PNAME LNAME GNAME INTLIT ONAME
 %token <sval> STRLIT CSTRLIT SEPARATORS
 %token <rval> RNAME
@@ -1873,6 +1874,7 @@ decl
 	| global_def
 	| object_def
 	| location_def
+	| class_def
 	| routine_def
 	| wordbit_def
 	| action_def
@@ -2036,6 +2038,10 @@ location_def
 	: opt_hierarchy LOCATION { expected_scope = SCOPE_LOCATION_MASK; hierarchy = $1; } object_or_location_def
 	;
 
+class_def
+	: CLASS { expected_scope = SCOPE_GLOBAL_MASK; hierarchy = 2; } object_or_location_def
+	;
+
 opt_hierarchy
 	: CONTAINS			{ $$ = CHILD; if (!prev_value) yyerror("No previous object!"); }
 	| AND				{ $$ = SIBLING; if (!prev_value) yyerror("No pervious object!"); }
@@ -2070,6 +2076,8 @@ object_or_location_def
 			the_object_table[$3]->child = $1;
 		}
 
+		if (!strlen($2))
+			yyerror("cannot have empty string for object name");
 		cdef->descrLen = encode_string(nullptr,0,$2,strlen($2));
 		cdef->descr = NEW uint8_t[cdef->descrLen];
 		encode_string(cdef->descr,cdef->descrLen,$2,strlen($2));
@@ -2145,15 +2153,19 @@ property_or_attribute_list
 property_or_attribute
 	: PNAME ':' { currentProperty = $1 & 63; currentBits = $1; } pvalue		
 			{ 
-				if (!($1 & expected_scope))
+				if (expected_scope == SCOPE_GLOBAL_MASK && ($1 & SCOPE_GLOBAL_MASK) != SCOPE_GLOBAL_MASK)
+					yyerror("only global properties can appear in classes");
+				else if (!($1 & expected_scope))
 					yyerror("wrong type of property"); 
-				if (cdef->properties[currentProperty])
+				else if (cdef->properties[currentProperty])
 					yyerror("already have property %d set",currentProperty);
 				cdef->properties[currentProperty] = the_relocations[$4];
 				cdef->propertySize += the_relocations[$4]->size;
 			}
 	| ANAME ';'
 			{ 
+				if (expected_scope == SCOPE_GLOBAL_MASK && ($1 & SCOPE_GLOBAL_MASK) != SCOPE_GLOBAL_MASK)
+					yyerror("only global attributes can appear in classes");
 				if (!($1 & expected_scope)) 
 					yyerror("wrong type of attribute"); 
 				uint8_t thisIndex = $1 & 63;
@@ -2579,7 +2591,6 @@ primary
 lvalue
 	: vname				{ $$ = new lvalue_variable($1); }
 	| ONAME				{ $$ = new lvalue_literal($1); }
-	| SELF				{ $$ = new lvalue_literal(self_value); }
 	| lvalue '.' pname	{ $$ = new lvalue_property($1,$3); }
 	| lvalue PARENT		{ $$ = new lvalue_unary(_1op::get_parent,$1); }
 	| lvalue CHILD		{ $$ = new lvalue_unary(_1op::get_child,$1); }
@@ -2795,6 +2806,7 @@ void init(int version) {
 	rw["property"] = PROPERTY;
 	rw["global"] = GLOBAL;
 	rw["object"] = OBJECT;
+	rw["class"] = CLASS;
 	rw["paddr"] = PADDR;
 	rw["location"] = LOCATION;
 	rw["routine"] = ROUTINE;
@@ -2835,7 +2847,6 @@ void init(int version) {
 	rw["print_ret"] = PRINT_RET;
 	rw["print_retf"] = PRINT_RETF;
 	rw["trace"] = TRACE;
-	rw["self"] = SELF;
 	rw["move"] = MOVE;
 	rw["unparent"] = UNPARENT;
 	rw["into"] = INTO;
@@ -3629,11 +3640,12 @@ int main(int argc,char **argv) {
 		yyscope = 0;
 		if (yypass==1) {
 			int t;
+			// In the first pass, we catch symbols at outermost scope level.
 			while ((t = yylex()) != EOF) {
 				if (yyscope == 0) {
 					if (t == ATTRIBUTE || t == PROPERTY)
 						yylex();	// skip LOCATION/OBJECT/GLOBAL
-					else if (t == OBJECT || t == LOCATION) {
+					else if (t == OBJECT || t == LOCATION || t == CLASS) {
 						if (yylex() == NEWSYM) {
 							// declare the object and assign its value
 							the_globals[yytoken] = { ONAME,(int16_t)the_object_table.size() };

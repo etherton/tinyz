@@ -19,6 +19,18 @@ constant HELMET_FREE = 1 << 1;
 constant CHARCOAL_IN_FILTER = 1 << 2;
 constant FILTER_IN_HELMET = 1 << 3;
 
+object survival_suit in Player {
+	adjective: 'survival';
+	noun: 'suit';
+	description: "A heavy-duty survival suit, slightly too large and smelling of must. It offers some protection but leaves your head entirely exposed.";
+	clothing; worn;
+	before: [act obj] {
+		if (act in {#unwear,#drop})
+			print_ret "You're afraid that if you try to take it off, you won't be able to get it back on again.";
+		rfalse;
+	}
+}
+
 location Airlock {
 	description: "You are standing in a dimly lit airlock of a 
 		fallout shelter. You hear the faint hum of the emergency 
@@ -47,8 +59,7 @@ object panel {
 	adjective: 'control' 'circuit';
 	scenery;
 	openable;
-	container;
-	description: [] {
+	description: [self] {
 		if (self has open) {
 			if (internal_door has open)
 				print_ret "The panel is open. A paperclip is now permanently fused to the circuit board, providing power to the inner door.";
@@ -58,10 +69,19 @@ object panel {
 		else
 			print_ret "A small control panel on the wall next to the internal door. It is closed.";
 	}
-	after: [act obj] {
+	before: [self act obj] {
+		if (act is #puton) {
+			rtrue if not obj;
+			if (self hasn't open)
+				print_ret "You'll need to open the panel first.";
+		}
+		rfalse;
+	}
+	after: [self act obj] {
 		// print_obj obj; crlf;
 		if (act is #receive and obj is paperclip) {
 			internal_door gains open;
+			unparent paperclip;
 			return ScoreMsg(3,"The paperclip shorts out the broken wire and the door slides slowly open on the dwindling emergency power.");
 		}
 		rfalse;
@@ -71,7 +91,7 @@ object panel {
 
 object papers in emergency_pack {
 	noun: 'paper' 'papers';
-	description: [] {
+	description: [self] {
 		self.description = [] { print_ret "It's instructions on how to survive the apocalypse"; };
 		move paperclip into room;
 		print_ret "As you look at the papers, the paperclip holding them together falls to the floor.";
@@ -91,8 +111,7 @@ object internal_door { // This exists in both the Airlock and the MainCorridor.
 }
 
 object paperclip in Limbo  {
-	description: "The pinnacle of modern stationery, it holds 
-		small piles of papers together.";
+	description: "The pinnacle of modern stationery, it holds small piles of papers together.";
 	noun: 'paperclip' 'clip';
 	adjective: 'paper';
 }
@@ -108,15 +127,12 @@ contains
 object coffee_maker {
 	noun: 'maker';
 	adjective: 'coffee';
-	description: [] {
+	description: [self] {
 		move coffee_filter into room;
 		self.description = [] { print_ret "It's just an ordinary coffee maker, with nothing inside it."; };
 		print_ret "It's just an ordinary coffee maker-- hey, wait, a coffee filter just fell out of it.";
 	}
-	before: [act] {
-		if (act==#take) print_ret "It's fixed in place on the counter.";
-		rfalse;
-	}
+	static;
 }
 
 object coffee_filter in Limbo {
@@ -134,8 +150,9 @@ global TibblesBanter = word_array(6) {
 };
 
 location MainCorridor {
-	description: [] {
-		print "Tibbles: ", paddr TibblesBanter[[random(6)-1]], crlf;
+	description: [self] {
+		if (random(4) is 1)
+			print "Tibbles: ", paddr TibblesBanter[[random(6)-1]], crlf;
 		if (PuzzleState &= ELECTRICITY_STATUS)
 			print_ret "The main corridor runs the full length of the bunker under steady, bright fluorescent 
 				light - a relief after the emergency flicker. Rows of painted-steel doors line each side, 
@@ -159,7 +176,7 @@ location MainCorridor {
 
 contains
 object light_stick  {
-	description: [] {
+	description: [self] {
 		if (self hasn't lit)
 			print_ret "It's a light stick. You can shake it to make it give off light.";
 		else {
@@ -174,7 +191,7 @@ object light_stick  {
 	}
 	noun: 'stick' 'lightstick';
 	adjective: 'light';
-	after: [act] {
+	after: [self act] {
 		if (act is #shake) {
 			if (self has lit)
 				print_ret "It's already lit!";
@@ -214,10 +231,15 @@ location Closet {
 
 contains object jacket {
 	noun: 'jacket';
-	description: [] {
+	description: [self] {
 		self.description = [] { print_ret "It is Bob's jacket. You miss Bob."; };
 		move code_book into room;
 		print_ret "As you look inside the jacket a small booklet falls from one of the pockets.";
+	}
+	before: [self act obj] {
+		if (act==#wear)
+			print_ret "It won't fit properly over your survival suit.";
+		rfalse;
 	}
 }
  
@@ -276,6 +298,11 @@ object bonsai_tree {
     description: "A small but surprisingly dense bonsai tree, its gnarled trunk and compact branches ideal for reducing to charcoal with a good pounding.";
 }
 
+object charcoal {
+	noun: charcoal;
+	description: "It's a small amount of charcoal, perfect for absorbing toxic gases.";
+}
+
 location Pantry {
 	description: "Shelving units hold an orderly supply of tinned goods and sealed containers, though several racks have been cleared at some point. A gas hose runs from a shutoff valve on the wall down to the oven, and a faint metallic smell hangs in the air.";
 	w_to: Hydroponic;
@@ -288,7 +315,7 @@ object hose {
 }
 
 location Gymnasium {
-	description: [] {
+	description: [self] {
 		if (PuzzleState &= HELMET_FREE and hand hasn't static)
 			print_ret "A compact exercise room, weight racks still overturned, the treadmill on its side. The crewman's body remains pinned beneath the weight cage - helmetless, one hand severed at the wrist.";
 		if (PuzzleState &= HELMET_FREE)
@@ -302,7 +329,7 @@ location Gymnasium {
 contains object body {
 	adjective: 'crew' 'dead';
 	noun: 'body' 'crewman' 'man' 'corpse';
-	description: [] {
+	description: [self] {
 		if (PuzzleState &= HELMET_FREE and hand hasn't static)
 			print_ret "The crewman lies pinned under the weight cage, helmetless and missing a hand. There is nothing more to take from him.";
 		if (PuzzleState &= HELMET_FREE)
@@ -320,7 +347,7 @@ contains object body {
 contains
 object helmet {
 	noun: 'helmet';
-	description: [] {
+	description: [self] {
 		// TODO: use @jin here?
 		if (PuzzleState &= CHARCOAL_IN_FILTER)
 			print_ret "The helmet has a charcoal-packed coffee filter fitted - a crude but effective smoke mask.";
@@ -380,6 +407,26 @@ contains object pestle {
 	noun: 'pestle';
 	description: "A heavy pestle, good for crushing things.";
 }
+
+routine CrushWith[do ido] {
+	if (ido is crowbar)
+		print_ret "That implement is better for prying than smashing.";
+	else if (ido isn't pestle)
+		print_ret "That's not really suitable to crush something with.";
+	else if (do is hand)
+		print_ret "Uh, you might need that intact for something later on.";
+	else if (do isn't bonsai_tree)
+		print_ret "Crushing that would serve no purpose.";
+	else if (charcoal parent isn't zero)
+		print_ret "You already have enough charcoal.";
+	else {
+		move charcoal into room;
+		return ScoreMsg(3,"You crush up a bit of the bonsai tree into charcoal.");
+	}
+}
+
+action #crushWith { 'crush'/'smash' Nearby 'with' Held: CrushWith }
+action #crushWith { 'crush'/'smash' Nearby: [do] { rfalse if not DefaultWith(pestle); return CrushWith(do,IndirectObject); } }
 
 location Lounge {
 	description: "Sagging sofas and a pair of armchairs are arranged around a low table strewn with old magazines and the scattered pieces of several abandoned board games. A television set is bolted to the wall at head height, its screen long dark.";
@@ -441,7 +488,7 @@ routine RunTasks[] {
 }
 
 routine main[] {
-	room = Player parent;
+	LibraryInitialize();
 	print "Bunker Blues, by Nate Taylor^";
 	ReleaseInfo();
 	Look();
