@@ -368,7 +368,7 @@ int main(int argc,char **argv) {
 	printf("globals: %x\n",story->globalVarsTableAddr.getU());
 	printf("static memory: %x\n",story->staticMemoryAddr.getU());
 	printf("abbreviations: %x\n",story->abbreviationsAddr.getU());
-	if (report & 16) {
+	if (story->abbreviationsAddr.getU() && (report & 16)) {
 		for (int i=0; i<96; i++) {
 			printf("Abbreviate \"");
 			print_zscii((uint8_t*)story,abbreviations[i].getU2());
