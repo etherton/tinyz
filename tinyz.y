@@ -1851,7 +1851,7 @@
 %type <lval> lvalue
 %type <brval> bool_expr cond_expr opt_bool_expr
 %type <ival> vname opt_parent opt_default opt_wordbit opt_arrow has_or_hasnt phrase dict counted_string intlit opt_hierarchy property_initializer
-%type <rval> routine_body pvalue rname
+%type <rval> routine_body pvalue rname action_rname
 %type <scopeval> scope
 %type <dlist> dict_list property_initializer_list
 %type <elist> opt_call_args arg_list
@@ -2312,11 +2312,27 @@ rname
 	| routine_body		{ $$ = $1; }
 	;
 
+action_rname
+	: RNAME					{ $$ = $1; }
+	| RNAME '(' arg_list ')'	
+		{
+			// Generate a dummy routine that calls the original routine with the supplied parameter
+			open_scope();
+			auto stmt = new stmt_return(new expr_call(NEW list_node<expr*>(new expr_reloc($1),$3)));
+			$$ = emit_routine(0,stmt);
+			close_scope();
+		}
+	;
+
+// Lower 13 bits are the vocabulary index of a dictionary word
+// 0x2000 (hasSecondWord in core.tzh) is set if this is the second word of a two word phrase
+// 0x4000 (isRoutine in core.tzh) is set if the next item in the list is a callback function
+// 0x8000 (isEnd in core.tzh) is set if this is the last item in the list; the action callback address is next.
 action_list
 	: phrase_list { actions_blob->contents[actions_blob->offset-2] |= 0x80; }
-	| phrase_list RNAME	{ actions_blob->contents[actions_blob->offset-2] |= 0xC0; actions_blob->addRelocation($2); }
-	| phrase_list RNAME { actions_blob->contents[actions_blob->offset-2] |= 0x40; actions_blob->addRelocation($2); action_bit = 16; }
-	  phrase_list RNAME { actions_blob->contents[actions_blob->offset-2] |= 0xC0; actions_blob->addRelocation($5); }
+	| phrase_list action_rname { actions_blob->contents[actions_blob->offset-2] |= 0xC0; actions_blob->addRelocation($2); }
+	| phrase_list action_rname { actions_blob->contents[actions_blob->offset-2] |= 0x40; actions_blob->addRelocation($2); action_bit = 16; }
+	  phrase_list action_rname { actions_blob->contents[actions_blob->offset-2] |= 0xC0; actions_blob->addRelocation($5); }
 	;
 
 phrase_list
@@ -2400,8 +2416,10 @@ stmt
 	| RETURN expr ';'		{ $$ = new stmt_return(expr::fold_constant($2)); }
 	| RFALSE ';'			{ $$ = new stmt_return(new expr_literal(0)); }
 	| RTRUE ';'				{ $$ = new stmt_return(new expr_literal(1)); }
+	| RETURN expr IF expr ';' { $$ = new stmt_if(new expr_unary_branch(_1op::jz,true,$4),new stmt_return(expr::fold_constant($2)),nullptr); }
 	| RFALSE IF expr ';'	{ $$ = new stmt_if(new expr_unary_branch(_1op::jz,true,$3),new stmt_return(new expr_literal(0)),nullptr); }
 	| RTRUE IF expr ';'		{ $$ = new stmt_if(new expr_unary_branch(_1op::jz,true,$3),new stmt_return(new expr_literal(1)),nullptr); }
+	| RETURN expr IF NOT expr ';'	{ $$ = new stmt_if(new expr_unary_branch(_1op::jz,false,$5),new stmt_return(expr::fold_constant($2)),nullptr); }
 	| RFALSE IF NOT expr ';'	{ $$ = new stmt_if(new expr_unary_branch(_1op::jz,false,$4),new stmt_return(new expr_literal(0)),nullptr); }
 	| RTRUE IF NOT expr ';'		{ $$ = new stmt_if(new expr_unary_branch(_1op::jz,false,$4),new stmt_return(new expr_literal(1)),nullptr); }
 	| CALL expr opt_call_args ';'	{ $$ = new stmt_call(NEW list_node<expr*>($2,$3));  }
