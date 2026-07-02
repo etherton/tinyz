@@ -2211,12 +2211,19 @@ pvalue
 		}
 	| property_initializer_list ';' 
 		{ 
-			auto p = relocatableBlob::createProperty($1->size() * 2,currentProperty); 
-			$$ = p->index;
-			auto s = $1;
-			while (s) {
-				p->storeWord(s->car);
-				s = s->cdr;
+			if ($1->size()==1 && $1->car >= 0 && $1->car <= 255) {
+				auto p = relocatableBlob::createProperty(1,currentProperty);
+				$$ = p->index;
+				p->storeByte($1->car);
+			}
+			else {
+				auto p = relocatableBlob::createProperty($1->size() * 2,currentProperty); 
+				$$ = p->index;
+				auto s = $1;
+				while (s) {
+					p->storeWord(s->car);
+					s = s->cdr;
+				}
 			}
 			delete $1;
 		}

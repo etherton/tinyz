@@ -549,11 +549,19 @@ global MatchProp;
 global MatchWord;
 global it;			// the last direct object
 
+routine ReadProp [prop index] {
+	if (isnz sizeof(prop) & 1) {
+		return prop[index];
+	}
+	else
+		return prop[[index]];
+}
+
 routine MatchPropertyWord [match obj prop; j k] {
 	k = addrof(obj.prop);
 	if (isnz k) {
 		while (j+j < sizeof(k)) {
-			if (match is k[[j]])
+			if (match is ReadProp(k,j))
 				rtrue;
 			++j;
 		}
@@ -566,9 +574,9 @@ routine RecurseMatch [obj; j k] {
 		k = addrof(obj.pobjects);
 		if (isnz k) {
 			while (j+j < sizeof(k)) {
-				if (istruth MatchPropertyWord(MatchWord,k[[j]],MatchProp)) {
+				if (istruth MatchPropertyWord(MatchWord,ReadProp(k,j),MatchProp)) {
 					if (ObjectListCount < MaxObjectList)
-						ObjectList[[ObjectListCount]] = k[[j]];
+						ObjectList[[ObjectListCount]] = ReadProp(k,j);
 					++ObjectListCount;	
 				}	
 				++j;			
@@ -748,7 +756,7 @@ routine FindSynonym [wordAddr; c i m hdr] {
 		repeat { i = i - 2; } while (i[[0]]>=0);
 		m = i[[0]] & wordMask;
 		wordAddr[[0]] = m;
-		m = (m-1) * ($dict_entry_stride) + 4 + hdr[0];
+		m = (m-1) * ($dict_entry_stride) + 4 + hdr[0] + hdr;
 		wordAddr[[1]] = m[$dict_entry_size];
 		rtrue;
 	}
@@ -757,8 +765,9 @@ routine FindSynonym [wordAddr; c i m hdr] {
 		if ($synonyms[[i]] < 0)
 			m = $synonyms[[i]] & wordMask;
 		else if ($synonyms[[i]] is wordAddr[[0]]) {
+			// print "changing word ",(wordAddr[[0]])," to ",m,".^";
 			wordAddr[[0]] = m;
-			m = (m-1) * ($dict_entry_stride) + 4 + hdr[0];
+			m = (m-1) * ($dict_entry_stride) + 4 + hdr[0] + hdr;
 			wordAddr[[1]] = m[$dict_entry_size];
 			rtrue;
 		}
@@ -819,7 +828,7 @@ routine ObjLoop[;i j k w] {
 				k = 0;
 				while (k+k < sizeof(j)) {
 					print_char 32;
-					PrintDict(j[[k]]);
+					PrintDict(ReadProp(j,k));
 					++k;
 				}
 			}
@@ -829,7 +838,7 @@ routine ObjLoop[;i j k w] {
 				k = 0;
 				while (k+k < sizeof(j)) {
 					print_char 32;
-					PrintDict(j[[k]]);
+					PrintDict(ReadProp(j,k));
 					++k;
 				}
 			}
