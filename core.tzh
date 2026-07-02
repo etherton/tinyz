@@ -988,14 +988,21 @@ routine DoTurn[; i] {
 	// parse_buffer[[1]] is the first word parsed (same as parse_buffer[2] and [3])
 	// parse_buffer[[2]] is the type code of the first word
 
+	if (parse_buffer[[nw_start]] is 'again')
+		return ResetCommandIfFailed(call ActionRoutine(DirectObject,IndirectObject));
+
 	// Every word address in the parse buffer has been replaced with its index.
 	// The next byte contains the payload byte.
 	if (isnz (parse_buffer[[nw_start + 1]] & 15)) {
 		i = parse_buffer[[nw_start + 1]] & 15;
 		nw = nw_start + 2;
 		// print "nw is now ",nw,"...^";
+		ActionRoutine = addrof Travel;
+		DirectObject = i;
+		IndirectObject = 0;
 		return ResetCommandIfFailed(Travel(i));
 	}
+	
 	// compute final word index, terminate list with zero
 	lw = parse_buffer[1] * 2 + 1;
 	parse_buffer[[lw]] = 0;		// set word index to zero
