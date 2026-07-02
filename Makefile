@@ -1,7 +1,9 @@
 all: tinyzc tinyzcd tinyzterp tinyzterpd zdis cloak.z3 cloak.z4 cloak.z5 demogame.z3 advent.do advent.po demogame.do bunkerblues.z3 \
 	sieve_2p.do sieve_2e.do sieve_2ee.do cloak.do hibernated.do czech_z3.do czech_z5.do minimal.do minimal.hdv \
-	applez_2e.bin applez_2e40_0.bin applez_2e40_1.bin applez_2e40_2.bin applez_2e_2.bin applez_2e_v5.bin czech.z3 czech.z5 \
-	applez_2e_v4.bin applez_2e_v5_2.bin applez_2e_v5_3.bin applez_2e_v8.bin
+	applez_2e.bin applez_2e40_0.bin applez_2e40_1.bin applez_2e40_2.bin \
+	applez_2e_v3_46k.bin applez_2e_v3_92k.bin applez_2e_v3_128k.bin  \
+	applez_2e_v5_46k.bin applez_2e_v5_92k.bin applez_2e_v5_256k.bin \
+	czech.z3 czech.z5 applez_2e_v4.bin applez_2e_v8.bin
 
 # these require story files not included
 optional: zork.do hibernated.do loh.do
@@ -72,14 +74,14 @@ applez_2e.bin: applez.asm Makefile
 applez_2e_v4.bin: applez.asm Makefile
 	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=4 -DMEM_MODEL=3 -DLOAD_FROM_DISK_II=0 -r applez_2e_v4.lst -o applez_2e_v4.bin applez.asm
 
-applez_2e_v5.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=1 -r applez_2e_v5.lst -o applez_2e_v5.bin applez.asm
+applez_2e_v5_46k.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=0 -DLOAD_FROM_DISK_II=1 -r applez_2e_v5_46k.lst -o applez_2e_v5_46k.bin applez.asm
 
-applez_2e_v5_2.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=2 -DLOAD_FROM_DISK_II=0 -r applez_2e_v5_2.lst -o applez_2e_v5_2.bin applez.asm
+applez_2e_v5_92k.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=1 -r applez_2e_v5_92k.lst -o applez_2e_v5_92k.bin applez.asm
 
-applez_2e_v5_3.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=3 -DLOAD_FROM_DISK_II=0 -r applez_2e_v5_3.lst -o applez_2e_v5_3.bin applez.asm
+applez_2e_v5_256k.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=3 -DLOAD_FROM_DISK_II=0 -r applez_2e_v5_256k.lst -o applez_2e_v5_256k.bin applez.asm
 
 applez_2e_v8.bin: applez.asm Makefile
 	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=8 -DMEM_MODEL=3 -DLOAD_FROM_DISK_II=0 -r applez_2e_v8.lst -o applez_2e_v8.bin applez.asm
@@ -93,8 +95,14 @@ applez_2e40_1.bin: applez.asm Makefile
 applez_2e40_2.bin: applez.asm Makefile
 	acme -f plain --cpu 6502 -DCOLUMNS=40 -DZVERSION=3 -DMEM_MODEL=2 -DLOAD_FROM_DISK_II=0 -r applez_2e40_2.lst -o applez_2e40_2.bin applez.asm
 
-applez_2e_2.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=3 -DMEM_MODEL=2 -DLOAD_FROM_DISK_II=0 -r applez_2e40_2.lst -o applez_2e_2.bin applez.asm
+applez_2e_v3_46k.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=3 -DMEM_MODEL=0 -DLOAD_FROM_DISK_II=0 -r applez_2e_v3_46k.lst -o applez_2e_v3_46k.bin applez.asm
+
+applez_2e_v3_92k.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=3 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=0 -r applez_2e_v3_92k.lst -o applez_2e_v3_92k.bin applez.asm
+
+applez_2e_v3_128k.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=3 -DMEM_MODEL=2 -DLOAD_FROM_DISK_II=0 -r applez_2e_v3_128k.lst -o applez_2e_v3_128k.bin applez.asm
 
 applez_2ee.bin: applez.asm Makefile
 	acme -f plain --cpu 65c02 -DCOLUMNS=80 -DTARGET_65C02=1 -DZVERSION=3 -DMEM_MODEL=1 -DLOAD_FROM_DISK_II=1 -r applez_2ee.lst -o applez_2ee.bin applez.asm
@@ -150,8 +158,8 @@ czech_z3.do: czech.z3 applez_2e.bin Makefile makedsk
 czech.z5: czech.inf
 	inform -v5 czech.inf
 
-czech_z5.do: czech.z3 applez_2e.bin Makefile makedsk
-	./makedsk applez_2e_v5.bin czech.z5 -o czech_z5.do
+czech_z5.do: czech.z3 applez_2e_v5_256k.bin Makefile makedsk
+	./makedsk applez_2e_v5_256k.bin czech.z5 -o czech_z5.do
 
 loh.do: library_of_horror.z3 applez_2e.bin Makefile makedsk
 	./makedsk applez_2e.bin library_of_horror.z3 -o loh.do

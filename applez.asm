@@ -639,7 +639,7 @@ temp
 
 	; story size in 512b blocks (including the one we already read)
 	; for higher memory models, we fill aux memory too so vm is "full"
-	; note $B0 here is 88k (512b blocks)
+	; note $B0 here is 92k (512b blocks)
 !if MEM_MODEL > 1 {
 	lda blocks_remaining+1
 	bne clamp_story_size
@@ -658,7 +658,7 @@ read_story
 	inc read_dest+1
 	inc read_dest+1
 	lda read_dest+1
-	; for memory model 1, which supports stories up to 88k, we fill banked memory too.
+	; for memory model 1, which supports stories up to 92k, we fill banked memory too.
 !if MEM_MODEL > 0 {
 	cmp #>RAMTOP
 	bne +
@@ -1243,23 +1243,16 @@ DICT_WORD_LEN = 6
 
 
 ; We support four memory models
-; MEM_MODEL=0: Stories are limited to 44k total. No banking.
-; MEM_MODEL=1: Stories are limited to 88k total, dynamic+static limited to 44k.
-; MEM_MODEL=2: Stories are limited to 128k total, dynamic+static limited to 44k. All alt ram is VM backed by disk.
-; MEM_MODEL=3: Stories have normal Z5/Z8 liimits. Dynamic limited to 44k. Static and high backed by disk.
+; MEM_MODEL=0: Stories are limited to 46k total. No banking.
+; MEM_MODEL=1: Stories are limited to 92k total, dynamic+static limited to 46k.
+; MEM_MODEL=2: Stories are limited to 128k total, dynamic+static limited to 46k. All alt ram is VM backed by disk.
+; MEM_MODEL=3: Stories have normal Z5/Z8 liimits. Dynamic limited to 46k. Static and high backed by disk.
 ; The difference between 2 and 3 is that in model 3, static memory can be paged, which affects loadb, loadw,
 ; and tokenisation.
-; For any memory model past 1, we implement virtual memory. All virtual memory is kept in the aux 44k memory.
+; For any memory model past 1, we implement virtual memory. All virtual memory is kept in the aux 46k memory.
 ; We adopt a page size to limit the size of our data structures. This is particularly important for static memory,
-; which is often accessed consecutively. For V3, the page size is 512 bytes. V5 is 1024, and V8 is 2048.
-; One table maps a (Z address >> 9) (for V3) to which page in aux memory ($10-$BE), or $00 if it's not resident.
-; For V3 stories, max size is 128k, of which 44k is permanent, so 84k is paged at 512 bytes each, or 168 slots.
-; On the other side, each of those 88 possible pages needs to maintain an age so that old pages can be evicted.
-; By happy coincidence, 168+88 is exactly 256, so it fits up against our other "large" data structures.
-; For V5, 256k-44k is 212k, with 1k pages, or 212 slots, and 44 pages of aux memory.
-; For V8, 256-44k is 468k, with 2k pages, or 234 slots, and 22 pages of aux memory. They all add up to 256.
-; It works because the amount of banked memory happens to exactly match the amount of the story that is
-; kept permanently resident.
+; which is often accessed consecutively. The page size is always 512 bytes.
+; One table maps a (Z address >> 9) (for V3) to which page in aux memory ($08-$BE), or $00 if it's not resident.
 ; If the page is already resident, reset its age to 0. Done.
 ; If the page is not already resident, find an oldest page to replace, reset its age to 1, and then age all OTHER pages by 1
 
@@ -5480,7 +5473,7 @@ vm_map !for Counter, 0, (RAMSIZE*2)-1 {
 ; it's tempting to use larger pages on V5 and V8 but that will likely
 ; lead to a lot more disk thrashing.
 page_ages	!fill RAMSIZE*2,1			; 0 is freshly used
-; for a given page (512b) in aux memory $1000-$BFFF which entry in vm_map points at us?
+; for a given page (512b) in aux memory $0800-$BFFF which entry in vm_map points at us?
 ; this is so that when identifying an old page, we can quickly zero out its vm_map slot.
 page_owners_lo
 			!for Counter, 0, (RAMSIZE*2)-1 {
