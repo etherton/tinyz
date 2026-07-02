@@ -595,15 +595,15 @@ routine RecurseMatch [obj; j k] {
 }
 
 routine PrintDict [w; hdr] {
-	w = hdr[[4]] + 7 + w * ($dict_entry_size+1);
-	print_addr w;
+	hdr = hdr[[4]];
+	print_addr (hdr + hdr[0] + 4 + (w-1) * $dict_entry_stride);
 	rfalse;
 }
 
 routine ParseCommon [root; i adj] {
 	if (parse_buffer[[nw+1]] &= artBit)
 		nw = nw + 2;
-	if (parse_buffer[[nw]] is 'it' and it isn't zero) {
+	if (parse_buffer[[nw]] in {'it','them'} and it isn't zero) {
 		nw = nw + 2;
 		return it;
 	}
@@ -730,8 +730,9 @@ routine PrintString [str len] {
 }
 
 routine DictAddrToIndex [addr; hdr] {
-	addr = addr - hdr[[4]] - 7;
-	addr = addr / ($dict_entry_size+1);
+	hdr = hdr[[4]];
+	addr = addr - hdr - hdr[0] - 4 + $dict_entry_stride;
+	addr = addr / ($dict_entry_stride);
 	return addr;
 }
 
@@ -739,6 +740,7 @@ routine DictAddrToIndex [addr; hdr] {
 // on v4+ the count is stored first so we can use scan_table.
 // on v3, the list is terminated by -1
 routine FindSynonym [wordAddr; c i m hdr] {
+	hdr = hdr[[4]];
 #if $v4
 	// scans entire table for word match. The base words have the MSB set
 	// so they will never match.
@@ -746,7 +748,7 @@ routine FindSynonym [wordAddr; c i m hdr] {
 		repeat { i = i - 2; } while (i[[0]]>=0);
 		m = i[[0]] & wordMask;
 		wordAddr[[0]] = m;
-		m = m * ($dict_entry_size+1) + 7 + hdr[[4]];
+		m = (m-1) * ($dict_entry_stride) + 4 + hdr[0];
 		wordAddr[[1]] = m[$dict_entry_size];
 		rtrue;
 	}
@@ -756,7 +758,7 @@ routine FindSynonym [wordAddr; c i m hdr] {
 			m = $synonyms[[i]] & wordMask;
 		else if ($synonyms[[i]] is wordAddr[[0]]) {
 			wordAddr[[0]] = m;
-			m = m * ($dict_entry_size+1) + 7 + hdr[[4]];
+			m = (m-1) * ($dict_entry_stride) + 4 + hdr[0];
 			wordAddr[[1]] = m[$dict_entry_size];
 			rtrue;
 		}
@@ -943,23 +945,23 @@ routine ScanParseTable [; n matched warned] {
 }
 
 routine DoTurn[; i] {
-	text_buffer[0] = 62;
-	parse_buffer[0] = 14; // includes room for "zero" terminator
+		text_buffer[0] = 62;
+		parse_buffer[0] = 14; // includes room for "zero" terminator
 
-	// text_buffer[0] is the size of the input buffer
-	// in v5+, text_buffer[1] is the number of bytes actually read
-	// parse_buffer[0] is the max number of words
-	// parse_buffer[1] is the actual number of words parsed
-	// each word consists of four bytes:
-	// first two bytes is address of the word, or 0 if unknown
-	// next byte is the length of the word, then the position in text_buffer.
-	repeat {
-		print "> ";
-#if $v5
-		text_buffer[1] = 0;
-#endif
-		sread(text_buffer, parse_buffer);
-	} while (CheckErrors(text_buffer, parse_buffer) isnt zero);
+		// text_buffer[0] is the size of the input buffer
+		// in v5+, text_buffer[1] is the number of bytes actually read
+		// parse_buffer[0] is the max number of words
+		// parse_buffer[1] is the actual number of words parsed
+		// each word consists of four bytes:
+		// first two bytes is address of the word, or 0 if unknown
+		// next byte is the length of the word, then the position in text_buffer.
+		repeat {
+			print "> ";
+	#if $v5
+			text_buffer[1] = 0;
+	#endif
+			sread(text_buffer, parse_buffer);
+		} while (CheckErrors(text_buffer, parse_buffer) isnt zero);
 
 	// parse_buffer[1] is the actual number of words parsed
 	// parse_buffer[[1]] is the first word parsed (same as parse_buffer[2] and [3])
@@ -1024,6 +1026,7 @@ routine DebugActions[;a n] {
 action #traceOn { '#trace on' : [] { $tracebits = 1; rfalse; } }
 action #traceOff { '#trace off' : [] { $tracebits = 0; rfalse; } }
 action #debugActions { '#debug actions' : DebugActions }
+action #debugObjects { '#debug objects' : ObjLoop }
 #endif
 
 routine LibraryInitialize [] {

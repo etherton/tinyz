@@ -570,8 +570,9 @@
 	std::map<dict_entry,uint16_t> the_dictionary; // maps a dictionary word to its index
 	const uint8_t dict_payload_size = 1;
 	uint8_t* z_dict_ptr(uint16_t i) { 
+		assert(i);
 		uint8_t *c = dictionary_blob->contents;
-		return c + c[0] + 4 + i * (dict_entry_size+dict_payload_size); 
+		return c + c[0] + 4 + (i-1) * (dict_entry_size+dict_payload_size); 
 	}
 	uint8_t& z_dict_payload(uint16_t i) { return z_dict_ptr(i)[dict_entry_size]; }
 
@@ -2978,6 +2979,7 @@ void init(int version) {
 
 	the_globals["$zversion"] = { INTLIT, int16_t(version) };
 	the_globals["$dict_entry_size"] = { INTLIT, int16_t(dict_entry_size) };
+	the_globals["$dict_entry_stride"] = { INTLIT, int16_t(dict_entry_size + dict_payload_size) };
 	the_globals["$is_object"] = { ANAME, int16_t(0) };
 	the_globals["$v4"] = { INTLIT, int16_t(version >= 4) };
 	the_globals["$v5"] = { INTLIT, int16_t(version >= 5) };
@@ -3712,7 +3714,7 @@ int main(int argc,char **argv) {
 				dictionary_blob->storeByte(the_separators[i]);
 			dictionary_blob->storeByte(dict_entry_size+dict_payload_size);
 			dictionary_blob->storeWord(the_dictionary.size());
-			uint16_t idx = 0;
+			uint16_t idx = 1;
 			for (auto &d: the_dictionary) {
 #if YYDEBUG
 				if (yydebug) {
@@ -3906,7 +3908,7 @@ int main(int argc,char **argv) {
 			if (report & R_DICTIONARY) {
 				uint8_t *d = dictionary_blob->contents + 7;
 				int dc = (dictionary_blob->contents[5] << 8) | dictionary_blob->contents[6];
-				for (; dc--; d+=dict_entry_size+1) {
+				for (; dc--; d+=dict_entry_size+dict_payload_size) {
 					print_encoded_string(d,[](char ch){putchar(ch);});
 					printf(" %02x\n",d[dict_entry_size]);
 				}
@@ -3933,7 +3935,7 @@ int main(int argc,char **argv) {
 					uint16_t n = actions_blob->readWord(o);
 					if (n != 0xFFFF) {
 						for(;;) {
-							print_encoded_string(d + (dict_entry_size+1) * (n & 0x1FFF),[](char ch){putchar(ch);});
+							print_encoded_string(d + (dict_entry_size+dict_payload_size) * (n & 0x1FFF),[](char ch){putchar(ch);});
 							if (n & 0x2000)
 								putchar('+');
 							else
