@@ -190,7 +190,7 @@
 			}
 			return result;
 		}
-		static uint16_t createInt(int16_t t,uint8_t propertyIndex) {
+		/* static uint16_t createInt(int16_t t,uint8_t propertyIndex) {
 			if (t >= 0 && t <= 255) {
 				auto r = createProperty(1,propertyIndex);
 				r->storeByte(t);
@@ -201,7 +201,7 @@
 				r->storeInt(t);
 				return r->index;
 			}
-		}
+		} */
 		static uint16_t createString(const char *src) {
 			size_t srcLen = strlen(src);
 			uint16_t bytes = encode_string(nullptr,0,src,srcLen);
@@ -2211,10 +2211,17 @@ pvalue
 		}
 	| property_initializer_list ';' 
 		{ 
-			if ($1->size()==1 && $1->car >= 0 && $1->car <= 255) {
-				auto p = relocatableBlob::createProperty(1,currentProperty);
+			// First check if all entries fit in a byte.
+			bool isByte = true;
+			for (auto i=$1; i; i=i->cdr)
+				if (i->car < 0 || i->car > 255)
+					isByte = false;
+			// If they do and it's odd in size, we can store them all as bytes.
+			if (($1->size()&1) && isByte) {
+				auto p = relocatableBlob::createProperty($1->size(),currentProperty);
 				$$ = p->index;
-				p->storeByte($1->car);
+				for (auto i=$1; i; i=i->cdr)
+					p->storeByte(i->car);
 			}
 			else {
 				auto p = relocatableBlob::createProperty($1->size() * 2,currentProperty); 
