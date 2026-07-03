@@ -208,6 +208,34 @@ object light_stick  {
 	general: 0;
 }
 
+and
+object cleaning_bot {
+	noun: 'bot' 'robot';
+	adjective: 'cleaning';
+    description: "A squat cleaning bot, its sensor array sweeping slowly. It zaps anything it reads as 
+		vermin - carrying a lit glow stick marks you as crew, not a target.";
+    before: [self act obj] {
+		if (act is #take)
+			print_ret "The bot is built to resist exactly that sort of interference. Leave it to its work.";
+		else if (act is #attack) {
+			rtrue if not obj;
+            print_ret "Attacking the bot would be extremely unwise. It is armed and considerably more durable than you.";
+		}
+		else
+			rfalse;
+	}
+	static;
+}
+
+routine AttackWith[do ido] {
+	if (isz BlockBefore(#attack,do,0))
+		print_ret "There's no reason to attack that.";
+	rfalse if BlockBefore(#attack,do,ido);
+	return CallAfter(#attack,do,ido);
+}
+
+action #attack { 'attack'/'kill'/'murder' WithHeld(addrof Nearby,bread_knife,crowbar): AttackWith }
+
 routine ShakeSub[do] {
 	if (Player holds do) {
 		if (isfalse CallAfter(#shake,do)) 
@@ -301,8 +329,9 @@ object bonsai_tree {
 }
 
 object charcoal {
-	noun: charcoal;
+	noun: 'charcoal';
 	description: "It's a small amount of charcoal, perfect for absorbing toxic gases.";
+	plural;
 }
 
 location Pantry {
@@ -341,6 +370,8 @@ contains object body {
 	before: [act] {
 		if (act is #take)
 			print_ret "The body is too heavy to move, and there is nothing to be gained by trying.";
+		else if (act is #attack)
+			print_ret "He is already dead. You need to stay focused.";
 		rfalse;
 	}
 	static;
@@ -433,6 +464,16 @@ location Lounge {
 }
 
 location WECorridor "East/West Corridor" {
+	description: [] {
+    	/* if (PuzzleState &= CORRIDOR_DOOR_PRIED)
+        	print_ret "A secondary east-west corridor crossing the lower level, the concrete walls streaked with 
+					old damp stains and a faded hazard sign nobody ever heeded. The heavy fire door to the south 
+					hangs open, pried back with the crowbar.";
+        else */
+			print_ret "A secondary east-west corridor crossing the lower level, the concrete walls streaked with 
+					old damp stains and a faded hazard sign nobody ever heeded. A heavy fire door to the south 
+					is wedged shut - the bot will not be able to follow until it is pried open.";
+	}
 	n_to: MainCorridor;
 	sw_to: Workshop;
 	s_to: ControlRoom;
