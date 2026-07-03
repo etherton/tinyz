@@ -558,29 +558,34 @@ routine ReadProp [prop index] {
 		return prop[[index]];
 }
 
-routine MatchPropertyWord [match obj prop; j k] {
+routine PropSize [prop] {
+	prop = sizeof(prop);
+	if (isnz prop & 1)
+		return prop;
+	else
+		return #if $v5 prop>>1 #else prop/2 #endif ;
+}
+
+routine MatchPropertyWord [match obj prop; i j k] {
 	k = addrof(obj.prop);
 	if (isnz k) {
-		while (j+j < sizeof(k)) {
-			if (match is ReadProp(k,j))
+		for (j=PropSize(k); i<j; ++i)
+			if (match is ReadProp(k,i))
 				rtrue;
-			++j;
-		}
 	}
 	rfalse;
 }
 
-routine RecurseMatch [obj; j k] {
+routine RecurseMatch [obj; i j k] {
 	if (obj hasn't $is_object) {
 		k = addrof(obj.pobjects);
 		if (isnz k) {
-			while (j+j < sizeof(k)) {
-				if (istruth MatchPropertyWord(MatchWord,ReadProp(k,j),MatchProp)) {
+			for (j=PropSize(k); i<j; ++i) {
+				if (istruth MatchPropertyWord(MatchWord,ReadProp(k,i),MatchProp)) {
 					if (ObjectListCount < MaxObjectList)
-						ObjectList[[ObjectListCount]] = ReadProp(k,j);
+						ObjectList[[ObjectListCount]] = ReadProp(k,i);
 					++ObjectListCount;	
-				}	
-				++j;			
+				}				
 			}
 		}
 	}
@@ -718,6 +723,8 @@ action #puton { 'hang'/'place'/'put'/'attach' Held 'on'/'upon'/'on to'/'onto'/'i
 action #go { 'go'/'go to' Direction: Travel }
 action #restart { 'restart'/'restart game': [] { rfalse if not Yes(); restart; } }
 action #quit { 'quit'/'quit game': [] { rfalse if not Yes(); quit; } }
+action #save { 'save': [] { if (save) rtrue; else rfalse; } }
+action #restore { 'restore': [] { if (restore) rtrue; else rfalse; } }
 action #wait { 'wait' : [] { rtrue; } }
 action #wear { 'wear'/'put on' Nearby: Wear }
 action #unwear { 'take off'/'remove'/'disrobe' Held: UnWear }
@@ -827,7 +834,7 @@ routine ObjLoop[;i j k w] {
 			if (j isnt 0) {
 				print " has adjectives:";
 				k = 0;
-				while (k+k < sizeof(j)) {
+				while (k < PropSize(j)) {
 					print_char 32;
 					PrintDict(ReadProp(j,k));
 					++k;
@@ -837,7 +844,7 @@ routine ObjLoop[;i j k w] {
 			if (j isnt 0) {
 				print " and has nouns:";
 				k = 0;
-				while (k+k < sizeof(j)) {
+				while (k < PropSize(j)) {
 					print_char 32;
 					PrintDict(ReadProp(j,k));
 					++k;
