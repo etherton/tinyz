@@ -18,6 +18,11 @@ constant ELECTRICITY_STATUS = 1 << 0;
 constant HELMET_FREE = 1 << 1;
 constant CHARCOAL_IN_FILTER = 1 << 2;
 constant FILTER_IN_HELMET = 1 << 3;
+constant PIPE_CLEAR = 1 << 4;
+constant CORRIDOR_DOOR_PRIED = 1 << 5;
+constant SCANNER_CLEARED = 1 << 6;
+
+global AirTurns = 100;
 
 object survival_suit in Player {
 	adjective: 'survival';
@@ -38,8 +43,9 @@ location Airlock {
 		in the air.^^As you look around the otherwise sterile room, 
 		you notice a small control panel on the wall to your left, 
 		next to the internal door.";
+	n_to: [] { return DoorHelper(external_door,Outside); }
 	s_to: [] { return DoorHelper(internal_door,MainCorridor); }
-	pobjects: internal_door;
+	pobjects: internal_door, external_door;
 	lit;
 }
 
@@ -110,6 +116,31 @@ object internal_door { // This exists in both the Airlock and the MainCorridor.
 			print_ret "You'll need to find some other way to do that, try examining the panel.";
 		rfalse;
 	}
+}
+
+object external_door { // This exists in both the Airlock and Outside.
+	noun: 'door';
+	adjective: 'external' 'blast';
+	description: [self] {
+		if (self has open)
+			print_ret "The blast door stands open, the wasteland visible beyond.";
+		if (PuzzleState &= ELECTRICITY_STATUS)
+			print_ret "A heavy blast door leading out to the wasteland. The electronic lock is powered - you could open it.";
+		print_ret "A heavy blast door leading out to the wasteland. The electronic lock needs power to operate.";
+	}
+	openable;
+	before: [self act obj] {
+		if (act is #open and not (PuzzleState &= ELECTRICITY_STATUS))
+			print_ret "The blast door needs power to operate.";
+		rfalse;
+	}
+}
+
+location Outside {
+	description: "You step out into the wasteland. The air, though acrid, fills your lungs. In the distance a rescue vehicle is already closing in - someone heard your signal.";
+	s_to: [] { return DoorHelper(external_door,Airlock); }
+	pobjects: external_door;
+	lit;
 }
 
 object paperclip in Limbo  {
@@ -390,6 +421,49 @@ object helmet {
 			print_ret "A sealed helmet, freed from the body. Fit a filter to make it a smoke mask.";
 		print_ret "A sealed helmet, seized up with rust on the dead crewman. It could be freed with WD40.";
 	}
+	before: [self act obj] {
+		if (act is #take and not (PuzzleState &= HELMET_FREE))
+			print_ret "The helmet is seized up with rust on the dead crewman. You'll need to free it up first.";
+		if (act is #puton) {
+			rtrue if not obj;
+			if (obj is wd40) {
+				if (PuzzleState &= HELMET_FREE)
+					print_ret "The helmet joints are already freed up.";
+			}
+			else if (obj is coffee_filter) {
+				if (not (PuzzleState &= HELMET_FREE))
+					print_ret "You need to free the helmet from the body first.";
+				else if (PuzzleState &= FILTER_IN_HELMET)
+					print_ret "There is already a filter fitted into the helmet.";
+			}
+			else if (obj is charcoal) {
+				if (not (PuzzleState &= FILTER_IN_HELMET))
+					print_ret "You need to fit a filter into the helmet before adding charcoal.";
+				else if (PuzzleState &= CHARCOAL_IN_FILTER)
+					print_ret "The filter is already packed with charcoal.";
+			}
+			else
+				print_ret "That doesn't belong on the helmet.";
+		}
+		rfalse;
+	}
+	after: [self act obj] {
+		if (act is #receive and obj is wd40) {
+			PuzzleState = PuzzleState | HELMET_FREE;
+			move wd40 into Player;
+			return ScoreMsg(5,"You spray WD40 onto the rusted joints. With a series of creaks the helmet comes free from the body.");
+		}
+		if (act is #receive and obj is coffee_filter) {
+			PuzzleState = PuzzleState | FILTER_IN_HELMET;
+			return ScoreMsg(5,"You fit the coffee filter into the helmet's breathing port.");
+		}
+		if (act is #receive and obj is charcoal) {
+			PuzzleState = PuzzleState | CHARCOAL_IN_FILTER;
+			unparent charcoal;
+			return ScoreMsg(5,"You pack the charcoal into the filter. The helmet is now a crude but effective smoke mask.");
+		}
+		rfalse;
+	}
 }
 
 and
@@ -417,6 +491,15 @@ action #cut { 'sever'/'cut' WithHeld(addrof Nearby,bread_knife): CutWith }
 routine RepairWith [do ido] { return PutOn(ido,do); }
 
 action #repair { 'repair'/'fix' WithHeld(addrof Nearby,paperclip): RepairWith }
+
+routine SprayWith [do ido] { return PutOn(ido,do); }
+
+action #spray { 'spray' WithHeld(addrof Nearby,wd40): SprayWith }
+
+// helmet moves around with you, but #puton wants its indirect object Here, not held -- so plain "put filter in helmet" won't parse.
+routine FitWith [do ido] { return PutOn(ido,do); }
+
+action #fit { 'fit'/'insert'/'pack' WithHeld(addrof Nearby,coffee_filter): FitWith }
 
 location Library {
 	description: "Floor-to-ceiling shelves hold a mix of technical manuals and battered paperbacks, a handful of volumes knocked to the floor and left where they fell. One shelf along the far wall has come away from its fittings and hangs at an awkward angle.";
@@ -480,12 +563,79 @@ location WECorridor "East/West Corridor" {
 	se_to: Generator;
 }
 
+contains
+object fire_door {
+	noun: 'door';
+	adjective: 'fire';
+	description: [self] {
+		if (PuzzleState &= CORRIDOR_DOOR_PRIED)
+			print_ret "The fire door hangs open, pried back with the crowbar.";
+		print_ret "A heavy fire door wedged shut. Prying it open might let something else get through.";
+	}
+	scenery;
+	before: [self act obj] {
+		if (act is #puton) {
+			rtrue if not obj;
+			if (obj isn't crowbar)
+				print_ret "You can't pry that open with that.";
+			else if (PuzzleState &= CORRIDOR_DOOR_PRIED)
+				print_ret "The door is already pried open.";
+		}
+		rfalse;
+	}
+	after: [self act obj] {
+		if (act is #receive and obj is crowbar) {
+			PuzzleState = PuzzleState | CORRIDOR_DOOR_PRIED;
+			move crowbar into Player;
+			return ScoreMsg(5,"You jam the crowbar into the door frame and heave. The fire door grinds open and stays put.");
+		}
+		rfalse;
+	}
+}
+
 location Reservoir {
 	down_to: PumpRoom;
 }
 
+contains
+object pipe {
+	noun: 'pipe';
+	adjective: 'supply' 'water';
+	description: [self] {
+		if (PuzzleState &= PIPE_CLEAR)
+			print_ret "The supply pipe runs clear now, water flowing properly through.";
+		print_ret "The main water supply pipe, its outlet packed solid with sediment and debris. It needs clearing before water can flow again.";
+	}
+	scenery;
+	before: [self act obj] {
+		if (act is #puton) {
+			rtrue if not obj;
+			if (obj isn't toilet_brush)
+				print_ret "That won't clear the blockage.";
+			else if (PuzzleState &= PIPE_CLEAR)
+				print_ret "The pipe is already clear.";
+		}
+		rfalse;
+	}
+	after: [self act obj] {
+		if (act is #receive and obj is toilet_brush) {
+			PuzzleState = PuzzleState | PIPE_CLEAR;
+			move toilet_brush into Player;
+			return ScoreMsg(5,"You ram the toilet brush into the pipe and work it back and forth. A foul slurry of debris clears through. Water begins to flow again.");
+		}
+		rfalse;
+	}
+}
+
 location ToolRoom {
 	n_to: Hydroponic;
+}
+
+contains
+object wd40 {
+	noun: 'wd40' 'can' 'aerosol' 'spray';
+	adjective: 'oil';
+	description: "A well-used aerosol can of WD40, still with enough left to free up a seized joint or two.";
 }
 
 location Workshop {
@@ -507,6 +657,65 @@ location Generator {
 	e_to: PumpRoom;
 }
 
+contains
+object scanner {
+	noun: 'scanner';
+	adjective: 'biometric';
+	description: [self] {
+		if (PuzzleState &= SCANNER_CLEARED)
+			print_ret "The biometric scanner glows green - cleared and satisfied.";
+		print_ret "A biometric hand scanner securing the generator controls. It needs a valid hand print.";
+	}
+	static;
+	before: [self act obj] {
+		if (act is #puton) {
+			rtrue if not obj;
+			if (obj isn't hand)
+				print_ret "The scanner only accepts a hand print.";
+			else if (hand has static)
+				print_ret "You need to sever the hand from the body first.";
+			else if (PuzzleState &= SCANNER_CLEARED)
+				print_ret "The scanner has already accepted a valid print.";
+		}
+		rfalse;
+	}
+	after: [self act obj] {
+		if (act is #receive and obj is hand) {
+			PuzzleState = PuzzleState | SCANNER_CLEARED;
+			move hand into Player;
+			return ScoreMsg(5,"You press the severed hand against the scanner. It beeps once and a green light blinks on.");
+		}
+		rfalse;
+	}
+}
+
+and
+object gen_switch {
+	noun: 'switch';
+	adjective: 'master' 'power';
+	description: [self] {
+		if (PuzzleState &= ELECTRICITY_STATUS)
+			print_ret "The master switch is thrown. The generator is running.";
+		if (PuzzleState &= SCANNER_CLEARED)
+			print_ret "The master switch. The scanner is cleared - you can use it now.";
+		print_ret "A master power switch. The biometric scanner must be cleared before it can be used.";
+	}
+	static;
+}
+
+routine ThrowSub[do] {
+	if (do isn't gen_switch)
+		print_retf "You can't throw that.";
+	if (not (PuzzleState &= SCANNER_CLEARED))
+		print_retf "The biometric scanner must be cleared before the switch can be used.";
+	if (PuzzleState &= ELECTRICITY_STATUS)
+		print_retf "The generator is already running.";
+	PuzzleState = PuzzleState | ELECTRICITY_STATUS;
+	return ScoreMsg(10,"You throw the master switch. The generator roars to life. Lights flicker on throughout the bunker.");
+}
+
+action #throw { 'throw'/'flip'/'flick' Nearby: ThrowSub }
+
 location PumpRoom {
 	e_to: Generator;
 	up_to: Reservoir;
@@ -519,17 +728,32 @@ location Armoury {
 global ifid = `UUID://2191F624-E980-46F6-B6F1-85792F494E81//`;
 
 routine RunTasks[] {
+	if (room is Outside)
+		quit;
 	if (isnz light_stick.general) {
 		--light_stick.general;
 		if (iszero light_stick.general % 30)
 			print "The light stick is a little dimmer than it was before.^";
+	}
+	if (PuzzleState &= CHARCOAL_IN_FILTER and Player holds helmet)
+		rtrue;
+	--AirTurns;
+	if (AirTurns == 40)
+		print "The air tastes of smoke. A dull ache is building behind your eyes.^";
+	if (AirTurns == 20)
+		print "Your chest is tight and your vision is beginning to blur. You need clean air soon.^";
+	if (AirTurns == 10)
+		print "You are struggling to breathe. Every breath burns.^";
+	if (iszero AirTurns) {
+		print "The smoke finally wins. The air in the bunker runs out before you find a way to fix it. Next time, work faster - or build the filter sooner.^";
+		quit;
 	}
 	rtrue;
 }
 
 routine main[] {
 	LibraryInitialize();
-	print "Bunker Blues, by Nate Taylor^";
+	print "Bunker Blues, by Nate Taylor, with help from David Etherton^";
 	ReleaseInfo();
 	Look();
 	for (;;) {
