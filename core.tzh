@@ -828,8 +828,8 @@ routine CheckErrors [tb pb; i j] {
 routine ObjLoop[;i j k w] {
 	while (i < $object_count) {
 		++i;
-		print An(i),crlf;
 		if (i has $is_object) {
+			print An(i),crlf;
 			j = addrof(i.adjective);
 			if (j isnt 0) {
 				print " has adjectives:";
@@ -852,7 +852,7 @@ routine ObjLoop[;i j k w] {
 			}
 		}
 		else
-			print " is a location";
+			print "Location ",object i;
 		crlf;
 	}
 	rfalse;
@@ -862,13 +862,15 @@ global ActionRoutine;
 global DirectObject;
 global IndirectObject;
 
-routine DefaultWith [obj] {
-	if (actor holds obj) {
+routine DefaultWith [obj altObj] {
+	if (actor holds obj)
 		IndirectObject = obj;
-		print "(with ",the(obj),")^";
-		return DirectObject;
-	}
-	print_ret "What do you want to do that with?";
+	else if (actor holds altObj)
+		IndirectObject = altObj;
+	else
+		print_ret "What do you want to do that with?";
+	print "(with ",the(IndirectObject),")^";
+	return DirectObject;
 }
 
 // Normally classifiers return 0 if they failed, 1 if they failed and printed a message,
@@ -876,7 +878,7 @@ routine DefaultWith [obj] {
 // or IndirectObject accordingly. Since NearbyWithHeld is called immediately after the verb,
 // we need to assign to DirectObject directly, then manually consume the 'with' if it's present,
 // then manually call the second classifier, but return the original direct object.
-routine WithHeld [doClassifier defaultObject] {
+routine WithHeld [doClassifier defaultObject altObject] {
 	// print "WithHeld ",object defaultObject,crlf;
 	DirectObject = call doClassifier();
 	if (DirectObject < 2)
@@ -888,7 +890,7 @@ routine WithHeld [doClassifier defaultObject] {
 			print_ret "That's not something you're holding?";
 		return DirectObject;
 	}
-	return DefaultWith(defaultObject);
+	return DefaultWith(defaultObject,altObject);
 }
 
 routine ScanParseTable [; n matched warned] {
