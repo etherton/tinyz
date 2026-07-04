@@ -123,6 +123,13 @@ prev_top_cursor_x = $2C
 text_ptr = $2D
 unit_number = $2E
 
+; Floppy disk doesn't support true VM, only reads entire story into banked memory
+!if MEM_MODEL < 2 {
+LOAD_FROM_DISK_II = 1
+} else {
+LOAD_FROM_DISK_II = 0
+}
+
 !if LOAD_FROM_DISK_II {
 data_page = $30
 track = $31
@@ -277,12 +284,13 @@ stage1
 	sta PAGE1	; switch to aux memory
 	sta RAMWRTON
 
-	lda #$10
+	lda #>HEADER
 	sta data_page
 	bne -		; always taken
-	ldx slot_index
+
++	ldx slot_index
 	sta MOTOROFF,x
-+	jmp endboot
+	jmp endboot
 
 next_track
 	lda track
@@ -346,7 +354,7 @@ read_rest_track_1
 	bne -
 	clc
 	lda data_page
-	adc #$10
+	adc #>HEADER
 	sta data_page
 	rts
 
