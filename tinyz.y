@@ -2242,13 +2242,15 @@ pvalue
 		}
 	| dict_list ';' 
 		{ 
-			auto p = relocatableBlob::createProperty($1->size() * 2,currentProperty);
+			bool isByte = the_dictionary.size() < 256;
+			auto p = relocatableBlob::createProperty(isByte? $1->size() : $1->size() * 2,currentProperty);
 			$$ = p->index;
-			auto s = $1;
-			while (s) { 
+			for (auto s=$1; s; s=s->cdr) {
 				z_dict_payload(s->car) |= property_bits[currentBits];
-				p->storeWord(s->car);
-				s = s->cdr;
+				if (isByte)
+					p->storeByte(s->car);
+				else
+					p->storeWord(s->car);
 			}
 			delete $1;
 		}
@@ -3758,6 +3760,8 @@ int main(int argc,char **argv) {
 			}
 			the_globals["$object_count"] = { INTLIT, int16_t(the_object_table.size() - 1) };
 			the_globals["$dict_word_count"] = { INTLIT, int16_t(the_dictionary.size()) };
+			the_globals["$dict_fits_in_byte"] = { INTLIT, int16_t(the_dictionary.size() < 256) };
+
 			header_blob = relocatableBlob::create(64,UD_DYNAMIC,"story header");
 
 			if (abbreviation_count) {

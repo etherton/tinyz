@@ -550,10 +550,12 @@ global MatchProp;
 global MatchWord;
 global it;			// the last direct object
 
+// Note the #if must be inside the body of the function because the variable doesn't exist until
+// the second parsing pass.
+
 routine ReadProp [prop index] {
-	if (isnz sizeof(prop) & 1) {
+	if (isnz sizeof(prop) & 1)
 		return prop[index];
-	}
 	else
 		return prop[[index]];
 }
@@ -566,11 +568,34 @@ routine PropSize [prop] {
 		return #if $v5 prop>>1 #else prop/2 #endif ;
 }
 
+routine DictReadProp [prop index] {
+#if $dict_fits_in_byte
+	return prop[index];
+#else
+	if (isnz sizeof(prop) & 1)
+		return prop[index];
+	else
+		return prop[[index]];
+#endif
+}
+
+routine DictPropSize [prop] {
+#if $dict_fits_in_byte
+	return sizeof(prop);
+#else
+	prop = sizeof(prop);
+	if (isnz prop & 1)
+		return prop;
+	else
+		return #if $v5 prop>>1 #else prop/2 #endif ;
+#endif
+}
+
 routine MatchPropertyWord [match obj prop; i j k] {
 	k = addrof(obj.prop);
 	if (isnz k) {
-		for (j=PropSize(k); i<j; ++i)
-			if (match is ReadProp(k,i))
+		for (j=DictPropSize(k); i<j; ++i)
+			if (match is DictReadProp(k,i))
 				rtrue;
 	}
 	rfalse;
@@ -834,9 +859,9 @@ routine ObjLoop[;i j k w] {
 			if (j isnt 0) {
 				print " has adjectives:";
 				k = 0;
-				while (k < PropSize(j)) {
+				while (k < DictPropSize(j)) {
 					print_char 32;
-					PrintDict(ReadProp(j,k));
+					PrintDict(DictReadProp(j,k));
 					++k;
 				}
 			}
@@ -844,9 +869,9 @@ routine ObjLoop[;i j k w] {
 			if (j isnt 0) {
 				print " and has nouns:";
 				k = 0;
-				while (k < PropSize(j)) {
+				while (k < DictPropSize(j)) {
 					print_char 32;
-					PrintDict(ReadProp(j,k));
+					PrintDict(DictReadProp(j,k));
 					++k;
 				}
 			}
