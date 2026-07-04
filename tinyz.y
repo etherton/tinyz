@@ -3188,6 +3188,9 @@ char yytoken[32], yyfilename[64];
 FILE *yyinput;
 inline int yynext() { if (yych!=EOF) { yych = getc(yyinput); if (yych == 10) ++yyline; } return yych; }
 
+// preprocessing starts active
+unsigned yyhashstate = 1;
+
 int yylex_() {
 	yylen = 0;
 	while (isspace(yych))
@@ -3397,7 +3400,9 @@ int yylex_() {
 			
 			dict_entry de = {};
 			encode_string(de.encoded,dict_entry_size,yytoken,yylen,true);
-			if (yypass==1) {
+			if (!(yyhashstate & 1))
+				yylval.ival = -1;
+			else if (yypass==1) {
 				the_dictionary[de] = -1;
 				yylval.ival = -1;
 			}
@@ -3453,9 +3458,6 @@ NEWLINE:
 	}
 }
 
-// preprocessing starts active
-unsigned yyhashstate = 1;
-
 int yylex() {
 RESTART:
 	int token = yylex_();
@@ -3501,7 +3503,7 @@ RESTART:
 		yyhashstate >>= 1;
 		goto RESTART;
 	}
-	// Note that dictionary words are still added if in inactive blocks.
+	// Note that dictionary words are not added if in inactive blocks.
 	if (!(yyhashstate & 1))
 		goto RESTART;
 	if (token == HASH_INCLUDE) {
