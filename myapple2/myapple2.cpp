@@ -380,7 +380,7 @@ int main(int argc,char **argv) {
         return 1;
     }
 
-    uint16_t header = 0x0800;
+    uint16_t header = 0x1000;
     uint16_t ramtop = 0xc000;
     uint16_t ramsize = ramtop - header;
 

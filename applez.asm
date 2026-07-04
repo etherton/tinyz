@@ -1178,6 +1178,9 @@ DICT_SIZE = 4
 DICT_WORD_LEN = 6
 }
 
+TOS = 0
+FIRST_GLOBAL = 16
+
 ;   0-31: 0101 (small,small) (5)
 ;  32-63: 0110 (small,variable) (6)
 ;  64-95: 1001 (variable,small) (9)
@@ -1265,7 +1268,7 @@ DICT_WORD_LEN = 6
 ; If the page is not already resident, find an oldest page to replace, reset its age to 1, and then age all OTHER pages by 1
 
 ; Address of bottom and top of usable Z-machine memory
-HEADER = $0800
+HEADER = $1000
 RAMTOP = $C000
 
 ; Size of usable Z-machine memory, in kilobytes
@@ -1669,7 +1672,7 @@ zentry
 	sta zpc_mid
 	lda #0
 	sta zpc_hi
-	ldx #16
+	ldx #FIRST_GLOBAL
 	jsr update_zptr
 	+zeroy
 -	+next_insn_byte_y0
@@ -2099,10 +2102,10 @@ operand_small
 	; if there are more types to decode
 operand_variable	
 	+next_insn_byte_y0
-	cmp #$00
+	cmp #TOS
 	beq .read_tos
 !ifndef FRAME_USES_GLOBALS {
-	cmp #$10
+	cmp #FIRST_GLOBAL
 	bcs .read_global
 	; read local
 !if DEBUG_TRACE {
@@ -2143,7 +2146,7 @@ operand_variable
 	jsr debug_print_char
 	tya
 	sec
-	sbc #$10
+	sbc #FIRST_GLOBAL
 	jsr print_hex_byte
 	lda #'='
 	jsr debug_print_char
@@ -2197,7 +2200,7 @@ z_dec_chk
 	lda operands_lo+0
 	beq .dec_chk_tos
 !ifndef FRAME_USES_GLOBALS {
-	cmp #$10
+	cmp #FIRST_GLOBAL
 	bcs .dec_chk_global
 	; carry is clear here
 	adc frameptr
@@ -2243,7 +2246,7 @@ z_inc_chk
 	lda operands_lo+0
 	beq .inc_chk_tos
 !ifndef FRAME_USES_GLOBALS {
-	cmp #$10
+	cmp #FIRST_GLOBAL
 	bcs .inc_chk_global
 	; carry is clear here
 	adc frameptr
@@ -4174,7 +4177,7 @@ z_inc
 	lda operands_lo+0
 	beq .inc_tos
 !ifndef FRAME_USES_GLOBALS {
-	cmp #$10
+	cmp #FIRST_GLOBAL
 	bcs .inc_global
 	; carry is clear here
 	adc frameptr
@@ -4201,7 +4204,7 @@ z_dec
 	lda operands_lo+0
 	beq .dec_tos
 !ifndef FRAME_USES_GLOBALS {
-	cmp #$10
+	cmp #FIRST_GLOBAL
 	bcs .dec_global
 	; carry is clear here
 	adc frameptr
@@ -4242,7 +4245,7 @@ z_load
 	lda operands_lo+0
 	beq .load_tos
 !ifndef FRAME_USES_GLOBALS {
-	cmp #$10
+	cmp #FIRST_GLOBAL
 	bcs .load_global
 	; carry is clear here
 	adc frameptr
@@ -4387,9 +4390,9 @@ z_call_2s
 	ldy stack_hi-1,X
 	bmi +
 }
-	cmp #0
+	cmp #TOS
 	beq .call_st_tos
-	cmp #$10
+	cmp #FIRST_GLOBAL
 	bcs .call_st_global
 	jsr debug_print
 	!text " -> L",0
@@ -4401,7 +4404,7 @@ z_call_2s
 	jsr debug_print
 	!text " -> G",0
 	sec
-	sbc #$10
+	sbc #FIRST_GLOBAL
 	jsr print_hex_byte
 	jmp +
 .call_st_tos
@@ -4945,11 +4948,11 @@ store_result
 	+zeroy
 	+next_insn_byte_y0
 store_result_2
-	cmp #$00
+	cmp #TOS
 	beq .store_tos
 store_result_3
 !ifndef FRAME_USES_GLOBALS {
-	cmp #$10
+	cmp #FIRST_GLOBAL
 	bcs .store_global
 	; store local
 	adc frameptr
@@ -4989,7 +4992,7 @@ store_result_3
 	!text "-> G",0
 	tya
 	sec
-	sbc #$10
+	sbc #FIRST_GLOBAL
 	jsr print_hex_byte
 }
 	rts
