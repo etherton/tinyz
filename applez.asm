@@ -2642,17 +2642,16 @@ z_mul
 .z_mul_8x8u
 	lda #$80
 	sta mulTemp
-	asl					; zero A now
-	dec operands_lo+0	; carry is always set so decrement this
+	asl		; zero a
 -	lsr operands_lo+1
 	bcc +
+	clc
 	adc operands_lo+0
 +	ror
 	ror mulTemp
 	bcc -
 	ldx mulTemp
 	jmp store_common
-
 negate_operand
 	lda #0
 	sec
