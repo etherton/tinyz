@@ -81,19 +81,47 @@ int main(int argc,char **argv) {
 			return 0;
 		}
 		else {
-			FILE *f = fopen(argv[i],"rb");
+			const char *image = argv[i];
+			if (!strcmp(image,"-detect")) {
+				FILE *nf = fopen(argv[i+1],"rb");
+				if (!nf) {
+					fprintf(stderr,"unable to open '%s' to autodetect\n",argv[i+1]);
+					return 1;
+				}
+				int version = fgetc(nf);
+				fseek(nf,0,SEEK_END);
+				int size = ftell(nf);
+				fclose(nf);
+				if (version==4)
+					image = "applez_2e_v4.bin";
+				else if (version==8)
+					image = "applez_2e_v8.bin";
+				else if (version==3)
+					image = size <= 46*1024? "applez_2e_v3_46k.bin" : 
+								size <= 92*1024? "applez_2e_v3_92k.bin" :
+								"applez_2e_v3_128k.bin";
+				else if (version==5)
+					image = size <= 46*1024? "applez_2e_v5_46k.bin" : 
+								size <= 92*1024? "applez_2e_v5_92k.bin" :
+								"applez_2e_v5_256k.bin";				
+				else {
+					fprintf(stderr,"unknown z machine version %d, only 3/4/5/8 supported\n",version);
+					return 1;
+				}
+			}
+			FILE *f = fopen(image,"rb");
 			if (!f) {
-				fprintf(stderr,"cannot open '%s'\n",argv[i]);
+				fprintf(stderr,"cannot open '%s'\n",image);
 				return 1;
 			}
 			fseek(f,0,SEEK_END);
 			int size = ftell(f);
 			fseek(f,0,SEEK_SET);
 			if (fread(in + offset,1,size,f) != size) {
-				fprintf(stderr,"short read on '%s'\n",argv[i]);
+				fprintf(stderr,"short read on '%s'\n",image);
 				return 1;
 			}
-			printf("Section '%s' offset %d size %d\n",argv[i],offset,size);
+			printf("Section '%s' offset %d size %d\n",image,offset,size);
 			offset += size;
 			fclose(f);
 		}
