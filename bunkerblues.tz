@@ -76,7 +76,7 @@ object panel {
 			print_ret "A small control panel on the wall next to the internal door. It is closed.";
 	}
 	before: [self act obj] {
-		if (act is #puton) {
+		if (act in {#puton,#putin}) {
 			rtrue if not obj;
 			if (self hasn't open)
 				print_ret "You'll need to open the panel first.";

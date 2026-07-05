@@ -497,25 +497,34 @@ routine Drop [obj] {
 		print_retf "You're not carrying that.";
 }
 
-routine PutOn [do ido] {
-	// print "PutOn(", object do, ",", object ido, ")^";
+routine PutCommon [act do ido] {
 	// When before is called with an arg of zero, it
 	// should return true if the action is possible.
-	if (isfalse BlockBefore(#puton,ido,0))
+	if (isfalse BlockBefore(act,ido,0))
 		print_retf "You can't put ",the(do)," there.";
 
-	// rfalse if BlockBefore(#puton,room,room);
 	rfalse if BlockBefore(#receive,ido,do);
-	rfalse if BlockBefore(#puton,ido,do);
+	rfalse if BlockBefore(act,ido,do);
 
 	move do into ido;
 
-	rtrue if CallAfter(#puton,ido,ido);
+	rtrue if CallAfter(act,ido,ido);
 	rtrue if CallAfter(#receive,ido,do);
-	// rtrue if CallAfter(#puton,room,);
 
-	print_ret "You place ",the(do)," on ",the(ido),".";
+	print "You place ",the(do);
+	if (act == #puton)
+		print " on ";
+	else
+		print " in ";
+	print_ret the(ido),".";
+}
 
+routine PutOn [do ido] {
+	return PutCommon(#puton,do,ido);
+}
+
+routine PutIn [do ido] {
+	return PutCommon(#putin,do,ido);
 }
 
 // The action table starts with the action routine, or -1 to terminate the entire list.
@@ -744,7 +753,8 @@ action #look { 'look at'/'examine' Nearby: Examine }
 action #open { 'open' Nearby: Open }
 action #close { 'close' Nearby: Close }
 action #lookHere { 'look': Look }
-action #puton { 'hang'/'place'/'put'/'attach' Held 'on'/'upon'/'on to'/'onto'/'in'/'into' Here: PutOn }
+action #puton { 'hang'/'place'/'put'/'attach' Held 'on'/'upon'/'on to'/'onto' Nearby: PutOn }
+action #putin { 'insert'/'place'/'put' Held 'in'/'into'/'in to'/'inside' Nearby: PutIn }
 action #go { 'go'/'go to' Direction: Travel }
 action #restart { 'restart'/'restart game': [] { rfalse if not Yes(); restart; } }
 action #quit { 'quit'/'quit game': [] { rfalse if not Yes(); quit; } }
