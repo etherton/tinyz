@@ -97,12 +97,12 @@ int main(int argc,char **argv) {
 				else if (version==8)
 					image = "applez_2e_v8.bin";
 				else if (version==3)
-					image = size <= 46*1024? "applez_2e_v3_46k.bin" : 
-								size <= 92*1024? "applez_2e_v3_92k.bin" :
+					image = size <= 44*1024? "applez_2e_v3_44k.bin" : 
+								size <= 88*1024? "applez_2e_v3_88k.bin" :
 								"applez_2e_v3_128k.bin";
 				else if (version==5)
-					image = size <= 46*1024? "applez_2e_v5_46k.bin" : 
-								size <= 92*1024? "applez_2e_v5_92k.bin" :
+					image = size <= 44*1024? "applez_2e_v5_44k.bin" : 
+								size <= 88*1024? "applez_2e_v5_88k.bin" :
 								"applez_2e_v5_256k.bin";				
 				else {
 					fprintf(stderr,"unknown z machine version %d, only 3/4/5/8 supported\n",version);

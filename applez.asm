@@ -352,9 +352,9 @@ read_rest_track_1
 	lda sector_map_lo
 	ora sector_map_hi
 	bne -
-	clc
 	lda data_page
-	adc #>HEADER
+	clc
+	adc #$10		; one track is 16 sectors
 	sta data_page
 	rts
 
@@ -480,6 +480,7 @@ slotpatch5
 	rts
 
 	; we cannot afford page crossings for either of these tables.
+	; we have two spare bytes here right now.
 	!align 255, 256-(13*8+2)
 conv_tab
 	!byte 0*4,1*4
@@ -514,7 +515,7 @@ delay2
 	!byte 255,57*4,58*4,59*4,60*4,61*4,62*4,63*4
 	!align 255, 0
 ; +0 is first two bits, reversed, +1 is second two bits, reversed, +2 is third two bits, reversed
-; +3 is a bit table used to manage the sector map; first 16 rows is (sector/8), next is (1<<(sector&7),
+; +3 is a bit table used to manage the sector map; first 16 rows is (sector/8), next is (1<<(sector&7)),
 ; last 16 rows is ~(1<<(sector&7))
 interleave
 	!byte 0,0,0,0
@@ -647,15 +648,15 @@ temp
 
 	; story size in 512b blocks (including the one we already read)
 	; for higher memory models, we fill aux memory too so vm is "full"
-	; note $B0 here is 92k (512b blocks)
+	; but if the story is larger than memory, stop once alt ram is full.
 !if MEM_MODEL > 1 {
 	lda blocks_remaining+1
 	bne clamp_story_size
 	lda blocks_remaining
-	cmp #(RAMSIZE*4)
+	cmp #RAMZPAGES*2
 	bcc +
 clamp_story_size
-	lda #(RAMSIZE*4)
+	lda #RAMZPAGES*2
 	sta blocks_remaining
 +
 } 
@@ -707,6 +708,7 @@ read_block
 
 endboot ; 0x?300
 	; these are part of boot code but we're tight on space there.
+
 +	sta RAMWRTOFF
 	sta RAMRDOFF
 
@@ -1268,13 +1270,17 @@ FIRST_GLOBAL = 16
 ; If the page is not already resident, find an oldest page to replace, reset its age to 1, and then age all OTHER pages by 1
 
 ; Address of bottom and top of usable Z-machine memory
+; We load entire tracks from floppy disk so the memory size needs to be a multiple of 4k.
+!if LOAD_FROM_DISK_II {
 HEADER = $1000
+} else {
+HEADER = $0800
+}
 RAMTOP = $C000
 
-; Size of usable Z-machine memory, in kilobytes
-; We use twice this value to get size in 512b blocks,
-; and four times this value to get size in 256b pages.
-RAMSIZE = (RAMTOP - HEADER) / 1024
+; Size of usable Z-machine memory, in both Z pages (512b) and 6502 pages (256b)
+RAMZPAGES = (RAMTOP - HEADER) / 512
+RAMPAGES = (RAMTOP - HEADER) / 256
 
 ;  +0 version
 ;  +1 flags
@@ -1387,7 +1393,7 @@ update_zptr
 	lda zpc_hi
 	bne .update_zptr_hi
 	lda zpc_mid
-	cmp #(RAMSIZE*4)
+	cmp #RAMPAGES
 	bcs .update_zptr_upper
 	adc #>HEADER	; carry clear
 	sta RAMRDOFF
@@ -1397,7 +1403,7 @@ update_zptr
 	; B0->10, C0->20, D0->30, E0->40, F0->50
 .update_zptr_upper
 	; carry already set (A contains upper byte)
-	sbc #((RAMSIZE*4)-(>HEADER))
+	sbc #(RAMPAGES-(>HEADER))
 	sta zptr+1
 	sta RAMRDON
 	rts
@@ -1405,7 +1411,7 @@ update_zptr
 .update_zptr_hi
 	clc
 	lda zpc_mid
-	adc #(256-((RAMSIZE*4)-(>HEADER)))
+	adc #(256-(RAMPAGES-(>HEADER)))
 	sta zptr+1
 	sta RAMRDON
 	rts
@@ -1422,7 +1428,7 @@ update_zptr
 	lsr				; get even/odd block
 	rol zpc_mid_low ; put carry bit (even/odd page) in LSB
 	sec
-	sbc #(RAMSIZE*2)	; now value beteen 0-167
+	sbc #RAMZPAGES	; now value beteen 0-167
 	bcs update_vmem		; in virtual memory?
 	sta RAMRDOFF		; nope, it's in dynamic (resident) memory.
 	lda zpc_mid
@@ -1452,7 +1458,7 @@ update_vmem_hi
 	sta zpc_mid_low		; pull out carry for even/odd
 	lda desired_page
 	sec
-	sbc #(RAMSIZE*2)
+	sbc #RAMZPAGES
 	sta desired_page
 	lda desired_page+1
 	sbc #0
@@ -1538,7 +1544,7 @@ page_miss_2
 	; sty $c0fe ;; enable trace
 
 	; find oldest page (and age all pages once)
-	ldy #(RAMSIZE*2)-1
+	ldy #RAMZPAGES-1
 	lda page_ages,Y
 	clc
 	adc #1
@@ -1646,7 +1652,7 @@ page_miss_2
 
 	; figure out block to read
 	lda desired_page
-	adc #(24+(RAMSIZE*2))		; interpreter is 24 blocks, resident is 88 blocks (carry still clear)
+	adc #(24+RAMZPAGES)		; interpreter is 24 blocks, resident is 88 blocks (carry still clear)
 	sta read_block
 !if ZVERSION>3 {
 	lda desired_page+1
@@ -3578,9 +3584,9 @@ loadb
 !if MEM_MODEL>=3 {
 	; memory beyond 44k will be paged.
 loadb_common
-	cmp #(RAMSIZE*4)
+	cmp #RAMPAGES
 	bcc +
-	sbc #(RAMSIZE*4)		; carry already set
+	sbc #RAMPAGES		; carry already set
 	lsr				; get VM index (and carry is even/odd)
 	sty static_y_save+1
 	tay
@@ -5473,25 +5479,25 @@ globals_hi	!fill 256
 ; a page is already resident in O(1) time. for a given z page (512b), which page
 ; in aux memory (always a multiple of 2) contains its data, or zero if the page
 ; isn't resident.
-vm_map !for Counter, 0, (RAMSIZE*2)-1 {
+vm_map !for Counter, 0, (RAMZPAGES)-1 {
 	!byte (>HEADER) + (Counter*2)
 }
-		!fill (STORYSIZE-RAMSIZE-RAMSIZE)*2,0
+		!fill (STORYSIZE-RAMZPAGES)*2,0
 
 !if MEM_MODEL > 1 {
 ; this contains the age of each 512b page
 ; it's tempting to use larger pages on V5 and V8 but that will likely
 ; lead to a lot more disk thrashing.
-page_ages	!fill RAMSIZE*2,1			; 0 is freshly used
+page_ages	!fill RAMZPAGES,1			; 0 is freshly used
 ; for a given page (512b) in aux memory $0800-$BFFF which entry in vm_map points at us?
 ; this is so that when identifying an old page, we can quickly zero out its vm_map slot.
 page_owners_lo
-			!for Counter, 0, (RAMSIZE*2)-1 {
+			!for Counter, 0, RAMZPAGES-1 {
 			!byte Counter
 			}
 !if ZVERSION>3 {
 page_owners_hi
-			!fill RAMSIZE*2,0
+			!fill RAMZPAGES,0
 }
 } ; MEM_MODEL>1
 

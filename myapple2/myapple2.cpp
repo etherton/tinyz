@@ -380,7 +380,8 @@ int main(int argc,char **argv) {
         return 1;
     }
 
-    uint16_t header = 0x1000;
+    // The Disk][ paths load at $1000, ProDOS loads at $0800.
+    uint16_t header = interpreter[0]==3? 0x1000 : 0x0800;
     uint16_t ramtop = 0xc000;
     uint16_t ramsize = ramtop - header;
 
@@ -388,7 +389,7 @@ int main(int argc,char **argv) {
     // are we emulating a disk drive load?
     if (interpreter[0]==3) {
         memcpy(computer.ram + 0xD000, interpreter, 12 * 1024);
-        size_t lowPart = storySize > ramsize ? 0xB000 : storySize;
+        size_t lowPart = storySize > ramsize ? (ramtop-header) : storySize;
         size_t highPart = storySize - lowPart;
         printf("loading story into %zu bytes of main memory and %zu bytes of aux memory\n",lowPart,highPart);
         memcpy(computer.ram + header, story, lowPart);
