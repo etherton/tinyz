@@ -143,8 +143,9 @@ This is necessary to avoid ambiguities in the Bison grammar.
 
 There is also basic preprocessor support. The directives #if, #else, and #endif work anywhere in the
 token stream, not necessarily at the line level. #if expects an integer literal, and tests against zero.
-The symbols $v4, $v5, and $v8 are defined if the Z-machine version is at least that high. Anything `constant`
-can appear here, or values can be passed in on the command line with the `-D` directive.
+You can negate the test with `not` or `!`. The symbols $v4, $v5, and $v8 are defined if the Z-machine 
+version is at least that high. Anything `constant` can appear here, or values can be passed in on the 
+command line with the `-D` directive.
 
 Language Syntax
 ---------------
@@ -253,7 +254,7 @@ for `if (istruth expr) rtrue/rfalse;`
 `rfalse if not expr`\
 `rtrue if not expr;`\
 These exit the current routine if the expression (usually a function call) evaluates to zero. This is shorthand
-for `if (isfalse expr) rtrue/rfalse;`
+for `if (isfalse expr) rtrue/rfalse;`. Note `!` also works for `not`.
 
 `routine-name (opt-parameter-list);`\
 `call expr (opt-parameter-list);`\
@@ -302,7 +303,7 @@ Branch Expressions
 `expr > expr`\
 `expr >= expr`\
 `expr == expr` or `expr is expr`\
-`expr <> expr` or `expr isn't expr` or `expr isnt expr`\
+`expr <> expr` or `expr isn't expr` or `expr isnt expr` or `expr != expr`\
 These are the standard relational operators.
 
 `iszero expr` or `isfalse expr` or `isz expr`\
@@ -316,7 +317,7 @@ This succeeds if exactly the bits in the second expression are set in the first,
 This tests whether the first expression is equal to up to three
 more expressions (utilizing the VAR form of the @je instruction).
 
-`not branch-expr`\
+`not branch-expr` or `!branch-expr`\
 Negates the sense of the branch expression.
 
 `branch-expr and branch-expr`\

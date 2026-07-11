@@ -3315,10 +3315,18 @@ int yylex_() {
 		case '(': case ')':
 		case '~': case '*': case ':': case '.': case '%':
 		case '&': case '|': case ';':
-		case ',': case '!':
+		case ',':
 			yytoken[0] = yych;
 			yynext();
 			return yytoken[0];
+		case '!':
+			yynext();
+			if (yych=='=') {
+				yynext();
+				return NE;
+			}
+			else
+				return NOT;
 		case '[':
 			++yyscope;
 			yynext();
