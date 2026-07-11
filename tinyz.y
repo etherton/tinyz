@@ -1842,7 +1842,8 @@
 %left '&'
 %left LSH RSH
 %left EQ NE
-%left '<' LE '>' GE%nonassoc HAS HASNT
+%left '<' LE '>' GE
+%nonassoc HAS HASNT
 %left '+' '-'
 %left '*' '/' '%'
 %left PARENT
