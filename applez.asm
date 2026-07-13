@@ -667,7 +667,7 @@ read_story
 	inc read_dest+1
 	inc read_dest+1
 	lda read_dest+1
-	; for memory model 1, which supports stories up to 92k, we fill banked memory too.
+	; for memory model 1, which supports stories up to 88k, we fill banked memory too.
 !if MEM_MODEL > 0 {
 	cmp #>RAMTOP
 	bne +
@@ -1255,9 +1255,9 @@ FIRST_GLOBAL = 16
 } // endif
 
 
-; We support four memory models
-; MEM_MODEL=0: Stories are limited to 46k total. No banking.
-; MEM_MODEL=1: Stories are limited to 92k total, dynamic+static limited to 46k.
+; We support four memory models; first two use floppy drive, last two use SmartPort.
+; MEM_MODEL=0: Stories are limited to 44k total. No banking.
+; MEM_MODEL=1: Stories are limited to 88k total, dynamic+static limited to 44k.
 ; MEM_MODEL=2: Stories are limited to 128k total, dynamic+static limited to 46k. All alt ram is VM backed by disk.
 ; MEM_MODEL=3: Stories have normal Z5/Z8 liimits. Dynamic limited to 46k. Static and high backed by disk.
 ; The difference between 2 and 3 is that in model 3, static memory can be paged, which affects loadb, loadw,
