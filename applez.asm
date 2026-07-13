@@ -428,7 +428,7 @@ slotpatch2
 	ldx twos_buffer-$2A,Y; 4 - get matching 2's entry (no crossing)
 	ora interleave,X	; 4 - merge them
 patch1
-	sta $ff00-$2A,Y		; 5+1 - store the result (page crossing)
+	sta $ff00-$2A,Y		; 5+1 - store the result (page crossing) (undo Y bias)
 	and #$fc			; 2 - clear the bits so next ora works.
 	iny					; 2 - stops at 128 (need this to have fewer page crossings)
 	bpl -				; 3 - 31 cycles per byte (30 cycles on last iteration)
@@ -444,11 +444,12 @@ slotpatch3
 	ldx twos_buffer-$2A,Y
 	ora interleave+1,X
 patch2
-	sta $ff56-$2A,Y			; no page crossing this time!
+	sta $ff56-$2A,Y			; no page crossing this time! (still need to undo Y bias)
 	and #$fc
 	iny
 	bpl -					; 30 cycles per byte, 29 on last iteration
 
+	; Last run is only 84 ($80-$2C) bytes, not 86 ($80-$2A) bytes
 	ldy #$2C
 slotpatch4
 -	ldx RDBYTE6
