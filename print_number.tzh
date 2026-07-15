@@ -24,13 +24,17 @@ routine PrintSingle [n] {
 routine PrintNumber [n] {
 	if (n >= 1000) {
 		PrintSingle(n / 1000);
-		print " thousand ";
+		print " thousand";
 		n = n % 1000;
+		rfalse if not n;
+		print " ";
 	}
 	if (n >= 100) {
 		PrintSingle(n / 100);
-		print " hundred ";
+		print " hundred";
 		n = n % 100;
+		rfalse if not n;
+		print " ";
 	}
 	if (n >= 20) {
 		if (n >= 90)
