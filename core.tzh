@@ -698,7 +698,7 @@ routine Anywhere [] {
 }
 
 // Parse a word that is a compass direction
-routine Direction [i] {
+routine Direction [; i] {
 	if (parse_buffer[[nw+1]] &= artBit)
 		nw = nw + 2;
 	i = parse_buffer[[nw+1]] & artBit;
@@ -709,7 +709,7 @@ routine Direction [i] {
 }
 
 routine Yes [] {
-	print "Are you sure? [y/N]^";
+	print "Are you sure? [y/N] ";
 #if $v5
 	text_buffer[1] = 0;
 	sread(text_buffer, 0);
