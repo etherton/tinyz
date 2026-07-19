@@ -464,9 +464,9 @@ uint8_t machine::read_input(uint16_t textAddr,uint16_t parseAddr) {
 }
 
 template <uint8_t matchLen> const uint8_t *bsearch_n(const uint8_t *match,const uint8_t *entries,uint16_t entryCount,uint8_t entrySize) {
-	uint16_t low = 0, high = entryCount - 1;
+	int low = 0, high = entryCount - 1;
 	while (low <= high) {
-		uint16_t mid = (low + high) >> 1;
+		int mid = (low + high) >> 1;
 		uint8_t index = 0;
 		const uint8_t *entry = (entries  + entrySize * mid);
 		do {
