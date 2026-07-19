@@ -2292,6 +2292,7 @@ z_inc_chk
 z_jin
 	jsr get_object_addr
 	ldy #PARENT
+	+begin_dynamic
 	lda (obj_ptr),Y
 	cmp operands_lo+1
 	bne +
@@ -2301,8 +2302,10 @@ z_jin
 	cmp operands_hi+1
 	bne +
 }
+	+end_dynamic
 	jmp branch_passed
-+	jmp branch_failed
++	+end_dynamic
+	jmp branch_failed
 
 z_print_ret
 	jsr z_print_inline_common
