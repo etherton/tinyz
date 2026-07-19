@@ -1003,6 +1003,10 @@ routine DoTurn[; i] {
 			text_buffer[1] = 0;
 	#endif
 			sread(text_buffer, parse_buffer);
+			if (text_buffer[#if $v5 2 #else 1 #endif] == @*) {
+				print "(Noted.)^";
+				continue;
+			}
 		} while (CheckErrors(text_buffer, parse_buffer) isnt zero);
 	}
 	else
