@@ -4,6 +4,7 @@ DEBUG_PROP_COMMON = 0
 DEBUG_TOKENISE = 0
 DEBUG_TOKENISE_VERBOSE = 0
 DEBUG_VM = 0
+DEBUG_ANY = DEBUG_TRACE + DEBUG_PROP_COMMON + DEBUG_TOKENISE + DEBUG_VM
 
 !if ZVERSION=3 {
 STORYSIZE = 128
@@ -888,9 +889,11 @@ scroll
 	rts
 }
 
+!if DEBUG_ANY {
 debug_print_char
 	sta $c0ff
 	rts
+}
 
 	; destroys A
 print_char_lower
@@ -2196,9 +2199,6 @@ operand_variable
 	rts
 
 z_ill
-	lda zinsn
-	jsr print_hex_byte
-	jsr space
 	jsr fatal_error
 	!text "unimplemented insn",13,0
 
@@ -3241,8 +3241,10 @@ z_put_prop
 +	+end_dynamic
 	jmp next_insn
 invalid_property
+!if DEBUG_ANY {
 	lda operands_lo+1
 	jsr print_hex_byte
+}
 	jsr fatal_error
 	!text ":invalid property for operation:",0
 
@@ -4562,11 +4564,8 @@ z_output_stream
 	jmp next_insn
 
 z_quit
-	jsr debug_print
+	jsr fatal_error
 	!text "* End session *",13,0
-	lda #0
-	sta $c0ff
-	jmp *
 
 attr_bits !byte $80,$40,$20,$10,$08,$04,$02,$01
 
@@ -4731,6 +4730,8 @@ print_num
 	jmp -
 +	rts
 }
+
+!if DEBUG_ANY {
 	; preserves A
 print_hex_byte
 	pha
@@ -4751,6 +4752,7 @@ print_hex_digit
 	bcc +
 	adc #$6	; carry is always set
 +	jmp debug_print_char
+}
 
 z_new_line
 	lda #13
@@ -5316,6 +5318,7 @@ z_check_arg_count
 
 
 fatal_error
+!if DEBUG_ANY {
 	lda zpc_hi
 	jsr print_hex_byte
 	lda zpc_mid
@@ -5324,6 +5327,7 @@ fatal_error
 	jsr print_hex_byte
 	lda #':'
 	jsr print_char
+}
 	pla
 	sta stringptr
 	pla
@@ -5338,7 +5342,7 @@ dead
 	sta $c0ff
 	beq dead
 
-;!if DEBUG_TRACE {
+!if DEBUG_ANY {
 space
 	pha
 	lda #32
@@ -5381,7 +5385,7 @@ debug_print
 	lda #$12
 	ldy #$12
 	rts
-;}
+}
 
 !if DEBUG_TRACE {
 _2opNames
@@ -5478,6 +5482,7 @@ stack_hi	!fill 256
 globals_lo	!fill 256
 globals_hi	!fill 256
 
+!if (MEM_MODEL > 0) {
 ; the initial vm_map is always the next 44k of the story. we always use 512b blocks,
 ; since that is the minimum read size for smartport. this allows us to determine if
 ; a page is already resident in O(1) time. for a given z page (512b), which page
@@ -5487,6 +5492,7 @@ vm_map !for Counter, 0, (RAMZPAGES)-1 {
 	!byte (>HEADER) + (Counter*2)
 }
 		!fill (STORYSIZE-RAMZPAGES)*2,0
+}
 
 !if MEM_MODEL > 1 {
 ; this contains the age of each 512b page
