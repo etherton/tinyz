@@ -424,7 +424,7 @@ object helmet {
 	before: [self act obj] {
 		if (act is #take and not (PuzzleState &= HELMET_FREE))
 			print_ret "The helmet is seized up with rust on the dead crewman. You'll need to free it up first.";
-		if (act is #puton) {
+		if (act in {#puton,#putin}) {
 			rtrue if not obj;
 			if (obj is wd40) {
 				if (PuzzleState &= HELMET_FREE)
@@ -574,7 +574,7 @@ object fire_door {
 	}
 	scenery;
 	before: [self act obj] {
-		if (act is #puton) {
+		if (act in {#puton,#putin}) {
 			rtrue if not obj;
 			if (obj isn't crowbar)
 				print_ret "You can't pry that open with that.";
@@ -608,7 +608,7 @@ object pipe {
 	}
 	scenery;
 	before: [self act obj] {
-		if (act is #puton) {
+		if (act in {#puton,#putin}) {
 			rtrue if not obj;
 			if (obj isn't toilet_brush)
 				print_ret "That won't clear the blockage.";
@@ -668,7 +668,7 @@ object scanner {
 	}
 	static;
 	before: [self act obj] {
-		if (act is #puton) {
+		if (act in {#puton,#putin}) {
 			rtrue if not obj;
 			if (obj isn't hand)
 				print_ret "The scanner only accepts a hand print.";
