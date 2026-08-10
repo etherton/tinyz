@@ -1,0 +1,85 @@
+routine PrintSingle [n] {
+	if (n == 9)
+		print "nine",rfalse;
+	else if (n == 8)
+		print "eight",rfalse;
+	else if (n == 7)
+		print "seven",rfalse;
+	else if (n == 6)
+		print "six",rfalse;
+	else if (n == 5)
+		print "five",rfalse;
+	else if (n == 4)
+		print "four",rfalse;
+	else if (n == 3)
+		print "three",rfalse;
+	else if (n == 2)
+		print "two",rfalse;
+	else if (n == 1)
+		print "one",rfalse;
+	else
+		print "zero",rfalse;
+}
+
+routine PrintNumber [n] {
+	if (n >= 1000) {
+		PrintSingle(n / 1000);
+		print " thousand";
+		n = n % 1000;
+		rfalse if not n;
+		print " ";
+	}
+	if (n >= 100) {
+		PrintSingle(n / 100);
+		print " hundred";
+		n = n % 100;
+		rfalse if not n;
+		print " ";
+	}
+	if (n >= 20) {
+		if (n >= 90)
+			print "ninety";
+		else if (n >= 80)
+			print "eighty";
+		else if (n >= 70)
+			print "seventy";
+		else if (n >= 60)
+			print "sixty";
+		else if (n >= 50)
+			print "fifty";
+		else if (n >= 40)
+			print "forty";
+		else if (n >= 30)
+			print "thirty";
+		else
+			print "twenty";
+		n = n % 10;
+		if (isnz n) {
+			print "-";
+			PrintSingle(n);
+		}
+		rfalse;
+	}
+	else if (n == 19)
+		print "nineteen",rfalse;
+	else if (n == 18)
+		print "eighteen",rfalse;
+	else if (n == 17)
+		print "seventeen",rfalse;
+	else if (n == 16)
+		print "sixteen",rfalse;
+	else if (n == 15)
+		print "fifteen",rfalse;
+	else if (n == 14)
+		print "fourteen",rfalse;
+	else if (n == 13)
+		print "thirteen",rfalse;
+	else if (n == 12)
+		print "twelve",rfalse;
+	else if (n == 11)
+		print "eleven",rfalse;
+	else if (n == 10)
+		print "ten",rfalse;
+	else
+		return PrintSingle(n);
+}

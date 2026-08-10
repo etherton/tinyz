@@ -59,6 +59,8 @@ property global after;
 property global superclass;
 property object adjective wordbit adjectiveBit;
 property object noun wordbit nounBit;
+
+// The direction properties need to be in the same order here, and in the wordbit declarations.
 property location n_to;
 property location ne_to;
 property location e_to;
@@ -69,8 +71,23 @@ property location w_to;
 property location nw_to;
 property location up_to;
 property location down_to;
+
 property location cant_go;
 property location pobjects;	// Short for pseudo objects, which is a pain to type.
+
+// set the specified bit in these words.
+wordbit 1 'north' 'n';
+wordbit 2 'northeast' 'ne';
+wordbit 3 'east' 'e';
+wordbit 4 'southeast' 'se';
+wordbit 5 'south' 's';
+wordbit 6 'southwest' 'sw';
+wordbit 7 'west' 'w';
+wordbit 8 'northwest' 'nw';
+wordbit 9 'up' 'u';
+wordbit 10 'down' 'd';
+
+wordbit artBit 'a' 'an' 'the';
 
 // Parent for all locations. The first location defined is the default for all locations.
 location Locations "Locations" {
@@ -90,47 +107,6 @@ location CompassRose "Compass" in Limbo {
 	nw_to: `northwest`;
 	up_to: `upward`;
 	down_to: `downward`;
-}
-
-// set the specified bit in these words.
-wordbit 1 'north' 'n';
-wordbit 2 'northeast' 'ne';
-wordbit 3 'east' 'e';
-wordbit 4 'southeast' 'se';
-wordbit 5 'south' 's';
-wordbit 6 'southwest' 'sw';
-wordbit 7 'west' 'w';
-wordbit 8 'northwest' 'nw';
-wordbit 9 'up' 'u';
-wordbit 10 'down' 'd';
-wordbit artBit 'a' 'an' 'the';
-
-
-// Map a word to a direction property or zero if no match.
-// (property indices cannot be zero)
-routine Compass [word] {
-	if (word is 'north')
-		return n_to;
-	if (word is 'northeast')
-		return ne_to;
-	if (word is 'northwest')
-		return nw_to;
-	else if (word is 'south')
-		return s_to;
-	else if (word is 'southeast')
-		return se_to;
-	else if (word is 'southwest')
-		return sw_to;
-	else if (word is 'east')
-		return e_to;
-	else if (word is 'west')
-		return w_to;
-	else if (word is 'up')
-		return up_to;
-	else if (word is 'down')
-		return down_to;
-	else
-		rfalse;
 }
 
 routine DoorHelper [doorObj otherSide] {
@@ -722,14 +698,18 @@ routine Anywhere [] {
 }
 
 // Parse a word that is a compass direction
-routine Direction [] {
+routine Direction [; i] {
 	if (parse_buffer[[nw+1]] &= artBit)
 		nw = nw + 2;
-	return Compass(parse_buffer[[nw]]);
+	i = parse_buffer[[nw+1]] & artBit;
+	if (i >= n_to and i <= down_to)
+		rtrue;
+	else
+		rfalse;
 }
 
 routine Yes [] {
-	print "Are you sure? [y/N]^";
+	print "Are you sure? [y/N] ";
 #if $v5
 	text_buffer[1] = 0;
 	sread(text_buffer, 0);
@@ -1023,6 +1003,10 @@ routine DoTurn[; i] {
 			text_buffer[1] = 0;
 	#endif
 			sread(text_buffer, parse_buffer);
+			if (text_buffer[#if $v5 2 #else 1 #endif] == @*) {
+				print "(Noted.)^";
+				continue;
+			}
 		} while (CheckErrors(text_buffer, parse_buffer) isnt zero);
 	}
 	else

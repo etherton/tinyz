@@ -17,9 +17,11 @@ tinyzcd
 tinyzcd.dSYM/
 .DS_Store
 makedsk
+maketable
 *.bin
 *.do
 *.po
 *.lst
 myapple2/myapple2.dSYM/
 *.hdv
+*.sav

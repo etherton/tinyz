@@ -6,8 +6,8 @@ stories: cloak.z3 cloak.z4 cloak.z5 demogame.z3 bunkerblues.z3 czech.z3 czech.z5
 
 interpreters: \
 	applez_2e40_0.bin applez_2e40_1.bin applez_2e40_2.bin \
-	applez_2e_v3_46k.bin applez_2e_v3_92k.bin applez_2e_v3_128k.bin  \
-	applez_2e_v5_46k.bin applez_2e_v5_92k.bin applez_2e_v5_256k.bin \
+	applez_2e_v3_44k.bin applez_2e_v3_88k.bin applez_2e_v3_128k.bin  \
+	applez_2e_v5_44k.bin applez_2e_v5_88k.bin applez_2e_v5_256k.bin \
 	czech.z3 czech.z5 applez_2e_v4.bin applez_2e_v8.bin
 
 images: \
@@ -120,11 +120,11 @@ minimal.z4: minimal.tz tinyzc
 applez_2p.bin: applez.asm Makefile
 	acme -f plain --cpu 6502 -DCOLUMNS=40 -DTARGET_APPLE2PLUS=1 -DZVERSION=3 -DMEM_MODEL=1 -r applez_2p.lst -o applez_2p.bin applez.asm
 
-applez_2e_v3_46k.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=3 -DMEM_MODEL=0 -r applez_2e_v3_46k.lst -o applez_2e_v3_46k.bin applez.asm
+applez_2e_v3_44k.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=3 -DMEM_MODEL=0 -r applez_2e_v3_44k.lst -o applez_2e_v3_44k.bin applez.asm
 
-applez_2e_v3_92k.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=3 -DMEM_MODEL=1 -r applez_2e_v3_92k.lst -o applez_2e_v3_92k.bin applez.asm
+applez_2e_v3_88k.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=3 -DMEM_MODEL=1 -r applez_2e_v3_88k.lst -o applez_2e_v3_88k.bin applez.asm
 
 applez_2e_v3_128k.bin: applez.asm Makefile
 	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=3 -DMEM_MODEL=2 -r applez_2e_v3_128k.lst -o applez_2e_v3_128k.bin applez.asm
@@ -132,11 +132,11 @@ applez_2e_v3_128k.bin: applez.asm Makefile
 applez_2e_v4.bin: applez.asm Makefile
 	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=4 -DMEM_MODEL=3 -r applez_2e_v4.lst -o applez_2e_v4.bin applez.asm
 
-applez_2e_v5_46k.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=0 -r applez_2e_v5_46k.lst -o applez_2e_v5_46k.bin applez.asm
+applez_2e_v5_44k.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=0 -r applez_2e_v5_44k.lst -o applez_2e_v5_44k.bin applez.asm
 
-applez_2e_v5_92k.bin: applez.asm Makefile
-	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=1 -r applez_2e_v5_92k.lst -o applez_2e_v5_92k.bin applez.asm
+applez_2e_v5_88k.bin: applez.asm Makefile
+	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=1 -r applez_2e_v5_88k.lst -o applez_2e_v5_88k.bin applez.asm
 
 applez_2e_v5_256k.bin: applez.asm Makefile
 	acme -f plain --cpu 6502 -DCOLUMNS=80 -DZVERSION=5 -DMEM_MODEL=3 -r applez_2e_v5_256k.lst -o applez_2e_v5_256k.bin applez.asm
