@@ -21,6 +21,19 @@ constant FILTER_IN_HELMET = 1 << 3;
 constant PIPE_CLEAR = 1 << 4;
 constant CORRIDOR_DOOR_PRIED = 1 << 5;
 constant SCANNER_CLEARED = 1 << 6;
+constant VALVE_OPEN = 1 << 7;       // gas flowing from wall valve to oven
+constant OVEN_ON = 1 << 8;
+constant HOSE_ATTACHED = 1 << 9;    // hose connected to the Workshop welding rig
+constant DIAL_TURNED = 1 << 10;     // welding rig dial set to acetylene
+constant KNOB_WELDED_ON = 1 << 11;  // pump knob welded back onto its stub
+constant CROWBAR_LEVER = 1 << 12;   // crowbar slotted onto the knob as a lever
+constant PUMP_REVERSED = 1 << 13;   // knob turned, pump reversed
+// PuzzleState is a 16-bit word and is now full (bits 0-13 used, 14-15 spare).
+// Endgame flags continue in a second word.
+global PuzzleState2;
+constant RADIO_ON = 1 << 0;
+constant SIGNAL_SENT = 1 << 1;       // emergency signal code transmitted
+constant DOOR_CODE_ENTERED = 1 << 2; // external door release code entered
 
 global AirTurns = 100;
 
@@ -124,14 +137,20 @@ object external_door { // This exists in both the Airlock and Outside.
 	description: [self] {
 		if (self has open)
 			print_ret "The blast door stands open, the wasteland visible beyond.";
-		if (PuzzleState &= ELECTRICITY_STATUS)
-			print_ret "A heavy blast door leading out to the wasteland. The electronic lock is powered - you could open it.";
-		print_ret "A heavy blast door leading out to the wasteland. The electronic lock needs power to operate.";
+		if (not (PuzzleState &= ELECTRICITY_STATUS))
+			print_ret "A heavy blast door leading out to the wasteland. The electronic lock needs power to operate.";
+		if (PuzzleState2 &= DOOR_CODE_ENTERED)
+			print_ret "The blast door stands unlocked and ready to open.";
+		print_ret "The blast door is powered but locked. It needs the door release code.";
 	}
 	openable;
 	before: [self act obj] {
-		if (act is #open and not (PuzzleState &= ELECTRICITY_STATUS))
-			print_ret "The blast door needs power to operate.";
+		if (act is #open) {
+			if (not (PuzzleState &= ELECTRICITY_STATUS))
+				print_ret "The blast door needs power to operate.";
+			if (not (PuzzleState2 &= DOOR_CODE_ENTERED))
+				print_ret "The blast door is locked. It needs the door release code.";
+		}
 		rfalse;
 	}
 }
@@ -374,6 +393,56 @@ location Pantry {
 contains
 object hose {
 	noun: 'hose';
+	description: [self] {
+		if (PuzzleState &= VALVE_OPEN)
+			print_ret "A rubber gas hose connecting the oven to the supply pipe. Turn the valve off before detaching it.";
+		print_ret "A rubber gas hose, disconnected from the oven's gas fitting.";
+	}
+	before: [self act obj] {
+		if (act is #take and (PuzzleState &= VALVE_OPEN))
+			print_ret "The gas is still flowing - turn the valve off first.";
+		rfalse;
+	}
+}
+
+and
+object valve {
+	noun: 'valve' 'shutoff';
+	description: [self] {
+		if (PuzzleState &= VALVE_OPEN)
+			print_ret "A gas shutoff valve on the wall. It is currently open - gas is flowing to the oven.";
+		print_ret "A gas shutoff valve on the wall. It is currently closed - gas is off.";
+	}
+	static;
+}
+
+and
+object oven {
+	noun: 'oven';
+	description: [self] {
+		if (PuzzleState &= OVEN_ON)
+			print_ret "A battered institutional gas oven, its enamel stained and chipped. The burners are lit and the hob is hot.";
+		print_ret "A battered institutional gas oven, its enamel stained and chipped. The rubber hose connecting it to the supply pipe snakes out from behind.";
+	}
+	static;
+	before: [self act obj] {
+		if (act in {#puton,#putin}) {
+			rtrue if not obj;
+			if (obj isn't light_stick)
+				print_ret "That doesn't belong on the oven.";
+			else if (not (PuzzleState &= OVEN_ON))
+				print_ret "The oven is not on - light it first.";
+		}
+		rfalse;
+	}
+	after: [self act obj] {
+		if (act is #receive and obj is light_stick) {
+			light_stick.general = 150;
+			move light_stick into Player;
+			print_ret "You hold the glow stick over the hot hob for a moment. It flares back to full brightness.";
+		}
+		rfalse;
+	}
 }
 
 location Gymnasium {
@@ -421,8 +490,9 @@ object helmet {
 			print_ret "A sealed helmet, freed from the body. Fit a filter to make it a smoke mask.";
 		print_ret "A sealed helmet, seized up with rust on the dead crewman. It could be freed with WD40.";
 	}
+	clothing;
 	before: [self act obj] {
-		if (act is #take and not (PuzzleState &= HELMET_FREE))
+		if (act in {#take,#wear} and not (PuzzleState &= HELMET_FREE))
 			print_ret "The helmet is seized up with rust on the dead crewman. You'll need to free it up first.";
 		if (act in {#puton,#putin}) {
 			rtrue if not obj;
@@ -462,6 +532,8 @@ object helmet {
 			unparent charcoal;
 			return ScoreMsg(5,"You pack the charcoal into the filter. The helmet is now a crude but effective smoke mask.");
 		}
+		if (act is #unwear and (PuzzleState &= CHARCOAL_IN_FILTER))
+			print_ret "You take off the helmet. The smoke immediately starts catching at your throat again.";
 		rfalse;
 	}
 }
@@ -500,6 +572,18 @@ action #spray { 'spray' WithHeld(addrof Nearby,wd40): SprayWith }
 routine FitWith [do ido] { return PutOn(ido,do); }
 
 action #fit { 'fit'/'insert'/'pack' WithHeld(addrof Nearby,coffee_filter): FitWith }
+
+routine WeldWith [do ido] { return PutOn(ido,do); }
+
+action #weld { 'weld'/'fuse'/'solder' WithHeld(addrof Nearby,nozzle): WeldWith }
+
+routine LeverWith [do ido] { return PutOn(ido,do); }
+
+action #lever { 'lever'/'pry'/'prise'/'force'/'wedge'/'jimmy' WithHeld(addrof Nearby,crowbar): LeverWith }
+
+routine UnblockWith [do ido] { return PutOn(ido,do); }
+
+action #unblock { 'unblock'/'clear'/'unclog'/'scrub'/'sweep'/'empty' WithHeld(addrof Nearby,toilet_brush): UnblockWith }
 
 location Library {
 	description: "Floor-to-ceiling shelves hold a mix of technical manuals and battered paperbacks, a handful of volumes knocked to the floor and left where they fell. One shelf along the far wall has come away from its fittings and hangs at an awkward angle.";
@@ -543,6 +627,7 @@ action #crushWith { 'crush'/'smash' WithHeld(addrof Nearby,pestle): CrushWith }
 
 location Lounge {
 	description: "Sagging sofas and a pair of armchairs are arranged around a low table strewn with old magazines and the scattered pieces of several abandoned board games. A television set is bolted to the wall at head height, its screen long dark.";
+	n_to: Library;
 	e_to: MainCorridor;
 }
 
@@ -594,7 +679,7 @@ object fire_door {
 }
 
 location Reservoir {
-	down_to: PumpRoom;
+	up_to: PumpRoom;
 }
 
 contains
@@ -639,16 +724,90 @@ object wd40 {
 }
 
 location Workshop {
+	description: "A long workbench runs down the centre of this well-equipped room, its surface scattered with tools, coils of wire, and half-finished repairs left by whoever was last in here. A portable welding rig stands in one corner - gas tank and nozzle waiting to be connected up.";
 	n_to: WECorridor;
 	w_to: ToolRoom;
 	e_to: ControlRoom;
 }
 
+contains
+object gas_tank {
+	noun: 'tank' 'rig';
+	adjective: 'gas' 'welding';
+	description: [self] {
+		if (PuzzleState &= HOSE_ATTACHED)
+			print_ret "A pressurised gas tank, the hose now connected between it and the nozzle.";
+		print_ret "A pressurised gas tank. The hose can be attached to connect it to the nozzle.";
+	}
+	static;
+	before: [self act obj] {
+		if (act in {#puton,#putin}) {
+			rtrue if not obj;
+			if (obj isn't hose)
+				print_ret "That won't connect to the gas tank.";
+			else if (PuzzleState &= HOSE_ATTACHED)
+				print_ret "The hose is already connected to the rig.";
+		}
+		rfalse;
+	}
+	after: [self act obj] {
+		if (act is #receive and obj is hose) {
+			PuzzleState = PuzzleState | HOSE_ATTACHED;
+			move nozzle into Player;
+			return ScoreMsg(5,"You connect the hose between the gas tank and the nozzle, forming a portable welding torch. You pick up the torch head.");
+		}
+		rfalse;
+	}
+}
+
+and
+object dial {
+	noun: 'dial';
+	description: [self] {
+		if (PuzzleState &= DIAL_TURNED)
+			print_ret "A dial controlling the gas mix, set to acetylene. The rig is primed and ready to weld.";
+		print_ret "A dial controlling the gas mix. Set it to acetylene to prime the rig for welding.";
+	}
+	static;
+}
+
+object nozzle in Limbo {
+	noun: 'nozzle' 'torch';
+	adjective: 'welding';
+	description: [self] {
+		if (PuzzleState &= DIAL_TURNED)
+			print_ret "A welding torch nozzle, primed and ready. Weld it against the knob in the pump room.";
+		print_ret "A welding torch nozzle, the business end of the portable rig. Set the dial to acetylene before it will weld anything.";
+	}
+}
+
 location ControlRoom {
+	description: [self] {
+		if (not (PuzzleState &= ELECTRICITY_STATUS))
+			print_ret "Banks of monitors and instrument panels cover every surface, most of them dark, a handful still cycling through error messages or static. This room controlled everything - communications, life support, security - and it will again, once the power is back on.";
+		if (PuzzleState2 &= RADIO_ON)
+			print_ret "The control room hums with restored power, monitors glowing across every surface. The radio crackles from its corner console.";
+		print_ret "The control room hums with restored power, monitors cycling through system readings. The radio sits silent on its console.";
+	}
 	w_to: Workshop;
 	n_to: WECorridor;
 	s_to: Armoury;
 	e_to: Generator;
+}
+
+contains
+object radio {
+	noun: 'radio';
+	description: [self] {
+		if (PuzzleState2 &= DOOR_CODE_ENTERED)
+			print_ret "The radio crackles softly. Both codes have been transmitted - someone out there heard you.";
+		if (PuzzleState2 &= RADIO_ON)
+			print_ret "The radio crackles with static and a carrier wave. Ready to transmit.";
+		if (PuzzleState &= ELECTRICITY_STATUS)
+			print_ret "A military-grade communications radio. Power is restored - you could switch it on.";
+		print_ret "A chunky military-grade communications radio, dusty but intact. It needs power before it can broadcast anything.";
+	}
+	static;
 }
 
 location Generator {
@@ -689,6 +848,19 @@ object scanner {
 	}
 }
 
+routine ScanSub[do] {
+	if (do is hand)
+		return PutOn(hand,scanner);
+	if (do is scanner) {
+		if (PuzzleState &= SCANNER_CLEARED)
+			print_retf "The scanner has already accepted a valid print.";
+		print_retf "The scanner awaits a valid hand print. Try scanning the hand.";
+	}
+	print_retf "You cannot scan that.";
+}
+
+action #scan { 'scan' Nearby: ScanSub }
+
 and
 object gen_switch {
 	noun: 'switch';
@@ -703,22 +875,158 @@ object gen_switch {
 	static;
 }
 
-routine ThrowSub[do] {
-	if (do isn't gen_switch)
-		print_retf "You can't throw that.";
-	if (not (PuzzleState &= SCANNER_CLEARED))
-		print_retf "The biometric scanner must be cleared before the switch can be used.";
-	if (PuzzleState &= ELECTRICITY_STATUS)
-		print_retf "The generator is already running.";
-	PuzzleState = PuzzleState | ELECTRICITY_STATUS;
-	return ScoreMsg(10,"You throw the master switch. The generator roars to life. Lights flicker on throughout the bunker.");
+routine TurnSub[do] {
+	if (do is gen_switch) {
+		if (not (PuzzleState &= SCANNER_CLEARED))
+			print_retf "The biometric scanner must be cleared before the switch can be used.";
+		if (PuzzleState &= ELECTRICITY_STATUS)
+			print_retf "The generator is already running.";
+		PuzzleState = PuzzleState | ELECTRICITY_STATUS;
+		Kitchen gains lit;
+		Storeroom gains lit;
+		Hydroponic gains lit;
+		Pantry gains lit;
+		Library gains lit;
+		Lounge gains lit;
+		WECorridor gains lit;
+		ControlRoom gains lit;
+		Workshop gains lit;
+		ToolRoom gains lit;
+		Generator gains lit;
+		PumpRoom gains lit;
+		Reservoir gains lit;
+		Armoury gains lit;
+		Closet gains lit;
+		Latrine gains lit;
+		Gymnasium gains lit;
+		MedicalBay gains lit;
+		return ScoreMsg(10,"You throw the master switch. The generator roars to life. Lights flicker on throughout the bunker.");
+	}
+	if (do is oven) {
+		if (PuzzleState &= OVEN_ON) {
+			PuzzleState = PuzzleState & ~OVEN_ON;
+			print_ret "You turn off the oven. The burners die.";
+		}
+		if (hose parent isn't Pantry)
+			print_retf "The gas hose is not connected - reattach it to the oven before turning it on.";
+		PuzzleState = PuzzleState | OVEN_ON;
+		print_ret "You light the oven. The burners catch with a soft whump.";
+	}
+	if (do is radio) {
+		if (not (PuzzleState &= ELECTRICITY_STATUS))
+			print_retf "The radio needs power before it will work.";
+		if (PuzzleState2 &= RADIO_ON)
+			print_retf "The radio is already on.";
+		PuzzleState2 = PuzzleState2 | RADIO_ON;
+		print_ret "You switch on the radio. It crackles to life, filling the room with static and a carrier wave.";
+	}
+	if (do is valve) {
+		if (PuzzleState &= VALVE_OPEN) {
+			PuzzleState = PuzzleState & ~VALVE_OPEN;
+			print_ret "You turn the valve off. The hiss of gas through the pipe stops.";
+		}
+		PuzzleState = PuzzleState | VALVE_OPEN;
+		print_ret "You turn the valve on. Gas begins flowing again.";
+	}
+	if (do is dial) {
+		if (not (PuzzleState &= HOSE_ATTACHED))
+			print_retf "Attach the hose to the rig first.";
+		if (PuzzleState &= DIAL_TURNED)
+			print_retf "The dial is already set to acetylene.";
+		PuzzleState = PuzzleState | DIAL_TURNED;
+		print_ret "You turn the dial to acetylene. The rig is primed and ready to weld.";
+	}
+	if (do is knob) {
+		if (not (PuzzleState &= KNOB_WELDED_ON))
+			print_retf "There is no knob - it needs to be welded back on first.";
+		if (not (PuzzleState &= CROWBAR_LEVER))
+			print_retf "You need a lever attached to the knob to turn it - attach the crowbar.";
+		if (PuzzleState &= PUMP_REVERSED)
+			print_retf "The pump is already reversed.";
+		PuzzleState = PuzzleState | PUMP_REVERSED;
+		return ScoreMsg(15,"With the crowbar as a lever you heave the knob around. The pump reverses with a grinding shudder - clean air begins to circulate.");
+	}
+	print_retf "Turning that does nothing useful here.";
 }
 
-action #throw { 'throw'/'flip'/'flick' Nearby: ThrowSub }
+action #turn { 'turn'/'rotate'/'twist'/'throw'/'flip'/'flick'/'light'/'ignite'/'switch'/'press' Nearby: TurnSub }
+
+routine TypeCodeSub[] {
+	if (room isn't ControlRoom)
+		print_retf "There is nothing here to type a code into.";
+	if (not (PuzzleState &= ELECTRICITY_STATUS))
+		print_retf "The control room has no power.";
+	if (not (PuzzleState2 &= RADIO_ON))
+		print_retf "Turn the radio on first.";
+	if (not (Player holds code_book))
+		print_retf "You need the code book to know what to type.";
+	if (not (PuzzleState2 &= SIGNAL_SENT)) {
+		PuzzleState2 = PuzzleState2 | SIGNAL_SENT;
+		return ScoreMsg(5,"You key in the emergency signal code. Static crackles, then a distant acknowledgement tone - someone is receiving your signal.");
+	}
+	if (not (PuzzleState2 &= DOOR_CODE_ENTERED)) {
+		PuzzleState2 = PuzzleState2 | DOOR_CODE_ENTERED;
+		return ScoreMsg(10,"You enter the external door release code. A muffled clunk echoes down the corridor - the blast door is unlocked.");
+	}
+	print_retf "Both codes have already been entered.";
+}
+
+action #typeCode { 'type'/'write' : TypeCodeSub }
 
 location PumpRoom {
+	description: [self] {
+		if (PuzzleState &= PUMP_REVERSED)
+			print_ret "The pump room hums with purpose, the reversed pump cycling clean air through the bunker's ventilation.";
+		print_ret "Pipework and pumping machinery crowd this damp utility room. The main air pump stands at the centre, its control knob snapped clean off.";
+	}
 	e_to: Generator;
-	up_to: Reservoir;
+	w_to: Generator;
+	down_to: Reservoir;
+}
+
+contains
+object knob {
+	noun: 'knob';
+	description: [self] {
+		if (PuzzleState &= CROWBAR_LEVER)
+			print_ret "The knob is welded back onto the pump handle, with the crowbar slotted on as a lever. Ready to turn.";
+		if (PuzzleState &= KNOB_WELDED_ON)
+			print_ret "The knob has been welded back onto the pump handle. You need a lever to turn it - attach the crowbar.";
+		print_ret "A broken air-pump handle stub - the knob has snapped off. It could be welded back on.";
+	}
+	static;
+	before: [self act obj] {
+		if (act in {#puton,#putin}) {
+			rtrue if not obj;
+			if (obj is nozzle) {
+				if (not (PuzzleState &= DIAL_TURNED))
+					print_ret "The welding rig is not ready - attach the hose and set the dial first.";
+				else if (PuzzleState &= KNOB_WELDED_ON)
+					print_ret "The knob is already welded on.";
+			}
+			else if (obj is crowbar) {
+				if (not (PuzzleState &= KNOB_WELDED_ON))
+					print_ret "There's no knob to attach the crowbar to yet - weld it back on first.";
+				else if (PuzzleState &= CROWBAR_LEVER)
+					print_ret "The crowbar is already slotted onto the knob.";
+			}
+			else
+				print_ret "That doesn't belong on the knob.";
+		}
+		rfalse;
+	}
+	after: [self act obj] {
+		if (act is #receive and obj is nozzle) {
+			PuzzleState = PuzzleState | KNOB_WELDED_ON;
+			move nozzle into Player;
+			return ScoreMsg(5,"You touch the torch to the knob stub and weld the knob firmly onto the pump handle.");
+		}
+		if (act is #receive and obj is crowbar) {
+			PuzzleState = PuzzleState | CROWBAR_LEVER;
+			return ScoreMsg(5,"You slot the crowbar onto the knob, giving you enough leverage to turn the pump.");
+		}
+		rfalse;
+	}
 }
 
 location Armoury {
@@ -735,7 +1043,7 @@ routine RunTasks[] {
 		if (iszero light_stick.general % 30)
 			print "The light stick is a little dimmer than it was before.^";
 	}
-	if (PuzzleState &= CHARCOAL_IN_FILTER and Player holds helmet)
+	if (PuzzleState &= CHARCOAL_IN_FILTER and helmet has worn)
 		rtrue;
 	--AirTurns;
 	if (AirTurns == 40)
@@ -753,6 +1061,7 @@ routine RunTasks[] {
 
 routine main[] {
 	LibraryInitialize();
+	PuzzleState = VALVE_OPEN;
 	print "Bunker Blues, by Nate Taylor, with help from David Etherton^";
 	ReleaseInfo();
 	Look();
