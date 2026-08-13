@@ -142,4 +142,20 @@ static const char *opcode_names[256+32] = {
 	"save","restore","log_shift","art_shift","set_font","draw_picture","picture_data","erase_picture","set_margins","save_undo","restore_undo","print_unicode","check_unicode","ext0D","ext0E","ext0F",
 	"move_window","window_size","window_style","get_wind_prop","scroll_window","pop_stack","read_mouse","mouse_window","push_stack","put_wind_prop","print_form","make_menu","picture_table","ext1D","ext1E","ext1F"
 };
+
+inline void update_opcode_names(int version) {
+	if (version>4) {
+		opcode_names[0x8F] = "call1n";
+		opcode_names[0x9F] = "call1n";
+		opcode_names[0xAF] = "call1n";
+		opcode_names[0xB9] = "catch";
+	}
+	else {
+		opcode_names[0x8F] = "not";
+		opcode_names[0x9F] = "not";
+		opcode_names[0xAF] = "not";
+		opcode_names[0xB9] = "pop";
+	}
+}
+
 #endif

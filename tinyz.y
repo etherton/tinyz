@@ -3003,6 +3003,7 @@ void init(int version) {
 	the_globals["$v8"] = { INTLIT, int16_t(version >= 8) };
 	the_globals["Limbo"] = { ONAME, int16_t(0) };
 
+	update_opcode_names(version);
 }
 
 void emit1op(_1op opcode,operand uval) {

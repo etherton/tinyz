@@ -355,6 +355,7 @@ int main(int argc,char **argv) {
 			di.read("test.dbg"); */
 		}
 	}
+	update_opcode_names(story->version);
 	printf("version %d serial[%c%c%c%c%c%c]\n",story->version,
 		story->serial[0],story->serial[1],story->serial[2],story->serial[3],story->serial[4],story->serial[5]);
 	abbreviations = (word*)((char*)story + story->abbreviationsAddr.getU());
